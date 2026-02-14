@@ -1,0 +1,53 @@
+import * as pdfjsLib from "pdfjs-dist";
+
+// Ensure the worker is correctly resolved by Vite.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
+
+export type PdfToImagesResult = {
+  pageNumber: number;
+  imageDataUrl: string;
+  aspectRatio: number;
+}[];
+
+export async function pdfFileToPngDataUrls(file: File): Promise<PdfToImagesResult> {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const result: PdfToImagesResult = [];
+
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const page = await pdf.getPage(pageNumber);
+
+    // Get the original viewport to preserve aspect ratio
+    const originalViewport = page.getViewport({ scale: 1 });
+    const aspectRatio = originalViewport.width / originalViewport.height;
+    
+    // Calculate scale to get max 1920px wide while maintaining aspect ratio
+    const maxWidth = 1920;
+    const scale = maxWidth / originalViewport.width;
+    
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Failed to create canvas context");
+
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+
+    // pdfjs typing in recent versions expects both canvas + canvasContext
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (page.render as any)({ canvas, canvasContext: context, viewport }).promise;
+    
+    // Convert to JPEG for smaller file size (0.85 quality is good balance)
+    result.push({
+      pageNumber,
+      imageDataUrl: canvas.toDataURL("image/jpeg", 0.85),
+      aspectRatio,
+    });
+  }
+
+  return result;
+}

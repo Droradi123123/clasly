@@ -1,0 +1,28 @@
+project_id = "vkviqlmeiqpavpeuoldw"
+
+[functions.generate-slides]
+verify_jwt = false
+
+[functions.generate-image]
+verify_jwt = false
+
+[functions.parse-presentation]
+verify_jwt = false
+
+[functions.convert-to-images]
+verify_jwt = false
+
+[functions.create-checkout-session]
+verify_jwt = false
+
+[functions.create-credits-checkout]
+verify_jwt = false
+
+[functions.paypal-webhook]
+verify_jwt = false
+
+[functions.capture-paypal-order]
+verify_jwt = false
+
+[functions.chat-builder]
+verify_jwt = false
