@@ -63,6 +63,7 @@ node scripts/verify-supabase.mjs
    - **generate-slides** – יצירת מצגת/שקף בודד מ-AI.
    - **generate-image** – יצירת תמונה ב-Editor.
    - **parse-presentation** – ייבוא קובץ PDF/PPTX.
+   - **convert-to-images** – ייבוא PPTX (המרת שקופיות לתמונות). אם ייבוא PPTX נכשל עם "PPTX conversion service not available", יש לפרוס את הפונקציה: `npm run deploy:functions` (כולל convert-to-images).
 
 3. **הרצה מקומית (אופציונלי)**  
    ```bash
@@ -86,3 +87,15 @@ node scripts/verify-supabase.mjs
 ## קונפיגורציה מקומית (Supabase CLI)
 
 ב-`supabase/config.toml` מופיע `project_id`. אם אתה עובד מול פרויקט ספציפי ב-Supabase, וודא ש-`project_id` תואם ל-Project ב-Dashboard (ה-ref שמופיע ב-URL של הפרויקט).
+
+---
+
+## סנכרון מרצה–תלמיד (Realtime)
+
+המערכת משתמשת ב־3 שכבות סנכרון במקביל:
+
+1. **Broadcast** (הכי מהיר): ערוץ `lecture-sync-${lectureId}`. כשהמרצה מעביר שקופית, נשלחת הודעת broadcast – התלמידים מקבלים עדכון מיידי בלי לעבור במסד.
+2. **Postgres Changes**: עדכון `current_slide_index` (ו־`updated_at`) בטבלת `lectures`. התלמידים מאזינים ל־`postgres_changes` ומקבלים עדכון כשהשורה משתנה.
+3. **Polling**: גיבוי – התלמיד שולח בקשה כל שנייה (עם exponential backoff). אם Broadcast או Realtime נכשלו, ה־polling תופס את השינוי.
+
+כל עדכון שקופית קורא ל־`updateLecture` שמעדכן גם את `updated_at`, כך שכל שלוש השכבות מזהות שינוי.

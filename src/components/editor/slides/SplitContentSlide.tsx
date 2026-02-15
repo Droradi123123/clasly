@@ -84,7 +84,7 @@ export function SplitContentSlide({
         </h2>
       )}
 
-      <ul className="space-y-3 min-h-0">
+      <ul className="space-y-3 min-h-0 list-none ps-0 pe-0" style={{ listStyle: 'none' }}>
         {bulletPoints.map((point, index) => (
           <motion.li
             key={index}
@@ -95,7 +95,7 @@ export function SplitContentSlide({
               direction === "rtl" ? "flex-row-reverse" : "flex-row"
             }`}
           >
-            <span className="w-2 h-2 rounded-full mt-2.5 flex-shrink-0 bg-primary" />
+            <span className="w-2 h-2 rounded-full mt-2.5 flex-shrink-0 bg-primary" aria-hidden />
 
             {isEditing ? (
               <div className="flex-1 flex items-start gap-2 min-w-0">
@@ -132,15 +132,17 @@ export function SplitContentSlide({
       </ul>
 
       {isEditing && bulletPoints.length < MAX_POINTS && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={addPoint}
-          className="mt-4 w-fit text-white/60 hover:text-white hover:bg-white/10"
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          Add Point
-        </Button>
+        <div className="mt-4" style={{ textAlign: direction === 'rtl' ? 'right' : 'left' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={addPoint}
+            className="w-fit text-white/60 hover:text-white hover:bg-white/10"
+          >
+            <Plus className={`w-4 h-4 ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
+            Add Point
+          </Button>
+        </div>
       )}
     </div>
   );

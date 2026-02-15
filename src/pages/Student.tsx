@@ -131,14 +131,14 @@ const Student = () => {
     return null;
   }, [applyLectureUpdate]);
 
-  // Subscribe to lecture updates - Real-time sync with presenter + aggressive polling fallback
+  // 3-layer sync: (1) Broadcast lecture-sync-${id} – fastest; (2) postgres_changes on lectures; (3) polling fallback with backoff
   useEffect(() => {
     if (!lecture?.id) return;
 
     console.log('[Student] Subscribing to lecture updates:', lecture.id);
     setIsConnected(false);
 
-    let pollIntervalMs = 1000; // Start with 1s polling for faster sync
+    let pollIntervalMs = 1000; // Layer 3: start 1s, exponential backoff on success up to 3s
     let pollTimeoutId: NodeJS.Timeout | null = null;
     let lastUpdatedAt = lecture.updated_at;
     let lastSlideIndex = lecture.current_slide_index;
@@ -186,10 +186,10 @@ const Student = () => {
       pollTimeoutId = setTimeout(pollForUpdates, pollIntervalMs);
     };
 
-    // Start polling immediately
+    // Layer 3: start polling immediately
     pollTimeoutId = setTimeout(pollForUpdates, pollIntervalMs);
 
-    // Primary: Realtime subscription
+    // Layer 2: postgres_changes on lectures (updated_at + current_slide_index)
     const channel = supabase
       .channel(`lecture-live-${lecture.id}`)
       .on(
@@ -231,7 +231,7 @@ const Student = () => {
     };
   }, [lecture?.id, applyLectureUpdate, refetchLectureState]);
 
-  // Ultra-fast slide sync: presenter broadcasts on every navigation
+  // Layer 1: broadcast – presenter sends slide_changed on lecture-sync-${id}; apply immediately then refetch
   useEffect(() => {
     if (!lecture?.id) return;
 

@@ -195,8 +195,13 @@ export function ImportPresentationDialog({
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          const msg = errorData?.error || response.statusText || 'Failed to convert PowerPoint';
-          throw new Error(typeof msg === 'string' ? msg : 'Failed to convert PowerPoint');
+          let msg = typeof errorData?.error === 'string' ? errorData.error : response.statusText || 'Failed to convert PowerPoint';
+          if (response.status === 404) {
+            msg = 'PPTX conversion service not available. Deploy the convert-to-images Edge Function (see docs or run: npm run deploy:functions).';
+          } else if (response.status === 401 || response.status === 403) {
+            msg = 'Please sign in and try again.';
+          }
+          throw new Error(msg);
         }
 
         const result = await response.json();
@@ -256,7 +261,10 @@ export function ImportPresentationDialog({
       return [];
     } catch (error) {
       console.error('Error processing file:', error);
-      const message = error instanceof Error ? error.message : 'Failed to process file.';
+      let message = error instanceof Error ? error.message : 'Failed to process file.';
+      if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
+        message = 'Network error. Check connection and try again. For PPTX, ensure convert-to-images Edge Function is deployed.';
+      }
       toast.error(message);
       return [];
     }

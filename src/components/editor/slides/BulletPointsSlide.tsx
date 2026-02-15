@@ -4,6 +4,7 @@ import { SlideWrapper } from "./SlideWrapper";
 import { Slide, BulletPointsSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { Button } from "@/components/ui/button";
+import { inferDirectionFromSlide } from "@/lib/textDirection";
 
 export interface BulletPointsSlideProps {
   slide: Slide;
@@ -23,6 +24,8 @@ export function BulletPointsSlide({
   const content = slide.content as BulletPointsSlideContent;
   const theme = getTheme(themeId);
   const textColor = slide.design?.textColor || '#ffffff';
+  const direction = slide.design?.direction ?? inferDirectionFromSlide(slide);
+  const textAlign = slide.design?.textAlign || (direction === 'rtl' ? 'right' : 'left');
 
   const handleTitleChange = (title: string) => {
     onUpdate?.({ ...content, title });
@@ -57,23 +60,23 @@ export function BulletPointsSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex flex-col h-full p-4 md:p-6 overflow-hidden">
+      <div className="flex flex-col h-full p-4 md:p-6 overflow-hidden" dir={direction}>
         {/* Title - more compact */}
         {isEditing ? (
           <input
             value={content.title}
             onChange={(e) => handleTitleChange(e.target.value)}
             className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-4 placeholder:opacity-50"
-            style={{ color: textColor }}
+            style={{ color: textColor, textAlign }}
             placeholder="Enter title..."
           />
         ) : (
-          <h2 className="text-xl md:text-3xl font-bold mb-4" style={{ color: textColor }}>
+          <h2 className="text-xl md:text-3xl font-bold mb-4" style={{ color: textColor, textAlign }}>
             {content.title}
           </h2>
         )}
 
-        {/* Points list */}
+        {/* Points list - RTL: icon (bullet) on the right */}
         <div className="flex-1 space-y-3 overflow-y-auto min-h-0">
           {content.points.map((point, index) => (
             <motion.div
@@ -81,9 +84,9 @@ export function BulletPointsSlide({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="flex items-start gap-4 group"
+              className={`flex items-start gap-4 group ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}
             >
-              {/* Icon - smaller */}
+              {/* Icon (bullet) - RTL places it on the right */}
               <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/20">
                 <Zap className="w-4 h-4 md:w-5 md:h-5 text-primary" />
               </div>
@@ -96,23 +99,23 @@ export function BulletPointsSlide({
                       value={point.title}
                       onChange={(e) => handlePointTitleChange(index, e.target.value)}
                       className="text-lg md:text-xl font-semibold bg-transparent border-0 outline-none w-full"
-                      style={{ color: textColor }}
+                      style={{ color: textColor, textAlign }}
                       placeholder="Point title..."
                     />
                     <input
                       value={point.description}
                       onChange={(e) => handlePointDescChange(index, e.target.value)}
                       className="text-sm md:text-base bg-transparent border-0 outline-none w-full"
-                      style={{ color: textColor, opacity: 0.7 }}
+                      style={{ color: textColor, opacity: 0.7, textAlign }}
                       placeholder="Point description..."
                     />
                   </div>
                 ) : (
                   <>
-                    <h3 className="text-lg md:text-xl font-semibold" style={{ color: textColor }}>
+                    <h3 className="text-lg md:text-xl font-semibold" style={{ color: textColor, textAlign }}>
                       {point.title}
                     </h3>
-                    <p className="text-sm md:text-base" style={{ color: textColor, opacity: 0.7 }}>
+                    <p className="text-sm md:text-base" style={{ color: textColor, opacity: 0.7, textAlign }}>
                       {point.description}
                     </p>
                   </>
@@ -132,17 +135,19 @@ export function BulletPointsSlide({
           ))}
         </div>
 
-        {/* Add point button */}
+        {/* Add point button - align with direction */}
         {isEditing && content.points.length < MAX_POINTS && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={addPoint}
-            className="mt-4 w-fit text-white/60 hover:text-white hover:bg-white/10"
-          >
-            <Plus className="w-4 h-4 mr-1" />
-            Add Point ({content.points.length}/{MAX_POINTS})
-          </Button>
+          <div className="mt-4" style={{ textAlign: direction === 'rtl' ? 'right' : 'left' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={addPoint}
+              className="w-fit text-white/60 hover:text-white hover:bg-white/10"
+            >
+              <Plus className={`w-4 h-4 ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
+              Add Point ({content.points.length}/{MAX_POINTS})
+            </Button>
+          </div>
         )}
       </div>
     </SlideWrapper>

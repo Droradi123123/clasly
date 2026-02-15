@@ -189,7 +189,7 @@ const Present = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
 
-  // Broadcast channel to force instant student sync on slide changes
+  // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
@@ -416,7 +416,7 @@ const Present = () => {
       setCurrentSlideIndex(newIndex);
       setShowCorrectAnswer(false);
       if (lectureId) {
-        // Broadcast first for instant student sync, then persist to DB
+        // Layer 1: broadcast first (instant to students), then Layer 2: DB (updateLecture sets current_slide_index + updated_at)
         slideSyncChannelRef.current?.send({
           type: 'broadcast',
           event: 'slide_changed',

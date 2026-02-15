@@ -203,11 +203,11 @@ export function SlideWrapper({
         )}
       </div>
 
-      {/* Logo - crisp rendering, positioned by logoPosition */}
+      {/* Logo - compact size, positioned by logoPosition */}
       {design.logoUrl && (
         <div
           key={design.logoUrl}
-          className={`absolute z-20 pointer-events-none w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 ${
+          className={`absolute z-20 pointer-events-none w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 ${
             design.logoPosition === 'top-left' ? 'top-2 left-2' :
             design.logoPosition === 'top-right' ? 'top-2 right-2' :
             design.logoPosition === 'bottom-left' ? 'bottom-2 left-2' :

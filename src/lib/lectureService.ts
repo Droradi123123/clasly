@@ -70,7 +70,7 @@ export async function getLectureByCode(code: string) {
   return data;
 }
 
-// Update lecture status and current slide
+// Update lecture status and current slide. updated_at is set on every call so postgres_changes and polling (sync layers 2 & 3) detect changes.
 export async function updateLecture(lectureId: string, updates: {
   status?: string;
   current_slide_index?: number;
@@ -79,7 +79,7 @@ export async function updateLecture(lectureId: string, updates: {
 }) {
   const updateData: Record<string, unknown> = { 
     ...updates,
-    updated_at: new Date().toISOString(), // Always update timestamp for realtime sync
+    updated_at: new Date().toISOString(),
   };
   if (updates.slides) {
     updateData.slides = JSON.parse(JSON.stringify(updates.slides)) as Json;
