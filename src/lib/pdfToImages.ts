@@ -25,9 +25,9 @@ export async function pdfFileToPngDataUrls(file: File): Promise<PdfToImagesResul
     const originalViewport = page.getViewport({ scale: 1 });
     const aspectRatio = originalViewport.width / originalViewport.height;
     
-    // Calculate scale to get max 1920px wide while maintaining aspect ratio
-    const maxWidth = 1920;
-    const scale = maxWidth / originalViewport.width;
+    // High-resolution scale: max 2560px wide for sharp text and graphics
+    const maxWidth = 2560;
+    const scale = Math.min(maxWidth / originalViewport.width, 3);
     
     const viewport = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
@@ -41,10 +41,10 @@ export async function pdfFileToPngDataUrls(file: File): Promise<PdfToImagesResul
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (page.render as any)({ canvas, canvasContext: context, viewport }).promise;
     
-    // Convert to JPEG for smaller file size (0.85 quality is good balance)
+    // JPEG at 0.92 for high quality while keeping size reasonable
     result.push({
       pageNumber,
-      imageDataUrl: canvas.toDataURL("image/jpeg", 0.85),
+      imageDataUrl: canvas.toDataURL("image/jpeg", 0.92),
       aspectRatio,
     });
   }

@@ -54,11 +54,22 @@ export function ImageUploader({
         throw uploadError;
       }
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('slide-images')
-        .getPublicUrl(filePath);
-
-      onChange(publicUrl);
+      let displayUrl: string;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('slide-images')
+          .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
+        if (signedData?.signedUrl) {
+          displayUrl = signedData.signedUrl;
+        } else {
+          const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+          displayUrl = publicData.publicUrl;
+        }
+      } catch {
+        const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+        displayUrl = publicData.publicUrl;
+      }
+      onChange(displayUrl);
       toast.success('Image uploaded successfully');
     } catch (error: any) {
       console.error('Upload error:', error);

@@ -164,7 +164,7 @@ export function ImportPresentationDialog({
         onProgress(30);
         const rawImageUrl = await readFileAsDataURL(file);
         onProgress(60);
-        const optimizedUrl = await resizeImage(rawImageUrl, 1920, 1080, 0.85);
+        const optimizedUrl = await resizeImage(rawImageUrl, 2560, 1440, 0.92);
         onProgress(100);
         return [{
           pageNumber: 1,
@@ -195,43 +195,44 @@ export function ImportPresentationDialog({
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.error || 'Failed to convert PowerPoint');
+          const msg = errorData?.error || response.statusText || 'Failed to convert PowerPoint';
+          throw new Error(typeof msg === 'string' ? msg : 'Failed to convert PowerPoint');
         }
 
         const result = await response.json();
         onProgress(90);
 
-        if (result.images && result.images.length > 0) {
+        if (result.images && Array.isArray(result.images) && result.images.length > 0) {
           toast.success(`Converting ${result.images.length} slides...`);
-          
+          // High resolution: 2560x1440, quality 0.92 for slide fidelity
+          const targetW = 2560;
+          const targetH = 1440;
+          const quality = 0.92;
           const optimizedImages = await Promise.all(
             result.images.map(async (img: { pageNumber: number; imageData: string }, idx: number) => {
               try {
-                const optimizedUrl = img.imageData.startsWith('data:image/svg')
-                  ? await svgToPng(img.imageData, 1920, 1080, 0.85)
-                  : await resizeImage(img.imageData, 1920, 1080, 0.85);
-                
+                const optimizedUrl = img.imageData?.startsWith?.('data:image/svg')
+                  ? await svgToPng(img.imageData, targetW, targetH, quality)
+                  : await resizeImage(img.imageData || '', targetW, targetH, quality);
                 return {
-                  pageNumber: img.pageNumber,
+                  pageNumber: img.pageNumber ?? idx + 1,
                   imageUrl: optimizedUrl,
-                  title: `Slide ${img.pageNumber}`,
+                  title: `Slide ${img.pageNumber ?? idx + 1}`,
                 };
               } catch (e) {
                 console.error(`Error optimizing slide ${idx + 1}:`, e);
                 return {
-                  pageNumber: img.pageNumber,
-                  imageUrl: img.imageData,
-                  title: `Slide ${img.pageNumber}`,
+                  pageNumber: img.pageNumber ?? idx + 1,
+                  imageUrl: img.imageData || '',
+                  title: `Slide ${img.pageNumber ?? idx + 1}`,
                 };
               }
             })
           );
-          
           toast.success(`Imported ${optimizedImages.length} slides`);
           return optimizedImages;
         }
-        
-        toast.error('No slides found in PowerPoint file');
+        toast.error(result?.error || 'No slides found in PowerPoint file');
         return [];
       }
 
@@ -255,7 +256,8 @@ export function ImportPresentationDialog({
       return [];
     } catch (error) {
       console.error('Error processing file:', error);
-      toast.error('Failed to process file. Please try again or use a different format.');
+      const message = error instanceof Error ? error.message : 'Failed to process file.';
+      toast.error(message);
       return [];
     }
   };
