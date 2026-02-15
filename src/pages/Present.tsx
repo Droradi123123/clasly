@@ -216,7 +216,7 @@ const Present = () => {
   const currentSlide = slides[currentSlideIndex];
   const unansweredQuestionsCount = questions.filter(q => !q.is_answered).length;
 
-  // Load lecture data
+  // Load lecture data + set status to active immediately so students can join via QR
   useEffect(() => {
     if (!lectureId) return;
 
@@ -228,7 +228,13 @@ const Present = () => {
           setSlides((data.slides as unknown as Slide[]) || []);
           setCurrentSlideIndex(data.current_slide_index || 0);
           setLectureCode(data.lecture_code);
-          setIsLive(data.status === 'active');
+          const wasActive = data.status === 'active';
+          setIsLive(wasActive);
+          // Open lecture for students as soon as presenter enters Present view
+          if (data.status !== 'active' && data.status !== 'ended') {
+            await startLecture(lectureId);
+            setIsLive(true);
+          }
         }
       } catch (error) {
         console.error('Error loading lecture:', error);
@@ -408,15 +414,15 @@ const Present = () => {
     if (currentSlideIndex < slides.length - 1) {
       const newIndex = currentSlideIndex + 1;
       setCurrentSlideIndex(newIndex);
-      setShowCorrectAnswer(false); // Reset reveal state when changing slides
+      setShowCorrectAnswer(false);
       if (lectureId) {
-        await updateLecture(lectureId, { current_slide_index: newIndex });
-        // Force immediate student UI update (independent of postgres_changes)
+        // Broadcast first for instant student sync, then persist to DB
         slideSyncChannelRef.current?.send({
           type: 'broadcast',
           event: 'slide_changed',
           payload: { lectureId, currentSlideIndex: newIndex, ts: Date.now() },
         });
+        await updateLecture(lectureId, { current_slide_index: newIndex });
       }
     }
   };
@@ -425,15 +431,14 @@ const Present = () => {
     if (currentSlideIndex > 0) {
       const newIndex = currentSlideIndex - 1;
       setCurrentSlideIndex(newIndex);
-      setShowCorrectAnswer(false); // Reset reveal state when changing slides
+      setShowCorrectAnswer(false);
       if (lectureId) {
-        await updateLecture(lectureId, { current_slide_index: newIndex });
-        // Force immediate student UI update (independent of postgres_changes)
         slideSyncChannelRef.current?.send({
           type: 'broadcast',
           event: 'slide_changed',
           payload: { lectureId, currentSlideIndex: newIndex, ts: Date.now() },
         });
+        await updateLecture(lectureId, { current_slide_index: newIndex });
       }
     }
   };
@@ -502,16 +507,25 @@ const Present = () => {
           type: 'ranking',
           rankings: aggregateRankingResponses(responses, rankingContent.items || []),
         };
-      case 'sentiment_meter':
+      case 'sentiment_meter': {
+        const { average, distribution } = aggregateSentimentResponses(responses);
         return {
           type: 'sentiment_meter',
-          results: aggregateSentimentResponses(responses),
+          average,
+          distribution,
+          results: { average, distribution },
         };
-      case 'agree_spectrum':
+      }
+      case 'agree_spectrum': {
+        const { average, distribution } = aggregateSentimentResponses(responses);
         return {
           type: 'agree_spectrum',
-          results: aggregateSentimentResponses(responses),
+          average,
+          positions: distribution,
+          distribution,
+          results: { average, distribution },
         };
+      }
       case 'finish_sentence':
         return {
           type: 'finish_sentence',
@@ -742,12 +756,12 @@ const Present = () => {
                 setCurrentSlideIndex(index);
                 setShowCorrectAnswer(false);
                 if (lectureId) {
-                  await updateLecture(lectureId, { current_slide_index: index });
                   slideSyncChannelRef.current?.send({
                     type: 'broadcast',
                     event: 'slide_changed',
                     payload: { lectureId, currentSlideIndex: index, ts: Date.now() },
                   });
+                  await updateLecture(lectureId, { current_slide_index: index });
                 }
               }}
               className={`w-2 h-2 rounded-full transition-all ${

@@ -438,9 +438,14 @@ function ImageAndPositionPopover({
       const { error } = await supabase.storage.from("slide-images").upload(path, file, { upsert: false });
       if (error) throw error;
       const { data: publicData } = supabase.storage.from("slide-images").getPublicUrl(path);
-      // Prefer signed URL so image loads even if bucket is private (1 year expiry)
-      const { data: signedData } = await supabase.storage.from("slide-images").createSignedUrl(path, 60 * 60 * 24 * 365);
-      const displayUrl = signedData?.signedUrl || publicData.publicUrl;
+      // Try signed URL for private buckets; fallback to public (bucket must be Public in Supabase)
+      let displayUrl = publicData.publicUrl;
+      try {
+        const { data: signedData } = await supabase.storage.from("slide-images").createSignedUrl(path, 60 * 60 * 24 * 365);
+        if (signedData?.signedUrl) displayUrl = signedData.signedUrl;
+      } catch {
+        // Use public URL if signed fails (ensure slide-images bucket is Public in Supabase Dashboard)
+      }
       apply(displayUrl);
       setImageUrlInput(displayUrl);
       toast.success("Image uploaded");
