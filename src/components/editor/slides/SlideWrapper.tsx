@@ -161,17 +161,23 @@ export function SlideWrapper({
       dir={direction}
       data-theme={themeId}
     >
-      {/* Background overlay image */}
+      {/* Background overlay image - dimmed so text/components stay readable */}
       {overlayImage && isBackgroundImage && (
-        <div 
-          className="absolute inset-0 z-0"
-          style={{
-            backgroundImage: `url(${design.overlayImageUrl})`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            opacity: 0.3,
-          }}
-        />
+        <div className="absolute inset-0 z-0" key={`bg-${design.overlayImageUrl}`}>
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${design.overlayImageUrl})`,
+              backgroundSize: 'cover',
+              backgroundPosition: 'center',
+              opacity: 0.25,
+            }}
+          />
+          <div
+            className="absolute inset-0 bg-black/20"
+            aria-hidden
+          />
+        </div>
       )}
 
       {/* Theme-specific decorations */}
@@ -183,19 +189,39 @@ export function SlideWrapper({
         style={{ textAlign: design.textAlign || 'center' }}
       >
         {overlayImage && design.overlayImagePosition === 'left' && (
-          <div className="w-1/3 h-full flex-shrink-0">
-            <img src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" />
+          <div className="w-1/2 h-full flex-shrink-0">
+            <img key={design.overlayImageUrl} src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" loading="eager" />
           </div>
         )}
         <div className={`${isSideImage ? 'flex-1' : 'h-full'} flex flex-col`}>
           {children}
         </div>
         {overlayImage && design.overlayImagePosition === 'right' && (
-          <div className="w-1/3 h-full flex-shrink-0">
-            <img src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" />
+          <div className="w-1/2 h-full flex-shrink-0">
+            <img key={design.overlayImageUrl} src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" loading="eager" />
           </div>
         )}
       </div>
+
+      {/* Logo - crisp rendering, positioned by logoPosition */}
+      {design.logoUrl && (
+        <div
+          key={design.logoUrl}
+          className={`absolute z-20 pointer-events-none w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 ${
+            design.logoPosition === 'top-left' ? 'top-2 left-2' :
+            design.logoPosition === 'top-right' ? 'top-2 right-2' :
+            design.logoPosition === 'bottom-left' ? 'bottom-2 left-2' :
+            'bottom-2 right-2'
+          }`}
+        >
+          <img
+            src={design.logoUrl}
+            alt=""
+            className="w-full h-full object-contain"
+            style={{ imageRendering: '-webkit-optimize-contrast' }}
+          />
+        </div>
+      )}
     </motion.div>
   );
 }

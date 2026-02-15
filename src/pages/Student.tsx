@@ -241,10 +241,23 @@ const Student = () => {
 
     channel
       .on('broadcast', { event: 'slide_changed' }, async ({ payload }) => {
-        const p = payload as { currentSlideIndex?: number; ts?: number };
-        console.log('[Student] Broadcast slide_changed:', p.currentSlideIndex);
-        // Always refetch to guarantee we also get updated slides/settings
-        await refetchLectureState(lecture.id);
+        const p = payload as { currentSlideIndex?: number; lectureId?: string; ts?: number };
+        const newIndex = p.currentSlideIndex;
+        if (typeof newIndex === 'number') {
+          // Apply immediately so student sees the right slide without waiting for refetch
+          setCurrentSlideIndex(newIndex);
+          setHasAnswered(false);
+          setSelectedOption(null);
+          setWordInput('');
+          setNumberInput('');
+          setScaleValue([3]);
+          setRankingOrder([]);
+          setSentimentValue([50]);
+          setAgreeValue([50]);
+          setSentenceInput('');
+        }
+        // Refetch in background for full lecture/slides data
+        if (lecture?.id) refetchLectureState(lecture.id);
       })
       .subscribe((status) => {
         console.log('[Student] Slide sync channel status:', status);

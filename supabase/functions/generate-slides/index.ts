@@ -14,25 +14,83 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "Missing authorization header" };
 
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { user: null, error: "Missing token" };
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) return { user: null, error: "Server configuration error" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
-  if (error || !user) return { user: null, error: "Invalid or expired authentication token" };
+  } = await supabase.auth.getUser(token);
+  if (error || !user) {
+    const msg = error?.message || "Invalid or expired authentication token";
+    return { user: null, error: msg };
+  }
   return { user, error: null };
 }
 
 // =============================================================================
 // CREDIT CONSUMPTION
 // =============================================================================
+
+const INITIAL_FREE_CREDITS = 50;
+
+/** Ensure user has a user_credits row (creates one with initial credits if missing). */
+async function ensureUserCredits(userId: string): Promise<{ ok: boolean; error?: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return { ok: false, error: "Server configuration error" };
+  }
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: existing } = await supabase
+    .from("user_credits")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing) return { ok: true };
+  const { error } = await supabase.from("user_credits").insert({
+    user_id: userId,
+    ai_tokens_balance: INITIAL_FREE_CREDITS,
+    vibe_credits_balance: 20,
+  });
+  if (error) {
+    console.error("[generate-slides] Failed to create user_credits:", error);
+    return { ok: false, error: "Could not create credits" };
+  }
+  console.log(`💳 Created user_credits for ${userId} with ${INITIAL_FREE_CREDITS} AI tokens`);
+  return { ok: true };
+}
+
+/** Check if user has enough credits (does not deduct). */
+async function checkCreditsBalance(
+  userId: string,
+  amount: number
+): Promise<{ allowed: boolean; error?: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return { allowed: false, error: "Server configuration error" };
+  }
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: credits, error: fetchError } = await supabase
+    .from("user_credits")
+    .select("ai_tokens_balance")
+    .eq("user_id", userId)
+    .single();
+  if (fetchError || !credits) {
+    return { allowed: false, error: "Could not fetch credits" };
+  }
+  if (credits.ai_tokens_balance < amount) {
+    return { allowed: false, error: "Insufficient credits" };
+  }
+  return { allowed: true };
+}
 
 async function consumeCredits(
   userId: string,
@@ -1032,12 +1090,23 @@ serve(async (req) => {
     // Auth verification
     const { user, error: authError } = await verifyAuth(req);
     if (authError || !user) {
+      console.error("[generate-slides] Auth failed:", authError || "No user");
       return new Response(JSON.stringify({ error: authError || "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     console.log(`🔐 User: ${user.id}`);
+
+    // Ensure user has a user_credits row (for OAuth users who might not have triggered handle_new_user_signup)
+    const ensureResult = await ensureUserCredits(user.id);
+    if (!ensureResult.ok) {
+      console.error("[generate-slides] ensureUserCredits failed:", ensureResult.error);
+      return new Response(
+        JSON.stringify({ error: ensureResult.error || "Could not initialize credits" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const body = await req.json();
     const { description, targetAudience = "General Audience", slideCount = 8, singleSlide, skipImages = false } = body;
@@ -1060,17 +1129,12 @@ serve(async (req) => {
 
       console.log(`🎯 Generating single ${type} slide`);
 
-      // Consume 1 credit for single slide generation
-      const creditResult = await consumeCredits(
-        user.id,
-        1,
-        `Single slide generation: ${type}`
-      );
-
-      if (!creditResult.success) {
+      // Check balance first (don't deduct until after success)
+      const balanceCheck = await checkCreditsBalance(user.id, 1);
+      if (!balanceCheck.allowed) {
         return new Response(
           JSON.stringify({ 
-            error: creditResult.error || "Insufficient credits",
+            error: balanceCheck.error || "Insufficient credits",
           }),
           { 
             status: 402, 
@@ -1112,7 +1176,19 @@ serve(async (req) => {
         prompt,
       );
 
-      // Update usage stats
+      // Deduct credits only after successful generation
+      const creditResult = await consumeCredits(
+        user.id,
+        1,
+        `Single slide generation: ${type}`
+      );
+      if (!creditResult.success) {
+        console.error("[generate-slides] Failed to consume after single slide:", creditResult.error);
+        return new Response(
+          JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       await updateUsageStats(user.id, 1, false);
 
       console.log(`✅ Single slide generated: ${type}`);
@@ -1137,18 +1213,13 @@ serve(async (req) => {
 
     console.log(`🎯 Generating full presentation: "${description}"`);
 
-    // Consume credits: 1 credit per slide for full presentation
+    // Check balance first (don't deduct until after success)
     const creditsToConsume = slideCount;
-    const creditResult = await consumeCredits(
-      user.id,
-      creditsToConsume,
-      `Presentation generation: ${slideCount} slides`
-    );
-
-    if (!creditResult.success) {
+    const balanceCheck = await checkCreditsBalance(user.id, creditsToConsume);
+    if (!balanceCheck.allowed) {
       return new Response(
         JSON.stringify({ 
-          error: creditResult.error || "Insufficient credits",
+          error: balanceCheck.error || "Insufficient credits",
         }),
         { 
           status: 402, 
@@ -1209,7 +1280,19 @@ serve(async (req) => {
       mapSlideToFrontendFormat(slide, index, selectedTheme, detectedLanguage, imageMap.get(index), description),
     );
 
-    // Update usage stats
+    // Deduct credits only after successful generation
+    const creditResult = await consumeCredits(
+      user.id,
+      creditsToConsume,
+      `Presentation generation: ${mappedSlides.length} slides`
+    );
+    if (!creditResult.success) {
+      console.error("[generate-slides] Failed to consume after full presentation:", creditResult.error);
+      return new Response(
+        JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     await updateUsageStats(user.id, mappedSlides.length, true);
 
     console.log(`🚀 Mapped ${mappedSlides.length} slides. Credits consumed: ${creditsToConsume}`);
@@ -1231,8 +1314,9 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error: any) {
-    console.error("❌ Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message || "Unknown error occurred" }), {
+    const errMsg = error?.message || String(error) || "Unknown error occurred";
+    console.error("[generate-slides] Error:", errMsg, error?.stack ? "\n" + error.stack : "");
+    return new Response(JSON.stringify({ error: errMsg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

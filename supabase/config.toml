@@ -1,4 +1,5 @@
-project_id = "vkviqlmeiqpavpeuoldw"
+# Use your Supabase project ref (Dashboard → Settings → General). Required for CLI deploy so verify_jwt applies.
+project_id = "gctdhjgxrshrltbntjqj"
 
 [functions.generate-slides]
 verify_jwt = false

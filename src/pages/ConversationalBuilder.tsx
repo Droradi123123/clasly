@@ -12,7 +12,7 @@ import { Slide } from '@/types/slides';
 import { useAuth } from '@/hooks/useAuth';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase } from '@/integrations/supabase/client';
-import { EDGE_FUNCTION_URLS, getEdgeFunctionErrorMessage, getFunctionsHeaders } from '@/lib/supabaseFunctions';
+import { getEdgeFunctionErrorMessage } from '@/lib/supabaseFunctions';
 import { useSubscriptionContext } from '@/contexts/SubscriptionContext';
 
 const ConversationalBuilder: React.FC = () => {
@@ -127,28 +127,21 @@ const ConversationalBuilder: React.FC = () => {
         throw new Error("Please sign in to generate presentations");
       }
 
-      const headers = getFunctionsHeaders(session.access_token);
-      headers['Authorization'] = `Bearer ${session.access_token}`;
-      headers['Content-Type'] = 'application/json';
-
-      const res = await fetch(EDGE_FUNCTION_URLS['generate-slides'], {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
+      const { data, error: fnError } = await supabase.functions.invoke('generate-slides', {
+        body: {
           description: prompt,
           contentType: 'interactive',
           targetAudience,
           difficulty: 'intermediate',
           slideCount: isFree ? (maxSlides ?? 5) : 7,
-        }),
+        },
       });
 
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        const msg = errBody?.error || (res.status === 401 ? 'Session invalid or expired. Please sign out and sign in again, then try again.' : `Error ${res.status}`);
+      if (fnError) {
+        const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
         throw new Error(msg);
       }
-      const resData = (await res.json()) as { error?: string; slides?: unknown[]; theme?: unknown };
+      const resData = data as { error?: string; slides?: unknown[]; theme?: unknown };
       if (resData?.error) throw new Error(resData.error);
       if (!resData?.slides?.length) throw new Error('No slides returned');
 
@@ -167,7 +160,7 @@ const ConversationalBuilder: React.FC = () => {
         `- "Add a quiz after slide 2"\n` +
         `- "Delete the timeline slide"\n` +
         `- "Change images to a different style"\n\n` +
-        `When you're happy with the result, click **"Approve & Edit"** to continue in the full editor.`
+        `When you're happy with the result, **save and continue to the full editor** using the button above or the **"Continue to Edit"** button below.`
       );
     } catch (error) {
       console.error('Error generating presentation:', error);
@@ -315,7 +308,7 @@ const ConversationalBuilder: React.FC = () => {
             disabled={sandboxSlides.length === 0 || isSaving || isGenerating}
           >
             <Check className="w-4 h-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Approve & Edit'}
+            {isSaving ? 'Saving...' : 'Approve & Continue to Edit'}
           </Button>
         </div>
       </header>
@@ -328,7 +321,11 @@ const ConversationalBuilder: React.FC = () => {
           animate={{ x: 0, opacity: 1 }}
           className="w-[400px] min-w-[350px] max-w-[500px] border-r border-border"
         >
-          <ChatPanel onSendMessage={handleSendMessage} />
+          <ChatPanel
+          onSendMessage={handleSendMessage}
+          onContinueToEdit={handleApprove}
+          canContinueToEdit={sandboxSlides.length > 0 && !isSaving && !isGenerating}
+        />
         </motion.div>
         
         {/* Preview panel - Right side */}

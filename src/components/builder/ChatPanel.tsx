@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Sparkles, Loader2, Zap, AlertCircle } from 'lucide-react';
+import { Send, Sparkles, Loader2, Zap, AlertCircle, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +12,9 @@ import ReactMarkdown from 'react-markdown';
 
 interface ChatPanelProps {
   onSendMessage: (message: string) => void;
+  /** When set, show a "Continue to Edit" button in the chat (after messages) when user can proceed to editor */
+  onContinueToEdit?: () => void;
+  canContinueToEdit?: boolean;
 }
 
 const MessageBubble = ({ message }: { message: ChatMessage }) => {
@@ -122,7 +125,7 @@ const CreditStatus: React.FC = () => {
   );
 };
 
-const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, canContinueToEdit }) => {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -130,6 +133,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage }) => {
   const { messages, isGenerating } = useConversationalBuilder();
   const { aiTokensRemaining } = useCredits();
   const hasCredits = aiTokensRemaining > 0;
+  const showContinueCta = Boolean(onContinueToEdit && canContinueToEdit);
   
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -200,9 +204,30 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage }) => {
               </p>
             </motion.div>
           ) : (
-            messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))
+            <>
+              {messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))}
+              {showContinueCta && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-4 p-4 rounded-xl border-2 border-primary/30 bg-primary/5"
+                >
+                  <p className="text-sm font-medium text-foreground mb-3">
+                    Happy with the result? Save and open in the full editor to customize further.
+                  </p>
+                  <Button
+                    variant="hero"
+                    className="w-full"
+                    onClick={onContinueToEdit}
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    Continue to Edit
+                  </Button>
+                </motion.div>
+              )}
+            </>
           )}
         </AnimatePresence>
       </ScrollArea>

@@ -740,8 +740,14 @@ const Present = () => {
               key={index}
               onClick={async () => {
                 setCurrentSlideIndex(index);
+                setShowCorrectAnswer(false);
                 if (lectureId) {
                   await updateLecture(lectureId, { current_slide_index: index });
+                  slideSyncChannelRef.current?.send({
+                    type: 'broadcast',
+                    event: 'slide_changed',
+                    payload: { lectureId, currentSlideIndex: index, ts: Date.now() },
+                  });
                 }
               }}
               className={`w-2 h-2 rounded-full transition-all ${

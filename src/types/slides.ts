@@ -28,6 +28,12 @@ export type ImagePosition = 'left' | 'right';
 // Overlay image position for all slides
 export type OverlayImagePosition = 'none' | 'background' | 'left' | 'right';
 
+// Logo position on slides
+export type LogoPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+// Logo scope - current slide only or all slides
+export type LogoScope = 'current' | 'all';
+
 export type InteractionStyle = 
   | 'bar_chart' 
   | 'bouncing_dots' 
@@ -95,6 +101,10 @@ export interface SlideDesign {
   designStyleId?: string; // Design style (minimal/dynamic) - layer on top of theme
   overlayImageUrl?: string; // Image overlay for any slide
   overlayImagePosition?: OverlayImagePosition; // Position of overlay image
+  /** Logo URL - shown per slide or all slides based on logoScope */
+  logoUrl?: string;
+  logoPosition?: LogoPosition;
+  logoScope?: LogoScope; // 'current' = this slide only, 'all' = all slides in presentation
 }
 
 // Activity settings for interactive slides

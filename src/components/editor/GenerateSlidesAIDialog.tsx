@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 import { GeneratedTheme } from "@/types/generatedTheme";
 import { supabase } from "@/integrations/supabase/client";
-import { EDGE_FUNCTION_URLS, getFunctionsHeaders } from "@/lib/supabaseFunctions";
+import { getEdgeFunctionErrorMessage } from "@/lib/supabaseFunctions";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 
 interface GenerateSlidesAIDialogProps {
@@ -127,32 +127,21 @@ export default function GenerateSlidesAIDialog({
         throw new Error("Please sign in to generate presentations");
       }
 
-      const headers = getFunctionsHeaders(session.access_token);
-      headers["Authorization"] = `Bearer ${session.access_token}`;
-      headers["Content-Type"] = "application/json";
-
-      const res = await fetch(EDGE_FUNCTION_URLS["generate-slides"], {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
+      const { data, error: fnError } = await supabase.functions.invoke("generate-slides", {
+        body: {
           description,
           contentType,
           targetAudience,
           difficulty,
           slideCount: expectedCount,
-        }),
+        },
       });
 
-      if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
-        const msg =
-          errBody?.error ||
-          (res.status === 401
-            ? "Session invalid or expired. Please sign out and sign in again, then try again."
-            : `Error ${res.status}`);
+      if (fnError) {
+        const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate slides.");
         throw new Error(msg);
       }
-      const resData = (await res.json()) as { error?: string; slides?: unknown[]; theme?: unknown };
+      const resData = data as { error?: string; slides?: unknown[]; theme?: unknown };
       if (resData?.error) throw new Error(resData.error);
       if (!resData?.slides?.length) throw new Error("No slides returned");
 

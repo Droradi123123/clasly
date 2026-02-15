@@ -18,20 +18,19 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
     return { user: null, error: "Missing authorization header" };
   }
 
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { user: null, error: "Missing token" };
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  
   if (!supabaseUrl || !supabaseAnonKey) {
     return { user: null, error: "Server configuration error" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
-
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) {
-    return { user: null, error: "Invalid or expired authentication token" };
+    return { user: null, error: error?.message || "Invalid or expired authentication token" };
   }
 
   return { user, error: null };
