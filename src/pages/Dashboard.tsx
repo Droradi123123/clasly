@@ -79,38 +79,51 @@ const Dashboard = () => {
 
   // No auth redirect - dashboard is open to all users
 
-  // Load lectures from database (only current user's lectures)
+  // Load lectures immediately when user is available (only current user's lectures)
   useEffect(() => {
+    if (!user) {
+      setIsLoading(false);
+      setLectures([]);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoading(true);
+
     const loadLectures = async () => {
-      if (!user) return;
-      
       try {
         const { data, error } = await supabase
           .from('lectures')
-          .select('*')
+          .select('id, title, status, lecture_code, slides, created_at, updated_at, user_id')
           .eq('user_id', user.id)
           .order('updated_at', { ascending: false });
 
+        if (cancelled) return;
         if (error) throw error;
         setLectures((data as unknown as Lecture[]) || []);
       } catch (error) {
-        console.error('Error loading lectures:', error);
-        toast.error('Failed to load lectures');
+        if (!cancelled) {
+          console.error('Error loading lectures:', error);
+          toast.error('Failed to load lectures');
+          setLectures([]);
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     loadLectures();
 
-    // Check for AI prompt from home page
+    // Check for AI prompt from home page (once per mount)
     const aiPrompt = localStorage.getItem("clasly_ai_prompt");
     if (aiPrompt) {
       localStorage.removeItem("clasly_ai_prompt");
       setNewLectureTitle(aiPrompt);
       setIsCreateOpen(true);
     }
-  }, [user]);
+
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   const resetCreateDialog = () => {
     setCreateMode('choose');
@@ -466,6 +479,21 @@ const Dashboard = () => {
           </div>
 
           {/* Lectures Grid */}
+          {user && isLoading ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <Loader2 className="w-10 h-10 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">Loading your lectures...</p>
+            </div>
+          ) : !user ? (
+            <div className="text-center py-12 rounded-xl border border-dashed border-border bg-muted/30">
+              <Presentation className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">Sign in to see your lectures</h3>
+              <p className="text-muted-foreground mb-4">Your presentations will appear here once you sign in.</p>
+              <Button variant="hero" onClick={() => navigate("/")}>
+                Get Started
+              </Button>
+            </div>
+          ) : (
           <div className="grid gap-4">
             {filteredLectures.map((lecture) => (
               <Card 
@@ -547,6 +575,7 @@ const Dashboard = () => {
               </div>
             )}
           </div>
+          )}
         </div>
       </main>
     </div>

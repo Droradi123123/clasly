@@ -453,9 +453,9 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               transition={{ duration: 0.6, ease: "easeOut" }}
               className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-display font-bold text-foreground mb-5 leading-[1.1] tracking-tight"
             >
-              Build interactive slides that{" "}
+              Turn your words into{" "}
               <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
-                engage everyone in seconds.
+                interactive lectures.
               </span>
             </motion.h1>
 
@@ -466,9 +466,9 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               transition={{ duration: 0.6, delay: 0.15 }}
               className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto"
             >
-              AI builds the complete experience instantly: an interactive deck for the main screen{" "}
-              <span className="font-semibold text-foreground/80">AND</span>{" "}
-              a live game interface for audience phones.
+              AI builds the full experience in seconds: an interactive deck for the main screen{" "}
+              <span className="font-semibold text-foreground/80">and</span>{" "}
+              a live interface for every phone in the room.
             </motion.p>
             
             {/* Mobile Illustrations - Show on smaller screens */}

@@ -208,32 +208,34 @@ export function ImportPresentationDialog({
         onProgress(90);
 
         if (result.images && Array.isArray(result.images) && result.images.length > 0) {
-          toast.success(`Converting ${result.images.length} slides...`);
-          // High resolution: 2560x1440, quality 0.92 for slide fidelity
-          const targetW = 2560;
-          const targetH = 1440;
-          const quality = 0.92;
-          const optimizedImages = await Promise.all(
-            result.images.map(async (img: { pageNumber: number; imageData: string }, idx: number) => {
-              try {
-                const optimizedUrl = img.imageData?.startsWith?.('data:image/svg')
-                  ? await svgToPng(img.imageData, targetW, targetH, quality)
-                  : await resizeImage(img.imageData || '', targetW, targetH, quality);
-                return {
-                  pageNumber: img.pageNumber ?? idx + 1,
-                  imageUrl: optimizedUrl,
-                  title: `Slide ${img.pageNumber ?? idx + 1}`,
-                };
-              } catch (e) {
-                console.error(`Error optimizing slide ${idx + 1}:`, e);
-                return {
-                  pageNumber: img.pageNumber ?? idx + 1,
-                  imageUrl: img.imageData || '',
-                  title: `Slide ${img.pageNumber ?? idx + 1}`,
-                };
-              }
-            })
-          );
+          setProgressMessage(`Preparing ${result.images.length} slides...`);
+          // Lighter processing: 1920x1080, 0.85 — faster and more stable
+          const targetW = 1920;
+          const targetH = 1080;
+          const quality = 0.85;
+          const optimizedImages: ImportedSlide[] = [];
+          for (let idx = 0; idx < result.images.length; idx++) {
+            const img = result.images[idx] as { pageNumber?: number; imageData?: string };
+            setProgressMessage(`Slide ${idx + 1} of ${result.images.length}`);
+            const data = img.imageData || '';
+            try {
+              const optimizedUrl = data.startsWith('data:image/svg')
+                ? await svgToPng(data, targetW, targetH, quality)
+                : await resizeImage(data, targetW, targetH, quality);
+              optimizedImages.push({
+                pageNumber: img.pageNumber ?? idx + 1,
+                imageUrl: optimizedUrl,
+                title: `Slide ${img.pageNumber ?? idx + 1}`,
+              });
+            } catch (e) {
+              console.warn(`Slide ${idx + 1} fallback:`, e);
+              optimizedImages.push({
+                pageNumber: img.pageNumber ?? idx + 1,
+                imageUrl: data,
+                title: `Slide ${img.pageNumber ?? idx + 1}`,
+              });
+            }
+          }
           toast.success(`Imported ${optimizedImages.length} slides`);
           return optimizedImages;
         }
@@ -412,7 +414,7 @@ export function ImportPresentationDialog({
                         {isDragging ? 'Drop your file here' : 'Drag & drop or click to upload'}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Supports PDF, PPTX, PNG, JPG (max 20MB)
+                        Supports PDF, PPTX, PNG, JPG (max 20MB). For fastest import use PDF or images.
                       </p>
                     </>
                   )}
