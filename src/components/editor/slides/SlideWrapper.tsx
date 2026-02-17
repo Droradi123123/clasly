@@ -1,7 +1,7 @@
 import { ReactNode, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Slide, GRADIENT_PRESETS } from "@/types/slides";
-import { ThemeId, getTheme } from "@/types/themes";
+import { ThemeId, getTheme, DEFAULT_THEME_ID } from "@/types/themes";
 import { ThemedDecorations } from "@/components/effects/ThemedDecorations";
 import { inferDirectionFromSlide } from "@/lib/textDirection";
 
@@ -18,7 +18,7 @@ export function SlideWrapper({
   children, 
   isPreview = false, 
   showEffects = true,
-  themeId = 'neon-cyber'
+  themeId = DEFAULT_THEME_ID
 }: SlideWrapperProps) {
   const design = slide.design || {};
   const theme = useMemo(() => getTheme(themeId), [themeId]);
@@ -83,12 +83,15 @@ export function SlideWrapper({
     '--slide-dir': direction,
   } as React.CSSProperties), [theme, design.textAlign, direction]);
 
-  // Get theme-specific border radius
+  // Get theme-specific border radius (each theme has distinct shape)
   const getThemeBorderRadius = () => {
     switch (themeId) {
       case 'swiss-minimal': return 'rounded-none';
       case 'soft-pop': return 'rounded-3xl';
       case 'academic-pro': return 'rounded-lg';
+      case 'sunset-warmth': return 'rounded-xl md:rounded-2xl';
+      case 'ocean-breeze': return 'rounded-xl md:rounded-2xl';
+      case 'neon-cyber': return 'rounded-xl md:rounded-2xl';
       default: return 'rounded-xl md:rounded-2xl';
     }
   };
@@ -107,15 +110,12 @@ export function SlideWrapper({
     }
   };
 
-  // Determine text color
+  // Determine text color – each theme defines its own text primary
   const getTextColor = () => {
     if (design.textColor) {
       return design.textColor;
     }
-    if (themeId === 'soft-pop' || themeId === 'swiss-minimal') {
-      return `hsl(${theme.tokens.textPrimary})`;
-    }
-    return '#ffffff';
+    return `hsl(${theme.tokens.textPrimary})`;
   };
 
   // Get animation config based on theme

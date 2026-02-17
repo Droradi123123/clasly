@@ -21,7 +21,7 @@ import { ThemeId, getTheme, THEMES } from "@/types/themes";
 const emojis = ["👍", "❤️", "🎉", "🤔", "💡", "👏"];
 
 // Default option colors matching presenter theme
-const DEFAULT_OPTION_COLORS = THEMES['neon-cyber'].optionColors;
+const DEFAULT_OPTION_COLORS = THEMES['academic-pro'].optionColors;
 
 const Student = () => {
   const { lectureCode } = useParams();
@@ -59,7 +59,7 @@ const Student = () => {
   const isInteractiveSlide = slideTypeInfo?.category === 'interactive' || slideTypeInfo?.category === 'quiz';
 
   // Get theme colors - use lecture settings or default
-  const themeId: ThemeId = (lecture?.settings?.themeId as ThemeId) || 'neon-cyber';
+  const themeId: ThemeId = (lecture?.settings?.themeId as ThemeId) || 'academic-pro';
   const theme = getTheme(themeId);
   const optionColors = theme.optionColors || DEFAULT_OPTION_COLORS;
 

@@ -426,16 +426,16 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
   }, []);
 
   return (
-    <section className="relative min-h-[90vh] flex items-center justify-center px-4 py-16 md:py-24 bg-background overflow-hidden">
+    <section className="relative min-h-[85vh] sm:min-h-[90vh] flex items-center justify-center px-3 sm:px-4 py-10 sm:py-16 md:py-24 bg-background overflow-hidden">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-transparent pointer-events-none" />
       
       {/* Soft glow behind the input */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/4 w-[800px] h-[500px] bg-gradient-radial from-primary/5 via-transparent to-transparent blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 container mx-auto max-w-7xl">
+      <div className="relative z-10 container mx-auto max-w-7xl w-full">
         {/* Top Section with Illustrations and Text */}
-        <div className="relative flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-4 mb-10">
+        <div className="relative flex flex-col lg:flex-row items-center justify-center gap-6 sm:gap-8 lg:gap-4 mb-6 sm:mb-10">
           {/* Sync Connector - ABOVE everything */}
           <SyncConnector />
           
@@ -445,13 +445,13 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
           </div>
 
           {/* Center Text Content */}
-          <div className="text-center max-w-2xl px-4 lg:px-8 relative z-10">
+          <div className="text-center max-w-2xl px-2 sm:px-4 lg:px-8 relative z-10">
             {/* Headline */}
             <motion.h1
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-display font-bold text-foreground mb-5 leading-[1.1] tracking-tight"
+              className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-3 sm:mb-5 leading-[1.15] tracking-tight"
             >
               Turn your words into{" "}
               <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
@@ -464,7 +464,7 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.15 }}
-              className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto"
+              className="text-sm sm:text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto"
             >
               AI builds the full experience in seconds: an interactive deck for the main screen{" "}
               <span className="font-semibold text-foreground/80">and</span>{" "}
@@ -472,8 +472,8 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
             </motion.p>
             
             {/* Mobile Illustrations - Show on smaller screens */}
-            <div className="flex lg:hidden items-center justify-center gap-6 mt-8 relative">
-              <div className="scale-75">
+            <div className="flex lg:hidden items-center justify-center gap-3 sm:gap-6 mt-6 sm:mt-8 relative scale-90 sm:scale-100">
+              <div className="scale-75 sm:scale-75">
                 <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} />
               </div>
               <div className="scale-75">
@@ -508,33 +508,33 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
           </div>
         </div>
 
-        {/* Large AI Input Box - The Star (UNCHANGED) */}
+        {/* Large AI Input Box - The Star */}
         <motion.div
           initial={{ opacity: 0, y: 40, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.6, delay: 0.3 }}
-          className="relative max-w-3xl mx-auto"
+          className="relative max-w-3xl mx-auto w-full"
         >
           {/* Gradient border effect */}
-          <div className="absolute -inset-[2px] rounded-3xl bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 opacity-60 blur-sm" />
+          <div className="absolute -inset-[2px] rounded-2xl sm:rounded-3xl bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 opacity-60 blur-sm" />
           
           {/* Main container */}
-          <div className="relative bg-card rounded-3xl border border-border shadow-2xl shadow-primary/5 overflow-hidden">
+          <div className="relative bg-card rounded-2xl sm:rounded-3xl border border-border shadow-2xl shadow-primary/5 overflow-hidden">
             {/* Textarea - The Canvas */}
-            <div className="p-6 pb-4">
+            <div className="p-4 sm:p-6 pb-3 sm:pb-4">
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe your topic, audience, and goal…
 
 Example: Create a fun trivia quiz about world capitals for my geography class. Include multiple choice questions and a word cloud for student feedback."
-                className="min-h-[180px] md:min-h-[200px] w-full border-0 bg-transparent resize-none text-base md:text-lg placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 leading-relaxed"
+                className="min-h-[140px] sm:min-h-[180px] md:min-h-[200px] w-full border-0 bg-transparent resize-none text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 leading-relaxed"
               />
             </div>
 
             {/* Bottom Bar */}
-            <div className="flex items-center justify-between gap-4 px-6 py-4 border-t border-border/50 bg-muted/30">
-              {/* Left hints */}
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-t border-border/50 bg-muted/30">
+              {/* Left hints - hidden on mobile */}
               <div className="hidden sm:flex items-center gap-4 text-muted-foreground">
                 <div className="flex items-center gap-1.5 text-sm">
                   <Sparkles className="w-4 h-4 text-primary/70" />
@@ -542,12 +542,12 @@ Example: Create a fun trivia quiz about world capitals for my geography class. I
                 </div>
               </div>
 
-              {/* Right CTA */}
+              {/* Right CTA - full width on mobile */}
               <Button
                 size="lg"
                 onClick={handleGenerate}
                 disabled={!prompt.trim()}
-                className="h-12 px-8 rounded-xl text-base font-semibold gap-2 ml-auto shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow"
+                className="h-11 sm:h-12 px-6 sm:px-8 rounded-xl text-sm sm:text-base font-semibold gap-2 w-full sm:w-auto sm:ml-auto shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow"
               >
                 Build it
                 <Zap className="w-4 h-4" />
@@ -561,7 +561,7 @@ Example: Create a fun trivia quiz about world capitals for my geography class. I
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.5 }}
-          className="mt-8 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground"
+          className="mt-5 sm:mt-8 flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground"
         >
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary/60" />
@@ -578,9 +578,9 @@ Example: Create a fun trivia quiz about world capitals for my geography class. I
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.6 }}
-          className="mt-10 flex flex-wrap items-center justify-center gap-2"
+          className="mt-6 sm:mt-10 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-1"
         >
-          <span className="text-sm text-muted-foreground mr-2">Try:</span>
+          <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 shrink-0">Try:</span>
           {[
             "Team ice-breaker quiz",
             "Product launch poll",
@@ -589,7 +589,7 @@ Example: Create a fun trivia quiz about world capitals for my geography class. I
             <button
               key={template}
               onClick={() => setPrompt(`Create a ${template.toLowerCase()} with interactive questions that engage participants`)}
-              className="px-4 py-2 rounded-full bg-muted/60 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
+              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-muted/60 text-xs sm:text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
             >
               {template}
             </button>

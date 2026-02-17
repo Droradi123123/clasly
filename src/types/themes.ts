@@ -1,4 +1,5 @@
 // ===== Theme System Types =====
+// 6 distinct themes for teachers & lecturers: Academic, Energy, Professional, Warm, Calm, Modern
 
 export type ThemeId = 'neon-cyber' | 'soft-pop' | 'academic-pro' | 'swiss-minimal' | 'sunset-warmth' | 'ocean-breeze';
 
@@ -12,40 +13,40 @@ export interface ThemeTokens {
   accentSecondary: string;
   surface: string;
   surfaceHover: string;
-  
+
   // Visual properties
   borderRadius: string;
   borderRadiusLg: string;
   borderWidth: string;
   borderColor: string;
-  
+
   // Typography
   fontFamily: string;
   fontFamilyDisplay: string;
   fontWeight: string;
   letterSpacing: string;
-  
+
   // Effects
   shadowStyle: 'flat' | 'soft' | 'glow' | 'hard';
   shadowColor: string;
-  
+
   // Animation personality
   animationStyle: 'spring' | 'smooth' | 'snappy' | 'bouncy';
-  
+
   // Decorative elements
   decorativeStyle: 'tech-grid' | 'bubbles' | 'lines' | 'geometric' | 'waves' | 'aurora';
   decorativeOpacity: number;
-  
+
   // Button style
   buttonStyle: 'pill' | 'rounded' | 'square' | 'sharp';
   buttonEffect: 'glow' | 'shadow' | 'border' | 'flat';
-  
+
   // Progress/meter style
   progressStyle: 'rounded' | 'square' | 'gradient';
-  
+
   // Badge style
   badgeStyle: 'solid' | 'outline' | 'subtle' | 'pill';
-  
+
   // Card style
   cardStyle: 'glass' | 'solid' | 'bordered' | 'elevated';
   cardBlur: boolean;
@@ -56,146 +57,50 @@ export interface Theme {
   name: string;
   description: string;
   emoji: string;
-  isPremium?: boolean; // Requires Pro plan
+  isPremium?: boolean;
   preview: {
     gradient: string;
     accentColor: string;
   };
   tokens: ThemeTokens;
-  // Option button colors per theme
   optionColors: string[];
 }
 
-// ===== The 6 Core Themes =====
+// ===== 6 Core Themes – Clearly distinct for lectures & teaching =====
 
 export const THEMES: Record<ThemeId, Theme> = {
-  'neon-cyber': {
-    id: 'neon-cyber',
-    name: 'Neon Cyber',
-    description: 'Futuristic tech',
-    emoji: '🌌',
-    preview: {
-      gradient: 'linear-gradient(135deg, #0a0a1f 0%, #1a1a3e 40%, #0d0d2b 100%)',
-      accentColor: '#00FF94',
-    },
-    tokens: {
-      bg: '240 50% 6%',
-      bgSecondary: '240 45% 10%',
-      textPrimary: '0 0% 100%',
-      textSecondary: '200 30% 75%',
-      accent: '156 100% 50%',
-      accentSecondary: '200 100% 60%',
-      surface: '240 40% 12%',
-      surfaceHover: '240 40% 18%',
-      borderRadius: '0.75rem',
-      borderRadiusLg: '1rem',
-      borderWidth: '1px',
-      borderColor: '156 100% 50% / 0.3',
-      fontFamily: '"Space Grotesk", "Inter", sans-serif',
-      fontFamilyDisplay: '"Orbitron", "Space Grotesk", sans-serif',
-      fontWeight: '500',
-      letterSpacing: '0.02em',
-      shadowStyle: 'glow',
-      shadowColor: '156 100% 50% / 0.4',
-      animationStyle: 'snappy',
-      decorativeStyle: 'tech-grid',
-      decorativeOpacity: 0.08,
-      buttonStyle: 'rounded',
-      buttonEffect: 'glow',
-      progressStyle: 'gradient',
-      badgeStyle: 'outline',
-      cardStyle: 'glass',
-      cardBlur: true,
-    },
-    optionColors: [
-      'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500',
-      'bg-gradient-to-r from-purple-500 to-pink-600 hover:from-purple-400 hover:to-pink-500',
-      'bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500',
-      'bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-400 hover:to-red-500',
-      'bg-gradient-to-r from-violet-500 to-indigo-600 hover:from-violet-400 hover:to-indigo-500',
-      'bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-400 hover:to-pink-500',
-    ],
-  },
-  
-  'soft-pop': {
-    id: 'soft-pop',
-    name: 'Soft Pop',
-    description: 'Playful & fun',
-    emoji: '🎨',
-    preview: {
-      gradient: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 50%, #ff9a9e 100%)',
-      accentColor: '#FF6B6B',
-    },
-    tokens: {
-      bg: '25 100% 96%',
-      bgSecondary: '15 90% 93%',
-      textPrimary: '0 30% 15%',
-      textSecondary: '0 20% 35%',
-      accent: '0 100% 71%',
-      accentSecondary: '330 90% 65%',
-      surface: '0 0% 100%',
-      surfaceHover: '25 60% 97%',
-      borderRadius: '1.5rem',
-      borderRadiusLg: '2rem',
-      borderWidth: '0px',
-      borderColor: '0 0% 0% / 0.05',
-      fontFamily: '"Nunito", "Quicksand", sans-serif',
-      fontFamilyDisplay: '"Fredoka", "Nunito", sans-serif',
-      fontWeight: '600',
-      letterSpacing: '-0.01em',
-      shadowStyle: 'soft',
-      shadowColor: '0 70% 70% / 0.2',
-      animationStyle: 'bouncy',
-      decorativeStyle: 'bubbles',
-      decorativeOpacity: 0.15,
-      buttonStyle: 'pill',
-      buttonEffect: 'shadow',
-      progressStyle: 'rounded',
-      badgeStyle: 'pill',
-      cardStyle: 'elevated',
-      cardBlur: false,
-    },
-    optionColors: [
-      'bg-gradient-to-r from-rose-400 to-pink-500 hover:from-rose-300 hover:to-pink-400',
-      'bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400',
-      'bg-gradient-to-r from-teal-400 to-cyan-500 hover:from-teal-300 hover:to-cyan-400',
-      'bg-gradient-to-r from-violet-400 to-purple-500 hover:from-violet-300 hover:to-purple-400',
-      'bg-gradient-to-r from-lime-400 to-green-500 hover:from-lime-300 hover:to-green-400',
-      'bg-gradient-to-r from-sky-400 to-blue-500 hover:from-sky-300 hover:to-blue-400',
-    ],
-  },
-  
+  // 1. Academic – formal, university, serious (navy + gold)
   'academic-pro': {
     id: 'academic-pro',
-    name: 'Academic Pro',
-    description: 'Professional',
+    name: 'Academic',
+    description: 'Formal & scholarly – ideal for university and serious topics',
     emoji: '📚',
     preview: {
-      gradient: 'linear-gradient(160deg, #1a365d 0%, #2c5282 40%, #2b6cb0 100%)',
-      accentColor: '#ECC94B',
+      gradient: 'linear-gradient(165deg, #0f172a 0%, #1e3a5f 35%, #172554 70%, #0c1929 100%)',
+      accentColor: '#EAB308',
     },
     tokens: {
-      bg: '215 55% 22%',
-      bgSecondary: '215 50% 28%',
-      textPrimary: '0 0% 100%',
-      textSecondary: '210 25% 82%',
-      accent: '44 92% 60%',
-      accentSecondary: '196 80% 55%',
-      surface: '215 48% 26%',
-      surfaceHover: '215 48% 32%',
+      bg: '222 47% 11%',
+      bgSecondary: '222 44% 18%',
+      textPrimary: '45 100% 96%',
+      textSecondary: '220 20% 75%',
+      accent: '48 96% 53%',
+      accentSecondary: '43 96% 56%',
+      surface: '222 42% 16%',
+      surfaceHover: '222 42% 22%',
       borderRadius: '0.5rem',
       borderRadiusLg: '0.75rem',
       borderWidth: '1px',
-      borderColor: '44 92% 60% / 0.25',
-      fontFamily: '"Source Sans Pro", "Inter", sans-serif',
+      borderColor: '48 96% 53% / 0.35',
+      fontFamily: '"Source Sans 3", "Georgia", serif',
       fontFamilyDisplay: '"Playfair Display", "Georgia", serif',
       fontWeight: '400',
-      letterSpacing: '0.01em',
+      letterSpacing: '0.02em',
       shadowStyle: 'soft',
-      shadowColor: '0 0% 0% / 0.25',
+      shadowColor: '48 96% 53% / 0.2',
       animationStyle: 'smooth',
       decorativeStyle: 'lines',
-      decorativeOpacity: 0.05,
+      decorativeOpacity: 0.12,
       buttonStyle: 'rounded',
       buttonEffect: 'border',
       progressStyle: 'square',
@@ -204,46 +109,96 @@ export const THEMES: Record<ThemeId, Theme> = {
       cardBlur: false,
     },
     optionColors: [
-      'bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-500 hover:to-indigo-600',
-      'bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500',
-      'bg-gradient-to-r from-emerald-600 to-green-700 hover:from-emerald-500 hover:to-green-600',
-      'bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-500 hover:to-red-600',
-      'bg-gradient-to-r from-cyan-600 to-teal-700 hover:from-cyan-500 hover:to-teal-600',
-      'bg-gradient-to-r from-purple-600 to-violet-700 hover:from-purple-500 hover:to-violet-600',
+      'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white',
+      'bg-gradient-to-r from-blue-700 to-indigo-800 hover:from-blue-600 hover:to-indigo-700 text-white',
+      'bg-gradient-to-r from-slate-600 to-slate-700 hover:from-slate-500 hover:to-slate-600 text-white',
+      'bg-gradient-to-r from-emerald-700 to-teal-800 hover:from-emerald-600 hover:to-teal-700 text-white',
+      'bg-gradient-to-r from-rose-700 to-red-800 hover:from-rose-600 hover:to-red-700 text-white',
+      'bg-gradient-to-r from-violet-700 to-purple-800 hover:from-violet-600 hover:to-purple-700 text-white',
     ],
   },
-  
-  'swiss-minimal': {
-    id: 'swiss-minimal',
-    name: 'Swiss Minimal',
-    description: 'Bold & clean',
-    emoji: '⬛',
+
+  // 2. Energy – fun, engaging, for younger students (bright & playful)
+  'soft-pop': {
+    id: 'soft-pop',
+    name: 'Energy',
+    description: 'Fun & engaging – great for schools and interactive sessions',
+    emoji: '⚡',
     preview: {
-      gradient: 'linear-gradient(180deg, #1a1a1a 0%, #2d2d2d 100%)',
-      accentColor: '#E53E3E',
+      gradient: 'linear-gradient(135deg, #fef3c7 0%, #fcd34d 25%, #fb923c 60%, #f97316 100%)',
+      accentColor: '#EA580C',
     },
     tokens: {
-      bg: '0 0% 10%',
-      bgSecondary: '0 0% 15%',
+      bg: '30 100% 96%',
+      bgSecondary: '25 95% 92%',
+      textPrimary: '20 70% 18%',
+      textSecondary: '25 40% 35%',
+      accent: '25 95% 53%',
+      accentSecondary: '35 100% 50%',
+      surface: '0 0% 100%',
+      surfaceHover: '30 80% 97%',
+      borderRadius: '1.25rem',
+      borderRadiusLg: '1.75rem',
+      borderWidth: '0px',
+      borderColor: '25 95% 53% / 0.2',
+      fontFamily: '"Nunito", "Quicksand", sans-serif',
+      fontFamilyDisplay: '"Fredoka", "Nunito", sans-serif',
+      fontWeight: '600',
+      letterSpacing: '-0.01em',
+      shadowStyle: 'soft',
+      shadowColor: '25 95% 53% / 0.25',
+      animationStyle: 'bouncy',
+      decorativeStyle: 'bubbles',
+      decorativeOpacity: 0.2,
+      buttonStyle: 'pill',
+      buttonEffect: 'shadow',
+      progressStyle: 'rounded',
+      badgeStyle: 'pill',
+      cardStyle: 'elevated',
+      cardBlur: false,
+    },
+    optionColors: [
+      'bg-gradient-to-r from-orange-400 to-amber-500 hover:from-orange-300 hover:to-amber-400 text-white',
+      'bg-gradient-to-r from-rose-400 to-pink-500 hover:from-rose-300 hover:to-pink-400 text-white',
+      'bg-gradient-to-r from-lime-400 to-green-500 hover:from-lime-300 hover:to-green-400 text-white',
+      'bg-gradient-to-r from-violet-400 to-purple-500 hover:from-violet-300 hover:to-purple-400 text-white',
+      'bg-gradient-to-r from-cyan-400 to-teal-500 hover:from-cyan-300 hover:to-teal-400 text-white',
+      'bg-gradient-to-r from-fuchsia-400 to-pink-500 hover:from-fuchsia-300 hover:to-pink-400 text-white',
+    ],
+  },
+
+  // 3. Professional – clean, business, minimal (dark + one accent)
+  'swiss-minimal': {
+    id: 'swiss-minimal',
+    name: 'Professional',
+    description: 'Clean & bold – perfect for corporate and formal presentations',
+    emoji: '⬛',
+    preview: {
+      gradient: 'linear-gradient(180deg, #0c0c0c 0%, #171717 40%, #262626 100%)',
+      accentColor: '#EF4444',
+    },
+    tokens: {
+      bg: '0 0% 6%',
+      bgSecondary: '0 0% 10%',
       textPrimary: '0 0% 100%',
-      textSecondary: '0 0% 70%',
-      accent: '0 85% 55%',
+      textSecondary: '0 0% 65%',
+      accent: '0 84% 60%',
       accentSecondary: '0 0% 100%',
-      surface: '0 0% 12%',
-      surfaceHover: '0 0% 18%',
+      surface: '0 0% 9%',
+      surfaceHover: '0 0% 14%',
       borderRadius: '0px',
       borderRadiusLg: '0px',
-      borderWidth: '3px',
+      borderWidth: '2px',
       borderColor: '0 0% 100%',
       fontFamily: '"Inter", "Helvetica Neue", sans-serif',
-      fontFamilyDisplay: '"Bebas Neue", "Inter", sans-serif',
-      fontWeight: '700',
-      letterSpacing: '0.05em',
+      fontFamilyDisplay: '"Inter", "Helvetica Neue", sans-serif',
+      fontWeight: '600',
+      letterSpacing: '0.04em',
       shadowStyle: 'hard',
-      shadowColor: '0 0% 0% / 1',
+      shadowColor: '0 0% 0% / 0.8',
       animationStyle: 'snappy',
       decorativeStyle: 'geometric',
-      decorativeOpacity: 0.06,
+      decorativeOpacity: 0.15,
       buttonStyle: 'square',
       buttonEffect: 'flat',
       progressStyle: 'square',
@@ -255,44 +210,45 @@ export const THEMES: Record<ThemeId, Theme> = {
       'bg-white text-black hover:bg-gray-200',
       'bg-red-600 text-white hover:bg-red-500',
       'bg-blue-600 text-white hover:bg-blue-500',
-      'bg-yellow-500 text-black hover:bg-yellow-400',
-      'bg-green-600 text-white hover:bg-green-500',
-      'bg-purple-600 text-white hover:bg-purple-500',
+      'bg-amber-400 text-black hover:bg-amber-300',
+      'bg-emerald-600 text-white hover:bg-emerald-500',
+      'bg-neutral-500 text-white hover:bg-neutral-400',
     ],
   },
 
+  // 4. Warm – friendly, approachable (terracotta / cozy)
   'sunset-warmth': {
     id: 'sunset-warmth',
-    name: 'Sunset Warmth',
-    description: 'Warm & cozy',
+    name: 'Warm',
+    description: 'Friendly & approachable – welcoming for any audience',
     emoji: '🌅',
-    isPremium: true, // Pro only
+    isPremium: true,
     preview: {
-      gradient: 'linear-gradient(135deg, #1a0a0a 0%, #2d1810 40%, #451a1a 100%)',
+      gradient: 'linear-gradient(145deg, #1c1917 0%, #292524 25%, #44403c 55%, #57534e 100%)',
       accentColor: '#F97316',
     },
     tokens: {
-      bg: '15 60% 8%',
-      bgSecondary: '20 50% 12%',
-      textPrimary: '30 100% 95%',
-      textSecondary: '25 60% 75%',
+      bg: '24 30% 12%',
+      bgSecondary: '25 25% 18%',
+      textPrimary: '40 30% 95%',
+      textSecondary: '30 20% 72%',
       accent: '25 95% 53%',
-      accentSecondary: '40 100% 60%',
-      surface: '20 45% 14%',
-      surfaceHover: '20 45% 20%',
+      accentSecondary: '35 100% 60%',
+      surface: '25 22% 16%',
+      surfaceHover: '25 22% 22%',
       borderRadius: '1rem',
       borderRadiusLg: '1.25rem',
       borderWidth: '0px',
-      borderColor: '25 95% 53% / 0.2',
+      borderColor: '25 95% 53% / 0.25',
       fontFamily: '"Outfit", "Inter", sans-serif',
       fontFamilyDisplay: '"Outfit", sans-serif',
       fontWeight: '500',
       letterSpacing: '0em',
       shadowStyle: 'glow',
-      shadowColor: '25 95% 53% / 0.3',
+      shadowColor: '25 95% 53% / 0.35',
       animationStyle: 'smooth',
       decorativeStyle: 'waves',
-      decorativeOpacity: 0.08,
+      decorativeOpacity: 0.14,
       buttonStyle: 'rounded',
       buttonEffect: 'glow',
       progressStyle: 'rounded',
@@ -301,47 +257,48 @@ export const THEMES: Record<ThemeId, Theme> = {
       cardBlur: true,
     },
     optionColors: [
-      'bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-400 hover:to-amber-500',
-      'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-400 hover:to-red-500',
-      'bg-gradient-to-r from-yellow-500 to-orange-600 hover:from-yellow-400 hover:to-orange-500',
-      'bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500',
-      'bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-400 hover:to-yellow-500',
-      'bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-400 hover:to-pink-500',
+      'bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-400 hover:to-amber-500 text-white',
+      'bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-500 hover:to-yellow-500 text-white',
+      'bg-gradient-to-r from-stone-500 to-stone-600 hover:from-stone-400 hover:to-stone-500 text-white',
+      'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white',
+      'bg-gradient-to-r from-amber-700 to-orange-700 hover:from-amber-600 hover:to-orange-600 text-white',
+      'bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white',
     ],
   },
 
+  // 5. Calm – focused, low distraction (cool blues & teals)
   'ocean-breeze': {
     id: 'ocean-breeze',
-    name: 'Ocean Breeze',
-    description: 'Fresh & calm',
+    name: 'Calm',
+    description: 'Focused & serene – reduces visual noise for deep focus',
     emoji: '🌊',
-    isPremium: true, // Pro only
+    isPremium: true,
     preview: {
-      gradient: 'linear-gradient(135deg, #0a1628 0%, #102840 40%, #0f3460 100%)',
+      gradient: 'linear-gradient(150deg, #062e3d 0%, #0c4a6e 30%, #075985 60%, #0e7490 100%)',
       accentColor: '#22D3EE',
     },
     tokens: {
-      bg: '215 70% 10%',
-      bgSecondary: '210 60% 15%',
-      textPrimary: '190 100% 98%',
-      textSecondary: '195 50% 75%',
+      bg: '197 70% 12%',
+      bgSecondary: '199 65% 18%',
+      textPrimary: '185 100% 97%',
+      textSecondary: '195 40% 78%',
       accent: '190 90% 55%',
-      accentSecondary: '170 80% 45%',
-      surface: '210 55% 13%',
-      surfaceHover: '210 55% 18%',
+      accentSecondary: '175 80% 45%',
+      surface: '198 60% 15%',
+      surfaceHover: '198 60% 20%',
       borderRadius: '1rem',
       borderRadiusLg: '1.5rem',
       borderWidth: '1px',
-      borderColor: '190 90% 55% / 0.2',
+      borderColor: '190 90% 55% / 0.25',
       fontFamily: '"DM Sans", "Inter", sans-serif',
       fontFamilyDisplay: '"DM Sans", sans-serif',
       fontWeight: '500',
       letterSpacing: '-0.01em',
       shadowStyle: 'glow',
-      shadowColor: '190 90% 55% / 0.3',
+      shadowColor: '190 90% 55% / 0.35',
       animationStyle: 'smooth',
       decorativeStyle: 'aurora',
-      decorativeOpacity: 0.1,
+      decorativeOpacity: 0.18,
       buttonStyle: 'pill',
       buttonEffect: 'glow',
       progressStyle: 'rounded',
@@ -350,25 +307,81 @@ export const THEMES: Record<ThemeId, Theme> = {
       cardBlur: true,
     },
     optionColors: [
-      'bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500',
-      'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500',
-      'bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500',
-      'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500',
-      'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500',
-      'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500',
+      'bg-gradient-to-r from-cyan-500 to-teal-600 hover:from-cyan-400 hover:to-teal-500 text-white',
+      'bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white',
+      'bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white',
+      'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-400 hover:to-indigo-500 text-white',
+      'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-400 hover:to-green-500 text-white',
+      'bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white',
+    ],
+  },
+
+  // 6. Modern – tech, contemporary (neon / digital)
+  'neon-cyber': {
+    id: 'neon-cyber',
+    name: 'Modern',
+    description: 'Tech & contemporary – ideal for STEM and digital topics',
+    emoji: '🌌',
+    preview: {
+      gradient: 'linear-gradient(140deg, #030712 0%, #0f172a 25%, #1e1b4b 60%, #312e81 100%)',
+      accentColor: '#00FF94',
+    },
+    tokens: {
+      bg: '240 55% 8%',
+      bgSecondary: '250 45% 14%',
+      textPrimary: '0 0% 100%',
+      textSecondary: '250 30% 78%',
+      accent: '156 100% 50%',
+      accentSecondary: '270 100% 65%',
+      surface: '250 40% 12%',
+      surfaceHover: '250 40% 18%',
+      borderRadius: '0.75rem',
+      borderRadiusLg: '1rem',
+      borderWidth: '1px',
+      borderColor: '156 100% 50% / 0.4',
+      fontFamily: '"Space Grotesk", "Inter", sans-serif',
+      fontFamilyDisplay: '"Space Grotesk", sans-serif',
+      fontWeight: '500',
+      letterSpacing: '0.02em',
+      shadowStyle: 'glow',
+      shadowColor: '156 100% 50% / 0.5',
+      animationStyle: 'snappy',
+      decorativeStyle: 'tech-grid',
+      decorativeOpacity: 0.12,
+      buttonStyle: 'rounded',
+      buttonEffect: 'glow',
+      progressStyle: 'gradient',
+      badgeStyle: 'outline',
+      cardStyle: 'glass',
+      cardBlur: true,
+    },
+    optionColors: [
+      'bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-black',
+      'bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-400 hover:to-purple-500 text-white',
+      'bg-gradient-to-r from-fuchsia-500 to-pink-600 hover:from-fuchsia-400 hover:to-pink-500 text-white',
+      'bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-400 hover:to-cyan-400 text-white',
+      'bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white',
+      'bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-400 hover:to-emerald-500 text-white',
     ],
   },
 };
 
 // Helper to get theme by ID with fallback
 export function getTheme(themeId: ThemeId | string | undefined): Theme {
-  return THEMES[themeId as ThemeId] || THEMES['neon-cyber'];
+  return THEMES[themeId as ThemeId] || THEMES['academic-pro'];
 }
 
-// Get all themes as array
+// Get all themes as array (order: Academic, Energy, Professional, Warm, Calm, Modern)
 export function getAllThemes(): Theme[] {
-  return Object.values(THEMES);
+  return [
+    THEMES['academic-pro'],
+    THEMES['soft-pop'],
+    THEMES['swiss-minimal'],
+    THEMES['sunset-warmth'],
+    THEMES['ocean-breeze'],
+    THEMES['neon-cyber'],
+  ];
 }
 
-// Default theme
-export const DEFAULT_THEME_ID: ThemeId = 'neon-cyber';
+// Default theme – Academic for lecturer audience
+export const DEFAULT_THEME_ID: ThemeId = 'academic-pro';

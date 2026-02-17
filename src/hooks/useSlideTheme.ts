@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { ThemeId, getTheme, Theme } from '@/types/themes';
 
-export function useSlideTheme(themeId: ThemeId = 'neon-cyber') {
+export function useSlideTheme(themeId: ThemeId = 'academic-pro') {
   const theme = useMemo(() => getTheme(themeId), [themeId]);
   
   // Generate CSS variables object for inline styles

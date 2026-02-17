@@ -7,9 +7,10 @@ import { toast } from 'sonner';
 import ChatPanel from '@/components/builder/ChatPanel';
 import PreviewPanel from '@/components/builder/PreviewPanel';
 import { useConversationalBuilder } from '@/hooks/useConversationalBuilder';
-import { createLecture } from '@/lib/lectureService';
+import { createLecture, updateLecture } from '@/lib/lectureService';
 import { Slide } from '@/types/slides';
 import { useAuth } from '@/hooks/useAuth';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase } from '@/integrations/supabase/client';
 import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from '@/lib/supabaseFunctions';
@@ -20,12 +21,15 @@ const ConversationalBuilder: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const isMobile = useIsMobile();
   const { maxSlides, isFree, hasAITokens } = useSubscriptionContext();
   
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
+  /** Draft lecture saved in DB as soon as AI generates slides; updated on every edit so it never gets lost. */
+  const [draftLectureId, setDraftLectureId] = useState<string | null>(null);
   
   const {
     sandboxSlides,
@@ -55,6 +59,13 @@ const ConversationalBuilder: React.FC = () => {
   // Optional: open builder from the editor with existing slides + a focused slide
   const editorSlideIndexParam = searchParams.get('slide');
   const editorSlideIndex = editorSlideIndexParam ? Number(editorSlideIndexParam) : 0;
+
+  // Redirect mobile users to continue-on-desktop (building is desktop-only)
+  useEffect(() => {
+    if (isMobile) {
+      navigate('/continue-on-desktop', { replace: true });
+    }
+  }, [isMobile, navigate]);
 
   // Check auth and show modal if not logged in
   useEffect(() => {
@@ -112,6 +123,17 @@ const ConversationalBuilder: React.FC = () => {
     setOriginalPrompt(initialPrompt, audience);
     generateInitialPresentation(initialPrompt, audience);
   }, [initialPrompt, user, isAuthLoading, hasStartedGeneration, sandboxSlides.length, originalPrompt]);
+
+  // Keep draft in DB in sync when user edits via chat (debounced)
+  useEffect(() => {
+    if (!draftLectureId || sandboxSlides.length === 0) return;
+    const t = setTimeout(() => {
+      updateLecture(draftLectureId, { slides: sandboxSlides }).catch((e) =>
+        console.warn('Failed to update draft:', e)
+      );
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [draftLectureId, sandboxSlides]);
   
   const generateInitialPresentation = async (prompt: string, targetAudience: string) => {
     const slideCount = isFree ? (maxSlides ?? 5) : 7;
@@ -165,6 +187,16 @@ const ConversationalBuilder: React.FC = () => {
       }));
       setSandboxSlides(processedSlides);
       setGeneratedTheme(resData.theme);
+
+      // Auto-save draft so the presentation is never lost (credits, navigation, or leave)
+      const draftTitle = (prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')) || 'Untitled Presentation';
+      try {
+        const newLecture = await createLecture(draftTitle, processedSlides);
+        setDraftLectureId(newLecture.id);
+      } catch (e) {
+        console.warn('Failed to auto-save draft:', e);
+      }
+
       updateLastMessage(
         `I've created a ${processedSlides.length}-slide presentation about "${prompt}".\n\n` +
         `**What you can ask me:**\n` +
@@ -261,21 +293,24 @@ const ConversationalBuilder: React.FC = () => {
     setIsSaving(true);
     
     try {
-      // Generate title from first slide content or originalPrompt
-      let title = originalPrompt || '';
-      if (!title && sandboxSlides.length > 0) {
-        const firstSlide = sandboxSlides[0];
-        title = (firstSlide.content as any)?.title || 
-                (firstSlide.content as any)?.question || 
-                'Untitled Presentation';
+      if (draftLectureId) {
+        await updateLecture(draftLectureId, { slides: sandboxSlides });
+        toast.success('Presentation saved!');
+        reset();
+        setDraftLectureId(null);
+        navigate(`/editor/${draftLectureId}`);
+      } else {
+        let title = originalPrompt || '';
+        if (!title && sandboxSlides.length > 0) {
+          const firstSlide = sandboxSlides[0];
+          title = (firstSlide.content as any)?.title || (firstSlide.content as any)?.question || 'Untitled Presentation';
+        }
+        title = title.slice(0, 50) + (title.length > 50 ? '...' : '');
+        const newLecture = await createLecture(title || 'Untitled Presentation', sandboxSlides);
+        toast.success('Presentation saved!');
+        reset();
+        navigate(`/editor/${newLecture.id}`);
       }
-      title = title.slice(0, 50) + (title.length > 50 ? '...' : '');
-      
-      const newLecture = await createLecture(title || 'Untitled Presentation', sandboxSlides);
-      
-      toast.success('Presentation saved!');
-      reset(); // Clear the builder state
-      navigate(`/editor/${newLecture.id}`);
     } catch (error) {
       console.error('Error saving presentation:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save presentation';
@@ -286,12 +321,11 @@ const ConversationalBuilder: React.FC = () => {
   };
   
   const handleCancel = () => {
-    if (sandboxSlides.length > 0) {
-      if (!confirm('Are you sure? Your presentation draft will be lost.')) {
-        return;
-      }
+    if (sandboxSlides.length > 0 && draftLectureId) {
+      toast.info('Draft saved. Find it in your Dashboard.');
     }
     reset();
+    setDraftLectureId(null);
     navigate('/dashboard');
   };
   

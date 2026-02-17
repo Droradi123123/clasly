@@ -15,7 +15,9 @@ import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
 import ConversationalBuilder from "./pages/ConversationalBuilder";
 import LectureAnalytics from "./pages/LectureAnalytics";
+import ContinueOnDesktop from "./pages/ContinueOnDesktop";
 import NotFound from "./pages/NotFound";
+import { PostLoginRedirect } from "./components/auth/PostLoginRedirect";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +44,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <PostLoginRedirect />
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/dashboard" element={<Dashboard />} />
@@ -53,6 +56,7 @@ const App = () => {
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/builder" element={<ConversationalBuilder />} />
+              <Route path="/continue-on-desktop" element={<ContinueOnDesktop />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

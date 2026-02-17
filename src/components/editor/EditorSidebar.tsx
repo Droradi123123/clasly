@@ -46,7 +46,7 @@ export function EditorSidebar({
   slide, 
   onUpdateDesign, 
   onUpdateContent,
-  selectedThemeId = 'neon-cyber', 
+  selectedThemeId = 'academic-pro', 
   onSelectTheme, 
   selectedDesignStyleId = 'dynamic', 
   onSelectDesignStyle,

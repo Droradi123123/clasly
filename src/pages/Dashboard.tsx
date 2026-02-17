@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -67,6 +68,7 @@ const TARGET_AUDIENCES = [
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
+  const isMobile = useIsMobile();
   const [lectures, setLectures] = useState<Lecture[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [newLectureTitle, setNewLectureTitle] = useState("");
@@ -80,7 +82,12 @@ const Dashboard = () => {
   const [aiDescription, setAiDescription] = useState("");
   const [targetAudience, setTargetAudience] = useState("general");
 
-  // No auth redirect - dashboard is open to all users
+  // Redirect mobile users to continue-on-desktop (building is desktop-only)
+  useEffect(() => {
+    if (isMobile) {
+      navigate("/continue-on-desktop", { replace: true });
+    }
+  }, [isMobile, navigate]);
 
   // Load lectures immediately when user is available (only current user's lectures)
   useEffect(() => {

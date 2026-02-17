@@ -17,16 +17,10 @@ import {
 } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { EditorTopToolbar } from "@/components/editor/EditorTopToolbar";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { ImportPresentationDialog } from "@/components/editor/ImportPresentationDialog";
+import { AddSlidePickerDialog } from "@/components/editor/AddSlidePickerDialog";
 import { SortableSlideItem } from "@/components/editor/SortableSlideItem";
 import { AnimateButton } from "@/components/editor/AnimateButton";
 import { StudentPreview } from "@/components/editor/StudentPreview";
@@ -76,6 +70,7 @@ import { getLecture, updateLecture, createLecture } from "@/lib/lectureService";
 import { toast } from "sonner";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { UpgradeModal, useUpgradeModal } from "@/components/billing/UpgradeModal";
 
 // Icon mapping for slide types
@@ -105,6 +100,7 @@ const Editor = () => {
   const { lectureId } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [lectureTitle, setLectureTitle] = useState("Untitled Lecture");
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
   const [isEditing, setIsEditing] = useState(true);
@@ -115,7 +111,8 @@ const Editor = () => {
   const [lectureCode, setLectureCode] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
-  const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('neon-cyber');
+  const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
+  const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('academic-pro');
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
   const [showPhonePreview, setShowPhonePreview] = useState(false);
@@ -142,6 +139,13 @@ const Editor = () => {
   );
 
   const currentSlide = slides[currentSlideIndex];
+
+  // Redirect mobile users to continue-on-desktop (building is desktop-only)
+  useEffect(() => {
+    if (isMobile) {
+      navigate("/continue-on-desktop", { replace: true });
+    }
+  }, [isMobile, navigate]);
 
   // Load lecture from database if it exists (only own lectures)
   useEffect(() => {
@@ -374,11 +378,6 @@ const Editor = () => {
     }
   };
 
-  // Group slide types by category
-  const contentSlideTypes = SLIDE_TYPES.filter(t => t.category === 'content');
-  const interactiveSlideTypes = SLIDE_TYPES.filter(t => t.category === 'interactive');
-  const quizSlideTypes = SLIDE_TYPES.filter(t => t.category === 'quiz');
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -504,66 +503,23 @@ const Editor = () => {
             </Button>
           </div>
 
-          {/* Add Slide - below Import */}
+          {/* Add Slide - opens rich picker dialog */}
           <div className="flex-shrink-0 p-2 pt-1 pb-1">
-            <Select onValueChange={(value) => addSlide(value as SlideType)}>
-              <SelectTrigger className="w-full p-3 h-auto border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all rounded-lg">
-                <div className="flex flex-col items-center justify-center gap-1 py-2 w-full">
-                  <Plus className="w-6 h-6 text-primary" />
-                  <span className="text-primary font-medium text-xs">Add Slide</span>
-                </div>
-              </SelectTrigger>
-              <SelectContent className="w-72">
-                <div className="p-1.5">
-                  <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 px-2 uppercase tracking-wide">Content</p>
-                  {contentSlideTypes.map((slideType) => {
-                    const Icon = SLIDE_ICONS[slideType.type];
-                    return (
-                      <SelectItem key={slideType.type} value={slideType.type} className="py-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded bg-muted flex items-center justify-center">
-                            <Icon className="w-3.5 h-3.5 text-foreground" />
-                          </div>
-                          <p className="font-medium text-xs">{slideType.label}</p>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </div>
-                <div className="p-1.5 border-t">
-                  <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 px-2 uppercase tracking-wide">Interactive</p>
-                  {interactiveSlideTypes.map((slideType) => {
-                    const Icon = SLIDE_ICONS[slideType.type];
-                    return (
-                      <SelectItem key={slideType.type} value={slideType.type} className="py-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded bg-blue-500/20 flex items-center justify-center">
-                            <Icon className="w-3.5 h-3.5 text-blue-600" />
-                          </div>
-                          <p className="font-medium text-xs">{slideType.label}</p>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </div>
-                <div className="p-1.5 border-t">
-                  <p className="text-[10px] font-semibold text-muted-foreground mb-1.5 px-2 uppercase tracking-wide">Quiz</p>
-                  {quizSlideTypes.map((slideType) => {
-                    const Icon = SLIDE_ICONS[slideType.type];
-                    return (
-                      <SelectItem key={slideType.type} value={slideType.type} className="py-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded bg-emerald-500/20 flex items-center justify-center">
-                            <Icon className="w-3.5 h-3.5 text-emerald-600" />
-                          </div>
-                          <p className="font-medium text-xs">{slideType.label}</p>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </div>
-              </SelectContent>
-            </Select>
+            <Button
+              variant="outline"
+              className="w-full p-3 h-auto border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all rounded-lg"
+              onClick={() => setShowAddSlidePicker(true)}
+            >
+              <div className="flex flex-col items-center justify-center gap-1 py-2 w-full">
+                <Plus className="w-6 h-6 text-primary" />
+                <span className="text-primary font-medium text-xs">Add Slide</span>
+              </div>
+            </Button>
+            <AddSlidePickerDialog
+              open={showAddSlidePicker}
+              onOpenChange={setShowAddSlidePicker}
+              onSelect={addSlide}
+            />
           </div>
 
           {/* Slides list - Scrollable */}
