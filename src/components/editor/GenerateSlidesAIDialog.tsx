@@ -135,6 +135,7 @@ export default function GenerateSlidesAIDialog({
           difficulty,
           slideCount: expectedCount,
         },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (fnError) {

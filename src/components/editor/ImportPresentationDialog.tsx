@@ -180,9 +180,19 @@ export function ImportPresentationDialog({
         const formData = new FormData();
         formData.append('file', file);
 
+        // Ensure we have a fresh session token (getSession can be stale; getUser refreshes)
+        let accessToken: string | null = null;
         const { data: { session } } = await supabase.auth.getSession();
+        accessToken = session?.access_token ?? null;
+        if (!accessToken) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: { session: session2 } } = await supabase.auth.getSession();
+            accessToken = session2?.access_token ?? null;
+          }
+        }
         const { EDGE_FUNCTION_URLS, getFunctionsHeadersForFormData } = await import('@/lib/supabaseFunctions');
-        const headers = getFunctionsHeadersForFormData(session?.access_token ?? null);
+        const headers = getFunctionsHeadersForFormData(accessToken);
 
         const response = await fetch(
           EDGE_FUNCTION_URLS['convert-to-images'],
@@ -198,8 +208,8 @@ export function ImportPresentationDialog({
           let msg = typeof errorData?.error === 'string' ? errorData.error : response.statusText || 'Failed to convert PowerPoint';
           if (response.status === 404) {
             msg = 'PPTX conversion service not available. Deploy the convert-to-images Edge Function (see docs or run: npm run deploy:functions).';
-          } else if (response.status === 401 || response.status === 403) {
-            msg = 'Please sign in and try again.';
+          } else           if (response.status === 401 || response.status === 403) {
+            msg = 'Session may have expired or the server rejected the request. Try signing out and back in, then import again. If the problem continues, ensure the convert-to-images function is deployed with verify_jwt = false.';
           }
           throw new Error(msg);
         }

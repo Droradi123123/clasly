@@ -135,6 +135,7 @@ const ConversationalBuilder: React.FC = () => {
           difficulty: 'intermediate',
           slideCount: isFree ? (maxSlides ?? 5) : 7,
         },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (fnError) {
@@ -212,6 +213,7 @@ const ConversationalBuilder: React.FC = () => {
           originalPrompt,
           targetAudience,
         },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (fnError) {

@@ -105,7 +105,7 @@ export function BeforeAfterSlide({
             initial={{ opacity: 0, x: isAfter ? 20 : -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.1 }}
-            className={`flex items-start gap-3 group ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}
+            className="flex items-start gap-3 group"
           >
             <span 
               className="w-2 h-2 rounded-full mt-2.5 flex-shrink-0"

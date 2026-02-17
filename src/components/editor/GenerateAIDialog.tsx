@@ -145,6 +145,7 @@ export default function GenerateAIDialog({
             includeImage: supportsImage && includeImage,
           },
         },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       clearInterval(messageInterval);

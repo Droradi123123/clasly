@@ -1,3 +1,8 @@
+/**
+ * convert-to-images — Converts PPTX to slide images (Visual Replication).
+ * Deploy with verify_jwt = false in supabase/config.toml so PPTX import works
+ * without 401 (client still sends token when available).
+ */
 // @ts-ignore - esm.sh modules
 import JSZip from "https://esm.sh/jszip@3.10.1";
 // @ts-ignore - esm.sh modules

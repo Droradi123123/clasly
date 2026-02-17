@@ -480,6 +480,11 @@ function cleanAndParseJSON(rawContent: string): any {
   if (jsonBlockMatch) {
     text = jsonBlockMatch[1];
   }
+  // Some models return "Here is the JSON:" or similar before the array
+  const arrayStart = text.indexOf("[");
+  if (arrayStart > 0 && arrayStart < 100) {
+    text = text.slice(arrayStart);
+  }
 
   text = text
     .trim()
@@ -518,6 +523,21 @@ function cleanAndParseJSON(rawContent: string): any {
     console.error("JSON content preview:", text.substring(0, 500));
     return null;
   }
+}
+
+/** If AI returned { "slides": [...] } or similar, extract the array. Handles single-slide object. */
+function normalizeToSlidesArray(parsed: any): any[] | null {
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+  if (parsed && typeof parsed === "object") {
+    for (const key of ["slides", "data", "content", "result"]) {
+      if (Array.isArray(parsed[key]) && parsed[key].length > 0) return parsed[key];
+    }
+    // Single slide returned as one object (type + content)
+    if (parsed.type && parsed.content && typeof parsed.content === "object") {
+      return [parsed];
+    }
+  }
+  return null;
 }
 
 // =============================================================================
@@ -1091,7 +1111,10 @@ serve(async (req) => {
     const { user, error: authError } = await verifyAuth(req);
     if (authError || !user) {
       console.error("[generate-slides] Auth failed:", authError || "No user");
-      return new Response(JSON.stringify({ error: authError || "Unauthorized" }), {
+      const message = authError && /expired|invalid|token/i.test(authError)
+        ? "Session expired or invalid. Please sign out and sign in again, then try again."
+        : (authError || "Unauthorized");
+      return new Response(JSON.stringify({ error: message }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -1151,7 +1174,7 @@ serve(async (req) => {
       );
 
       let rawSlide = cleanAndParseJSON(rawContent);
-
+      if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
       if (!rawSlide || typeof rawSlide !== "object") {
         throw new Error("Failed to parse slide from AI response");
       }
@@ -1240,10 +1263,14 @@ serve(async (req) => {
 
     console.log(`📝 Raw AI response length: ${rawContent.length} chars`);
 
-    let rawSlides = cleanAndParseJSON(rawContent);
+    const parsed = cleanAndParseJSON(rawContent);
+    let rawSlides = normalizeToSlidesArray(parsed) ?? (Array.isArray(parsed) ? parsed : null);
 
-    if (!rawSlides || !Array.isArray(rawSlides) || !rawSlides.length) {
-      throw new Error("Failed to parse slides from AI response");
+    if (!rawSlides || !rawSlides.length) {
+      const what = parsed == null ? "null" : Array.isArray(parsed) ? `array(length=${parsed.length})` : typeof parsed;
+      console.error("[generate-slides] Parse failed. Got:", what);
+      console.error("[generate-slides] Raw preview (400 chars):", rawContent.substring(0, 400));
+      throw new Error("Failed to parse slides from AI response. Please try again or use a shorter topic.");
     }
 
     rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));

@@ -84,9 +84,9 @@ export function BulletPointsSlide({
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className={`flex items-start gap-4 group ${direction === 'rtl' ? 'flex-row-reverse' : ''}`}
+              className="flex items-start gap-4 group"
             >
-              {/* Icon (bullet) - RTL places it on the right */}
+              {/* Icon (bullet) - position follows dir: RTL = right, LTR = left */}
               <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/20">
                 <Zap className="w-4 h-4 md:w-5 md:h-5 text-primary" />
               </div>

@@ -1,4 +1,4 @@
-# איך להעלות את האתר ל-Vercel (אונליין)
+t# איך להעלות את האתר ל-Vercel (אונליין)
 
 המדריך הזה מסביר שלב-אחר-שלב איך לפרסם את הפרויקט באינטרנט דרך Vercel – בלי צורך להריץ שרת במחשב.
 
@@ -102,6 +102,42 @@
 
 - **כל עדכון ב-GitHub** (push ל-main) יבנה ויעלה גרסה חדשה אוטומטית.
 - אם תרצה דומיין משלך – ב-Vercel: Project → **Settings** → **Domains** ואפשר להוסיף דומיין.
+
+---
+
+## הגדרת Webhook של PayPal (לתשלומים)
+
+כדי ש-PayPal ישלח אירועים (תשלום הושלם, מנוי בוטל וכו') לאפליקציה, צריך ליצור Webhook ב-PayPal Developer ולהוסיף את ה-**Webhook ID** כ-Secret ב-Supabase.
+
+### 1. כתובת ה-Webhook (Webhook URL)
+
+בשדה **"Webhook URL"** במסך "Add webhook" הכנס:
+
+```text
+https://gctdhjgxrshrltbntjqj.supabase.co/functions/v1/paypal-webhook
+```
+
+זו הכתובת של פונקציית ה-Edge `paypal-webhook` בפרויקט Supabase שלך. **חשוב:** פונקציה זו חייבת להיות כבר מפורסמת (`npm run deploy:paypal`) לפני ש-PayPal יתחיל לשלוח אירועים.
+
+### 2. אילו Event types לסמן
+
+בסעיף **"Event types"** סמן את האירועים שהאפליקציה מטפלת בהם:
+
+- **Checkout** – בתוך הקטגוריה פתח ובחר (או סמן את כל התת-אירועים):
+  - `Checkout order approved`
+- **Payments** (אם מופיע כקטגוריה) – אירועים כמו:
+  - `Payment capture completed`
+- **Billing subscription** – פתח ובחר:
+  - `Billing subscription cancelled`
+  - `Billing subscription suspended`
+
+**קיצור:** אם יש אופציה **"All Events"** ואתה רוצה שכל אירוע עתידי יגיע – אפשר לסמן אותה. זה מכסה גם אירועים ש-PayPal אולי יוסיפו בעתיד.
+
+### 3. אחרי שמירת ה-Webhook
+
+- PayPal יציג **Webhook ID** (מזהה ארוך). **העתק אותו.**
+- ב-Supabase: **Edge Functions** → **Secrets** → הוסף Secret בשם `PAYPAL_WEBHOOK_ID` והדבק את ה-ID.
+- בלי ה-`PAYPAL_WEBHOOK_ID` פונקציית `paypal-webhook` תדחה את כל הבקשות (מטעמי אבטחה).
 
 ---
 

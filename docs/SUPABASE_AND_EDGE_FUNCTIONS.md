@@ -63,7 +63,7 @@ node scripts/verify-supabase.mjs
    - **generate-slides** – יצירת מצגת/שקף בודד מ-AI.
    - **generate-image** – יצירת תמונה ב-Editor.
    - **parse-presentation** – ייבוא קובץ PDF/PPTX.
-   - **convert-to-images** – ייבוא PPTX (המרת שקופיות לתמונות). אם ייבוא PPTX נכשל עם "PPTX conversion service not available", יש לפרוס את הפונקציה: `npm run deploy:functions` (כולל convert-to-images).
+   - **convert-to-images** – ייבוא PPTX (המרת שקופיות לתמונות). אם ייבוא PPTX מחזיר 401 ("Please sign in"): לוודא ש-`supabase/config.toml` מכיל `[functions.convert-to-images]` עם `verify_jwt = false`, ואז לפרוס מחדש: `npm run deploy:functions`. הלקוח שולח token כשקיים, אבל הפונקציה חייבת לעבוד גם בלי JWT.
 
 3. **הרצה מקומית (אופציונלי)**  
    ```bash
@@ -77,10 +77,38 @@ node scripts/verify-supabase.mjs
 
 | תופעה | סיבה אפשרית | פתרון |
 |--------|-------------|--------|
-| 401 Unauthorized ב-Function | משתמש לא מחובר או token לא נשלח | לבדוק ש-`Authorization: Bearer <session.access_token>` נשלח בקריאות מ-client |
+| 401 Unauthorized ב-Function | JWT נדרש אבל לא נשלח/פג תוקף, או הפונקציה דורשת JWT | לבדוק ש-`Authorization: Bearer <session.access_token>` נשלח. עבור **convert-to-images** (ייבוא PPTX): להגדיר `verify_jwt = false` ב-`config.toml` תחת `[functions.convert-to-images]` ולפרוס מחדש |
 | 500 / "GEMINI_API_KEY not configured" | חסר Secret ב-Edge Function | להגדיר `GEMINI_API_KEY` ב-Supabase → Edge Functions → Secrets |
 | "Insufficient credits" | אין מספיק קרדיטים למשתמש | לבדוק טבלאות `user_credits` ו-`credit_transactions` |
 | paypal-webhook מחזיר 401 | `PAYPAL_WEBHOOK_ID` חסר או לא תואם ל-PayPal | להגדיר Webhook ב-PayPal Developer ולהוסיף את ה-ID כ-Secret |
+
+---
+
+## פריסת פונקציות PayPal ל-Supabase
+
+כדי שהתשלומים עם PayPal יעבדו, צריך לפרוס את 4 ה-Edge Functions של PayPal לפרויקט ב-Supabase.
+
+**לפני הפריסה:**
+1. **התחברות ל-CLI:** הרץ פעם אחת `npx supabase login` ופתח את הקישור בדפדפן כדי לאשר.
+2. **קישור לפרויקט:** מתוך תיקיית הפרויקט הרץ `npx supabase link --project-ref gctdhjgxrshrltbntjqj` (אם עדיין לא קישרת).
+3. **Secrets ב-Dashboard:** ב-Supabase → Edge Functions → Secrets הוסף: `PAYPAL_CLIENT_ID`, `PAYPAL_SECRET_KEY`, `PAYPAL_WEBHOOK_ID` (חובה ל-webhook), ואופציונלי `PAYPAL_MODE` = `sandbox` או `live`.
+
+**פקודה לפריסת כל פונקציות PayPal:**
+
+מתוך תיקיית הפרויקט (למשל `~/Desktop/interactive-lecture-hub-main`):
+
+```bash
+npm run deploy:paypal
+```
+
+זה מפריס את: `create-checkout-session`, `create-credits-checkout`, `capture-paypal-order`, `paypal-webhook`.
+
+**אם אתה רוצה לפרוס את כל ה-Functions (כולל AI ו-PayPal):**
+
+```bash
+npm run deploy:functions
+npm run deploy:paypal
+```
 
 ---
 
