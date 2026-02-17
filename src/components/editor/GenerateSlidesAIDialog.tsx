@@ -23,8 +23,11 @@ import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 import { GeneratedTheme } from "@/types/generatedTheme";
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage } from "@/lib/supabaseFunctions";
+import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
+import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
+import { Link } from "react-router-dom";
+import { AlertCircle } from "lucide-react";
 
 interface GenerateSlidesAIDialogProps {
   open: boolean;
@@ -73,9 +76,10 @@ export default function GenerateSlidesAIDialog({
   const [error, setError] = useState<string | null>(null);
   const [generatedThemeName, setGeneratedThemeName] = useState<string | null>(null);
   
-  // Get subscription info for slide limits
-  const { isFree, maxSlides } = useSubscriptionContext();
+  // Get subscription info for slide limits and credits
+  const { isFree, maxSlides, hasAITokens, aiTokensRemaining } = useSubscriptionContext();
   const planSlideLimit = isFree ? (maxSlides ?? 5) : 8;
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
 
   // Update description when initialPrompt changes
   useEffect(() => {
@@ -110,9 +114,16 @@ export default function GenerateSlidesAIDialog({
     return planSlideLimit; // default to plan limit
   };
 
+  const expectedCount = getExpectedSlideCount();
+  const hasEnoughCredits = hasAITokens(expectedCount);
+
   const handleGenerate = async () => {
     if (!description.trim()) {
       toast.error("Please describe your presentation topic");
+      return;
+    }
+    if (!hasEnoughCredits) {
+      setShowOutOfCreditsModal(true);
       return;
     }
 
@@ -139,6 +150,9 @@ export default function GenerateSlidesAIDialog({
       });
 
       if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) {
+          setShowOutOfCreditsModal(true);
+        }
         const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate slides.");
         throw new Error(msg);
       }
@@ -284,6 +298,20 @@ export default function GenerateSlidesAIDialog({
                 </motion.div>
               )}
 
+              {/* Not enough credits */}
+              {!hasEnoughCredits && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="text-sm">
+                    <p>This will use {expectedCount} credits. You have {aiTokensRemaining} remaining.</p>
+                    <p className="mt-1 flex flex-wrap gap-2">
+                      <Link to="/billing" className="underline font-medium">Buy credits</Link>
+                      <Link to="/pricing" className="underline font-medium">Upgrade plan</Link>
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Describe Your Presentation</Label>
@@ -398,7 +426,7 @@ export default function GenerateSlidesAIDialog({
                 <Button
                   variant="hero"
                   onClick={handleGenerate}
-                  disabled={!description.trim()}
+                  disabled={!description.trim() || !hasEnoughCredits || isGenerating}
                   className="px-8"
                 >
                   <Sparkles className="w-4 h-4" />
@@ -409,6 +437,7 @@ export default function GenerateSlidesAIDialog({
           )}
         </AnimatePresence>
       </DialogContent>
+      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </Dialog>
   );
 }

@@ -23,7 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Slide, SlideContent } from "@/types/slides";
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage } from "@/lib/supabaseFunctions";
+import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
+import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
+import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
 
 interface GenerateAIDialogProps {
   open: boolean;
@@ -88,6 +90,10 @@ export default function GenerateAIDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
+  const { hasAITokens, aiTokensRemaining } = useSubscriptionContext();
+  const creditsNeededContent = 1;
+  const creditsNeededImage = 1;
 
   const getSlideTypeLabel = () => {
     const labels: Record<string, string> = {
@@ -121,6 +127,10 @@ export default function GenerateAIDialog({
       toast.error("Please describe what content you want");
       return;
     }
+    if (!hasAITokens(creditsNeededContent)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
 
     setIsGenerating(true);
     setError(null);
@@ -151,6 +161,7 @@ export default function GenerateAIDialog({
       clearInterval(messageInterval);
 
       if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
         const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate content.");
         throw new Error(msg);
       }
@@ -205,6 +216,10 @@ export default function GenerateAIDialog({
       toast.error("Please describe the image you want");
       return;
     }
+    if (!hasAITokens(creditsNeededImage)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
 
     setIsGenerating(true);
     setError(null);
@@ -227,6 +242,7 @@ export default function GenerateAIDialog({
       clearInterval(messageInterval);
 
       if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
         const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate image.");
         throw new Error(msg);
       }
@@ -542,6 +558,7 @@ export default function GenerateAIDialog({
           )}
         </AnimatePresence>
       </DialogContent>
+      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </Dialog>
   );
 }

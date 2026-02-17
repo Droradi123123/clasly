@@ -224,6 +224,34 @@ export function FruitCatchGame({ lectureId, students, onClose }: FruitCatchGameP
     broadcastGameState(gameState);
   }, [gameState, broadcastGameState]);
 
+  // When game ends: award bonus points to DB – winner +10, places 2–6 +5 each
+  const hasAwardedBonusesRef = useRef(false);
+  useEffect(() => {
+    if (gameState.status !== 'ended' || gameState.players.length === 0) return;
+    if (hasAwardedBonusesRef.current) return;
+    hasAwardedBonusesRef.current = true;
+
+    const sorted = [...gameState.players].sort((a, b) => b.score - a.score);
+    const bonuses: { studentId: string; points: number }[] = [];
+    sorted.slice(0, 6).forEach((p, i) => {
+      bonuses.push({ studentId: p.id, points: i === 0 ? 10 : 5 });
+    });
+
+    bonuses.forEach(({ studentId, points }) => {
+      supabase
+        .from('students')
+        .select('points')
+        .eq('id', studentId)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            const current = (data as any).points ?? 0;
+            supabase.from('students').update({ points: current + points }).eq('id', studentId).then();
+          }
+        });
+    });
+  }, [gameState.status, gameState.players]);
+
   const topPlayers = [...gameState.players].sort((a, b) => b.score - a.score).slice(0, 5);
 
   return (

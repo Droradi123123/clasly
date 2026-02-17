@@ -12,18 +12,20 @@ import { Slide } from '@/types/slides';
 import { useAuth } from '@/hooks/useAuth';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase } from '@/integrations/supabase/client';
-import { getEdgeFunctionErrorMessage } from '@/lib/supabaseFunctions';
+import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from '@/lib/supabaseFunctions';
 import { useSubscriptionContext } from '@/contexts/SubscriptionContext';
+import { OutOfCreditsModal } from '@/components/credits/OutOfCreditsModal';
 
 const ConversationalBuilder: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const { maxSlides, isFree } = useSubscriptionContext();
+  const { maxSlides, isFree, hasAITokens } = useSubscriptionContext();
   
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
   
   const {
     sandboxSlides,
@@ -112,10 +114,19 @@ const ConversationalBuilder: React.FC = () => {
   }, [initialPrompt, user, isAuthLoading, hasStartedGeneration, sandboxSlides.length, originalPrompt]);
   
   const generateInitialPresentation = async (prompt: string, targetAudience: string) => {
+    const slideCount = isFree ? (maxSlides ?? 5) : 7;
+    if (!hasAITokens(slideCount)) {
+      setShowOutOfCreditsModal(true);
+      addMessage({
+        role: 'assistant',
+        content: `You need ${slideCount} credits to generate this presentation. Add credits or upgrade your plan to continue.`,
+      });
+      return;
+    }
+
     setIsInitialLoading(true);
     setIsGenerating(true);
     
-    // Add system welcome message
     addMessage({
       role: 'assistant',
       content: `I'm creating a presentation about "${prompt}". Just a moment...`,
@@ -133,12 +144,13 @@ const ConversationalBuilder: React.FC = () => {
           contentType: 'interactive',
           targetAudience,
           difficulty: 'intermediate',
-          slideCount: isFree ? (maxSlides ?? 5) : 7,
+          slideCount,
         },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
         const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
         throw new Error(msg);
       }
@@ -192,10 +204,11 @@ const ConversationalBuilder: React.FC = () => {
   };
   
   const handleSendMessage = async (userMessage: string) => {
-    // Add user message
+    if (!hasAITokens(1)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
     addMessage({ role: 'user', content: userMessage });
-    
-    // Add loading assistant message
     addMessage({ role: 'assistant', content: '', isLoading: true });
     setIsGenerating(true);
     
@@ -217,6 +230,7 @@ const ConversationalBuilder: React.FC = () => {
       });
 
       if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
         const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to process message.');
         throw new Error(msg);
       }
@@ -347,6 +361,7 @@ const ConversationalBuilder: React.FC = () => {
         onSuccess={() => setShowAuthModal(false)}
         promptText={initialPrompt}
       />
+      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </div>
   );
 };

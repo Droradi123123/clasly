@@ -761,8 +761,40 @@ const Present = () => {
         </Button>
       </div>
 
-      {/* Bottom Navigation - Dots + End lecture on last slide */}
-      <div className="flex flex-col items-center justify-center p-4 bg-background/10 backdrop-blur-sm z-10 gap-3">
+      {/* End lecture – prominent when on last slide */}
+      <AnimatePresence>
+        {currentSlideIndex === slides.length - 1 && slides.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2"
+          >
+            <Button
+              size="lg"
+              className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-base md:text-lg shadow-xl shadow-amber-900/30 px-8 py-6 h-auto rounded-2xl border-2 border-amber-400/50"
+              onClick={handleEndLecture}
+              disabled={isEnding}
+            >
+              {isEnding ? (
+                <>
+                  <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Ending...
+                </>
+              ) : (
+                <>
+                  <Flag className="w-5 h-5 mr-2" />
+                  End lecture & view analytics
+                </>
+              )}
+            </Button>
+            <span className="text-xs text-primary-foreground/70">You're on the last slide</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bottom Navigation - Dots */}
+      <div className="flex flex-col items-center justify-center p-4 bg-background/10 backdrop-blur-sm z-10">
         <div className="flex items-center gap-2">
           {slides.map((_, index) => (
             <button
@@ -787,26 +819,6 @@ const Present = () => {
             />
           ))}
         </div>
-        {currentSlideIndex === slides.length - 1 && slides.length > 0 && (
-          <Button
-            size="lg"
-            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold"
-            onClick={handleEndLecture}
-            disabled={isEnding}
-          >
-            {isEnding ? (
-              <>
-                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                Ending...
-              </>
-            ) : (
-              <>
-                <Flag className="w-4 h-4 mr-2" />
-                End lecture & view analytics
-              </>
-            )}
-          </Button>
-        )}
       </div>
 
       {/* QR Code Overlay - CENTERED on screen */}

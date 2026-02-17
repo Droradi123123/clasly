@@ -31,9 +31,11 @@ const Header = () => {
     plan
   } = useSubscriptionContext();
   
-  const monthlyTokens = plan?.monthly_ai_tokens ?? 50;
-  const tokenPercentage = monthlyTokens > 0 ? Math.min(100, (aiTokensRemaining / monthlyTokens) * 100) : 0;
-  const isLowCredits = tokenPercentage < 20;
+  // Free plan has 0 monthly refill; show balance vs initial 10-credit grant for progress
+  const monthlyTokens = plan?.monthly_ai_tokens ?? 0;
+  const displayCap = isFree ? 10 : (monthlyTokens || 1);
+  const tokenPercentage = displayCap > 0 ? Math.min(100, (aiTokensRemaining / displayCap) * 100) : 0;
+  const isLowCredits = isFree ? aiTokensRemaining <= 2 : (monthlyTokens > 0 && (aiTokensRemaining / monthlyTokens) < 0.2);
 
   const getInitials = (name: string | undefined, email: string | undefined) => {
     if (name) {
@@ -133,7 +135,7 @@ const Header = () => {
                       <div className="flex items-center justify-between text-xs">
                         <span className="flex items-center gap-1.5 text-muted-foreground">
                           <Zap className="w-3.5 h-3.5" />
-                          AI Tokens
+                          AI credits
                         </span>
                         <span className={`font-medium ${isLowCredits ? 'text-destructive' : ''}`}>
                           {aiTokensRemaining} remaining

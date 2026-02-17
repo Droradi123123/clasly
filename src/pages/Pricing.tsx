@@ -109,11 +109,15 @@ const Pricing = () => {
       baseFeatures.push("Unlimited slides");
     }
 
-    // Add AI tokens
-    baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI tokens/month`);
-
-    // Add vibe credits
-    baseFeatures.push(`${plan.monthly_vibe_credits.toLocaleString()} Vibe credits/month`);
+    // Add AI credits – Free gets one-time 10, paid get monthly refill
+    if (plan.name === "Free") {
+      baseFeatures.push("10 AI credits to start (one-time)");
+    } else {
+      baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
+    }
+    if (plan.monthly_vibe_credits > 0) {
+      baseFeatures.push(`${plan.monthly_vibe_credits.toLocaleString()} Vibe credits/month`);
+    }
 
     // Plan-specific features
     if (plan.name === "Free") {

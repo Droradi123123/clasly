@@ -36,6 +36,59 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   return { user, error: null };
 }
 
+const CREDITS_PER_IMAGE = 1;
+
+async function checkCredits(userId: string, amount: number): Promise<{ allowed: boolean; error?: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceKey) {
+    return { allowed: false, error: "Server configuration error" };
+  }
+  const supabase = createClient(supabaseUrl, serviceKey);
+  const { data: credits, error: fetchError } = await supabase
+    .from("user_credits")
+    .select("ai_tokens_balance")
+    .eq("user_id", userId)
+    .single();
+  if (fetchError || !credits) {
+    return { allowed: false, error: "Could not fetch credits" };
+  }
+  if (credits.ai_tokens_balance < amount) {
+    return { allowed: false, error: "Insufficient credits" };
+  }
+  return { allowed: true };
+}
+
+async function consumeCredits(userId: string, amount: number, description: string): Promise<boolean> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceKey) return false;
+  const supabase = createClient(supabaseUrl, serviceKey);
+  const { data: credits, error: fetchError } = await supabase
+    .from("user_credits")
+    .select("ai_tokens_balance, ai_tokens_consumed")
+    .eq("user_id", userId)
+    .single();
+  if (fetchError || !credits || credits.ai_tokens_balance < amount) return false;
+  const { error: updateError } = await supabase
+    .from("user_credits")
+    .update({
+      ai_tokens_balance: credits.ai_tokens_balance - amount,
+      ai_tokens_consumed: (credits.ai_tokens_consumed || 0) + amount,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+  if (updateError) return false;
+  await supabase.from("credit_transactions").insert({
+    user_id: userId,
+    credit_type: "ai_tokens",
+    transaction_type: "consume",
+    amount: -amount,
+    description,
+  });
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -54,7 +107,7 @@ serve(async (req) => {
 
   try {
     const { prompt, style = "vibrant and modern" }: GenerateImageRequest = await req.json();
-    
+
     // Input validation
     if (!prompt || typeof prompt !== "string") {
       return new Response(
@@ -62,7 +115,7 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    
+
     // Limit prompt length to prevent abuse
     if (prompt.length > 1000) {
       return new Response(
@@ -70,7 +123,16 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-    
+
+    // Credit check: 1 AI credit per image (deduct after success)
+    const creditCheck = await checkCredits(user.id, CREDITS_PER_IMAGE);
+    if (!creditCheck.allowed) {
+      return new Response(
+        JSON.stringify({ error: creditCheck.error || "Insufficient credits" }),
+        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     if (!GEMINI_API_KEY) {
       throw new Error("GEMINI_API_KEY is not configured");
@@ -117,6 +179,7 @@ The image should be visually striking and work well as a slide background or vis
     const mimeType = inlineData.mimeType || "image/png";
     const imageUrl = `data:${mimeType};base64,${inlineData.data}`;
 
+    await consumeCredits(user.id, CREDITS_PER_IMAGE, "Generate image");
     console.log("Image generated successfully");
 
     return new Response(

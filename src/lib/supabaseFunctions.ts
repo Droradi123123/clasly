@@ -32,6 +32,15 @@ export async function getEdgeFunctionErrorMessage(
   return fallback;
 }
 
+/** Returns HTTP status from Edge Function error (e.g. 402 for out of credits). */
+export function getEdgeFunctionStatus(error: unknown): number | null {
+  if (error instanceof FunctionsHttpError && error.context) {
+    const res = error.context as Response;
+    return res.status ?? null;
+  }
+  return null;
+}
+
 /**
  * Central config for Supabase Edge Functions.
  * Uses the same base URL as the Supabase client (from .env).

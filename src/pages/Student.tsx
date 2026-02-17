@@ -51,6 +51,8 @@ const Student = () => {
   const [sentimentValue, setSentimentValue] = useState([50]);
   const [agreeValue, setAgreeValue] = useState([50]);
   const [sentenceInput, setSentenceInput] = useState("");
+  const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
+  const previousPointsRef = React.useRef<number>(0);
 
   const currentSlide = slides[currentSlideIndex];
   const slideTypeInfo = currentSlide ? SLIDE_TYPES.find(t => t.type === currentSlide.type) : null;
@@ -303,12 +305,13 @@ const Student = () => {
       
       if (data) {
         setStudent(data);
+        previousPointsRef.current = (data as any).points ?? 0;
       }
     };
 
     loadStudent();
 
-    // Subscribe to student updates (for points)
+    // Subscribe to student updates (for points) and show +N animation when points increase
     const channel = supabase
       .channel(`student-${studentId}`)
       .on(
@@ -320,7 +323,15 @@ const Student = () => {
           filter: `id=eq.${studentId}`,
         },
         (payload) => {
-          setStudent(payload.new);
+          const newData = payload.new as any;
+          const newPoints = newData?.points ?? 0;
+          const prev = previousPointsRef.current;
+          setStudent(newData);
+          previousPointsRef.current = newPoints;
+          if (newPoints > prev && prev >= 0) {
+            setPointsEarnedAnimation(newPoints - prev);
+            setTimeout(() => setPointsEarnedAnimation(null), 2200);
+          }
         }
       )
       .subscribe();
@@ -390,30 +401,31 @@ const Student = () => {
     }
   };
 
+  // Points: 5 for any answer, 10 for correct
   const handleQuizAnswer = (index: number) => {
     if (hasAnswered) return;
     setSelectedOption(index);
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctAnswer === index;
-    const points = isCorrect ? 100 : 0;
+    const points = isCorrect ? 10 : 5;
     handleSubmitResponse({ answer: index }, isCorrect, points);
   };
 
   const handlePollAnswer = (index: number) => {
     if (hasAnswered) return;
     setSelectedOption(index);
-    handleSubmitResponse({ answer: index });
+    handleSubmitResponse({ answer: index }, undefined, 5);
   };
 
   const handleYesNo = (answer: boolean) => {
     if (hasAnswered) return;
-    setSelectedOption(answer ? 0 : 1); // 0 = Yes, 1 = No for tracking
-    handleSubmitResponse({ answer });
+    setSelectedOption(answer ? 0 : 1);
+    handleSubmitResponse({ answer }, undefined, 5);
   };
 
   const handleWordSubmit = () => {
     if (!wordInput.trim() || hasAnswered) return;
-    handleSubmitResponse({ word: wordInput.trim() });
+    handleSubmitResponse({ word: wordInput.trim() }, undefined, 5);
     setWordInput("");
   };
 
@@ -422,35 +434,35 @@ const Student = () => {
     if (isNaN(num) || hasAnswered) return;
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctNumber === num;
-    const points = isCorrect ? 100 : 0;
+    const points = isCorrect ? 10 : 5;
     handleSubmitResponse({ guess: num }, isCorrect, points);
   };
 
   const handleScaleSubmit = () => {
     if (hasAnswered) return;
-    handleSubmitResponse({ value: scaleValue[0] });
+    handleSubmitResponse({ value: scaleValue[0] }, undefined, 5);
   };
 
   const handleSentimentSubmit = () => {
     if (hasAnswered) return;
-    handleSubmitResponse({ value: sentimentValue[0] });
+    handleSubmitResponse({ value: sentimentValue[0] }, undefined, 5);
   };
 
   const handleAgreeSubmit = () => {
     if (hasAnswered) return;
-    handleSubmitResponse({ value: agreeValue[0] });
+    handleSubmitResponse({ value: agreeValue[0] }, undefined, 5);
   };
 
   const handleSentenceSubmit = () => {
     if (!sentenceInput.trim() || hasAnswered) return;
-    handleSubmitResponse({ text: sentenceInput.trim() });
+    handleSubmitResponse({ text: sentenceInput.trim() }, undefined, 5);
     setSentenceInput("");
   };
 
   const handleRankingSubmit = () => {
     if (hasAnswered) return;
     const items = rankingOrder.length > 0 ? rankingOrder : ((currentSlide?.content as any).items || []);
-    handleSubmitResponse({ ranking: items });
+    handleSubmitResponse({ ranking: items }, undefined, 5);
   };
 
   // Ref for the persistent emoji reaction channel
@@ -561,18 +573,32 @@ const Student = () => {
       <Confetti isActive={showConfetti} />
 
       {/* Header */}
-      <header className="bg-gradient-primary text-primary-foreground p-4">
+      <header className="bg-gradient-primary text-primary-foreground p-4 relative">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary-foreground/20 flex items-center justify-center text-xl">
               {student?.emoji || "😊"}
             </div>
-            <div>
+            <div className="relative">
               <p className="font-medium">{student?.name || "Student"}</p>
               <div className="flex items-center gap-1 text-sm text-primary-foreground/80">
                 <Trophy className="w-3 h-3" />
-                <span>{student?.points || 0} points</span>
+                <span>{student?.points ?? 0} points</span>
               </div>
+              <AnimatePresence>
+                {pointsEarnedAnimation != null && (
+                  <motion.div
+                    key={pointsEarnedAnimation}
+                    initial={{ opacity: 0, y: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, y: -12, scale: 1.2 }}
+                    exit={{ opacity: 0, y: -24, scale: 1.5 }}
+                    transition={{ duration: 0.4 }}
+                    className="absolute -top-1 -right-2 px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 font-bold text-sm shadow-lg"
+                  >
+                    +{pointsEarnedAnimation}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
           <div className="flex items-center gap-2">
