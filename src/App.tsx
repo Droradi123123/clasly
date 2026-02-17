@@ -14,6 +14,7 @@ import Student from "./pages/Student";
 import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
 import ConversationalBuilder from "./pages/ConversationalBuilder";
+import LectureAnalytics from "./pages/LectureAnalytics";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -46,6 +47,7 @@ const App = () => {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/editor/:lectureId" element={<Editor />} />
               <Route path="/present/:lectureId" element={<Present />} />
+              <Route path="/lecture/:lectureId/analytics" element={<LectureAnalytics />} />
               <Route path="/join" element={<Join />} />
               <Route path="/student/:lectureCode" element={<Student />} />
               <Route path="/pricing" element={<Pricing />} />

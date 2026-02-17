@@ -35,9 +35,11 @@ import {
   FileText,
   Wand2,
   ArrowLeft,
+  BarChart3,
+  Copy,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { createLecture } from "@/lib/lectureService";
+import { createLecture, duplicateLecture } from "@/lib/lectureService";
 import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 
@@ -71,6 +73,7 @@ const Dashboard = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   
   // AI generation state
   const [createMode, setCreateMode] = useState<CreateMode>('choose');
@@ -172,6 +175,23 @@ const Dashboard = () => {
     resetCreateDialog();
     setIsCreateOpen(false);
     navigate(`/builder?${params.toString()}`);
+  };
+
+  const handleDuplicateLecture = async (lectureId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (duplicatingId) return;
+    setDuplicatingId(lectureId);
+    try {
+      const newLecture = await duplicateLecture(lectureId);
+      setLectures((prev) => [newLecture as unknown as Lecture, ...prev]);
+      toast.success("Lecture duplicated. Only content was copied; analytics are not included.");
+      navigate(`/editor/${newLecture.id}`);
+    } catch (error) {
+      console.error("Duplicate failed:", error);
+      toast.error("Failed to duplicate lecture");
+    } finally {
+      setDuplicatingId(null);
+    }
   };
 
   const handleDeleteLecture = async (lectureId: string, e: React.MouseEvent) => {
@@ -530,7 +550,7 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -538,6 +558,32 @@ const Dashboard = () => {
                         onClick={(e) => handleDeleteLecture(lecture.id, e)}
                       >
                         <Trash2 className="w-4 h-4" />
+                      </Button>
+                      {lecture.status === "ended" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/lecture/${lecture.id}/analytics`)}
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                          Analytics
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => handleDuplicateLecture(lecture.id, e)}
+                        disabled={duplicatingId === lecture.id}
+                        title="Duplicate lecture (content only; analytics are not copied)"
+                      >
+                        {duplicatingId === lecture.id ? (
+                          <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin block" />
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4 sm:mr-1" />
+                            <span className="hidden sm:inline">Duplicate</span>
+                          </>
+                        )}
                       </Button>
                       <Button
                         variant="outline"

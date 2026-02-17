@@ -214,6 +214,28 @@ export async function getResponses(lectureId: string, slideIndex: number) {
   return data || [];
 }
 
+// Get all responses for a lecture (all slides) – for analytics
+export async function getAllResponsesForLecture(lectureId: string) {
+  const { data, error } = await supabase
+    .from('responses')
+    .select('*')
+    .eq('lecture_id', lectureId)
+    .order('slide_index', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Duplicate a lecture: same title + " (Copy)", same slides, new code, status draft. No students/responses/questions.
+export async function duplicateLecture(lectureId: string) {
+  const lecture = await getLecture(lectureId);
+  if (!lecture) throw new Error('Lecture not found');
+  const slides = (lecture.slides as unknown as Slide[]) || [];
+  const newTitle = `${lecture.title} (Copy)`;
+  return createLecture(newTitle, slides.length ? [...slides] : []);
+}
+
 // Subscribe to lecture updates (for students)
 export function subscribeLecture(lectureId: string, callback: (lecture: unknown) => void) {
   return supabase

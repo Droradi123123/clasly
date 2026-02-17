@@ -21,6 +21,7 @@ import {
   Gamepad2,
   HelpCircle,
   CheckCircle,
+  Flag,
 } from "lucide-react";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { Slide, SLIDE_TYPES, isQuizSlide } from "@/types/slides";
@@ -35,6 +36,7 @@ import {
   getResponses,
   updateLecture,
   startLecture,
+  endLecture,
   subscribeStudents,
   subscribeResponses,
 } from "@/lib/lectureService";
@@ -188,6 +190,7 @@ const Present = () => {
   // Questions state
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
 
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -448,6 +451,18 @@ const Present = () => {
       await startLecture(lectureId);
       setIsLive(true);
       setShowQRCode(false);
+    }
+  };
+
+  const handleEndLecture = async () => {
+    if (!lectureId || isEnding) return;
+    setIsEnding(true);
+    try {
+      await endLecture(lectureId);
+      navigate(`/lecture/${lectureId}/analytics`, { replace: true });
+    } catch (e) {
+      console.error(e);
+      setIsEnding(false);
     }
   };
 
@@ -746,8 +761,8 @@ const Present = () => {
         </Button>
       </div>
 
-      {/* Bottom Navigation - Dots only */}
-      <div className="flex items-center justify-center p-4 bg-background/10 backdrop-blur-sm z-10">
+      {/* Bottom Navigation - Dots + End lecture on last slide */}
+      <div className="flex flex-col items-center justify-center p-4 bg-background/10 backdrop-blur-sm z-10 gap-3">
         <div className="flex items-center gap-2">
           {slides.map((_, index) => (
             <button
@@ -772,6 +787,26 @@ const Present = () => {
             />
           ))}
         </div>
+        {currentSlideIndex === slides.length - 1 && slides.length > 0 && (
+          <Button
+            size="lg"
+            className="bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+            onClick={handleEndLecture}
+            disabled={isEnding}
+          >
+            {isEnding ? (
+              <>
+                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                Ending...
+              </>
+            ) : (
+              <>
+                <Flag className="w-4 h-4 mr-2" />
+                End lecture & view analytics
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
       {/* QR Code Overlay - CENTERED on screen */}
