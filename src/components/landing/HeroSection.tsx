@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/auth/AuthModal";
+import HowItWorks from "@/components/landing/HowItWorks";
 
 interface HeroSectionProps {
   onGenerate: (prompt: string) => void;
@@ -543,9 +544,14 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
           </div>
         </motion.div>
 
-        {/* Mobile-only: Desktop + Phone illustrations AFTER the input box, stacked & adapted */}
+        {/* How it works - steps flow (desktop & mobile) */}
+        <div className="mt-8 sm:mt-10 lg:mt-12 w-full">
+          <HowItWorks />
+        </div>
+
+        {/* Mobile-only: Desktop + Phone illustrations AFTER How it works, side by side */}
         <div className="lg:hidden flex flex-col items-center gap-6 mt-8 sm:mt-10">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 w-full max-w-sm sm:max-w-md mx-auto">
+          <div className="flex flex-row items-center justify-center gap-3 sm:gap-6 w-full max-w-sm sm:max-w-md mx-auto">
             <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} compact />
             <PhoneIllustration 
               onParisClick={handleParisClick} 

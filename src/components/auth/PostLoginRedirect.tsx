@@ -17,16 +17,20 @@ export function PostLoginRedirect() {
   useEffect(() => {
     if (isAuthLoading || !user) return;
     if (didRedirect.current) return;
-    const pendingPrompt = localStorage.getItem('clasly_pending_prompt');
-    if (!pendingPrompt || pendingPrompt.trim() === '') return;
-    // Only run when we're on the homepage (returned from OAuth)
     if (location.pathname !== '/') return;
 
+    const pendingPrompt = localStorage.getItem('clasly_pending_prompt');
+    const hasPendingPrompt = pendingPrompt && pendingPrompt.trim() !== '';
+    const mobileOAuthPending = sessionStorage.getItem('clasly_mobile_oauth_pending');
+
     didRedirect.current = true;
-    if (isMobile) {
+    if (isMobile && (hasPendingPrompt || mobileOAuthPending)) {
+      sessionStorage.removeItem('clasly_mobile_oauth_pending');
       navigate('/continue-on-desktop', { replace: true });
-    } else {
+    } else if (!isMobile && hasPendingPrompt) {
       navigate(`/builder?prompt=${encodeURIComponent(pendingPrompt)}&audience=general`, { replace: true });
+    } else {
+      didRedirect.current = false;
     }
   }, [user, isAuthLoading, isMobile, location.pathname, navigate]);
 
