@@ -65,8 +65,8 @@ const Index = () => {
         )}
       </AnimatePresence>
 
-      {/* Interactive Sync Demo */}
-      <div data-section="interactive-demo">
+      {/* Interactive Sync Demo - hidden on mobile per design */}
+      <div data-section="interactive-demo" className="hidden lg:block">
         <InteractiveSyncDemo />
       </div>
 

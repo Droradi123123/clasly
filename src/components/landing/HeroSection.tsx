@@ -70,18 +70,18 @@ function FlyingEmoji({
 }
 
 // Desktop Screen Illustration Component
-function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boolean; flyingEmojis: { id: number; emoji: string }[] }) {
+function DesktopIllustration({ showConfetti, flyingEmojis, compact }: { showConfetti: boolean; flyingEmojis: { id: number; emoji: string }[]; compact?: boolean }) {
   const confettiColors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181", "#AA96DA"];
   
   return (
     <motion.div
-      initial={{ opacity: 0, x: -60 }}
+      initial={{ opacity: 0, x: compact ? -20 : -60 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.8, delay: 0.4 }}
+      transition={{ duration: 0.6, delay: compact ? 0.1 : 0.4 }}
       className="relative"
     >
       {/* Desktop Monitor */}
-      <div className="w-64 md:w-80 bg-slate-800 rounded-xl p-2 shadow-2xl">
+      <div className={`${compact ? "w-44 sm:w-52 p-1.5 rounded-lg" : "w-64 md:w-80 p-2 rounded-xl"} bg-slate-800 shadow-2xl`}>
         {/* Screen Bezel */}
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-lg overflow-hidden">
           {/* Browser Chrome */}
@@ -97,7 +97,7 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
           </div>
           
           {/* Presentation Slide Content */}
-          <div className="relative bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-4 md:p-6 min-h-[140px] md:min-h-[180px] overflow-hidden">
+          <div className={`relative bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 overflow-hidden ${compact ? "p-2 min-h-[100px]" : "p-4 md:p-6 min-h-[140px] md:min-h-[180px]"}`}>
             {/* Confetti Layer */}
             <AnimatePresence>
               {showConfetti && (
@@ -134,18 +134,18 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
             </AnimatePresence>
             
             {/* Slide Header */}
-            <div className="text-center mb-4 relative z-10">
-              <div className="inline-flex items-center gap-1 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] text-white/90 mb-2">
+            <div className={`text-center relative z-10 ${compact ? "mb-2" : "mb-4"}`}>
+              <div className={`inline-flex items-center gap-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 mb-1 ${compact ? "px-2 py-0.5 text-[8px]" : "px-3 py-1 text-[10px] mb-2"}`}>
                 <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
                 LIVE
               </div>
-              <h3 className="text-white font-bold text-sm md:text-base leading-tight">
+              <h3 className={`text-white font-bold leading-tight ${compact ? "text-[10px]" : "text-sm md:text-base"}`}>
                 What is the capital of France?
               </h3>
             </div>
             
             {/* Quiz Options Grid */}
-            <div className="grid grid-cols-2 gap-2 relative z-10">
+            <div className={`grid grid-cols-2 relative z-10 ${compact ? "gap-1" : "gap-2"}`}>
               {[
                 { letter: "A", text: "London", color: "bg-red-500" },
                 { letter: "B", text: "Paris", color: "bg-blue-500", correct: true },
@@ -159,12 +159,12 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
                     boxShadow: ["0 0 0 0 rgba(255,255,255,0)", "0 0 20px 5px rgba(255,255,255,0.5)", "0 0 0 0 rgba(255,255,255,0)"]
                   } : {}}
                   transition={{ duration: 0.6 }}
-                  className={`${option.color} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-md ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
+                  className={`${option.color} ${compact ? "rounded-md px-1.5 py-1 gap-1" : "rounded-lg px-2 py-1.5 gap-1.5"} flex items-center shadow-md ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
                 >
-                  <span className="w-4 h-4 bg-white/30 rounded-full flex items-center justify-center text-[8px] font-bold text-white">
+                  <span className={`${compact ? "w-3 h-3 text-[6px]" : "w-4 h-4 text-[8px]"} bg-white/30 rounded-full flex items-center justify-center font-bold text-white`}>
                     {option.letter}
                   </span>
-                  <span className="text-white text-[10px] font-medium">{option.text}</span>
+                  <span className={`text-white font-medium ${compact ? "text-[8px]" : "text-[10px]"}`}>{option.text}</span>
                   {option.correct && showConfetti && (
                     <span className="ml-auto text-xs">✓</span>
                   )}
@@ -173,8 +173,8 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
             </div>
             
             {/* Live Counter */}
-            <div className="mt-3 flex justify-center relative z-10">
-              <div className="bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-[9px] text-white/90">
+            <div className={`flex justify-center relative z-10 ${compact ? "mt-1.5" : "mt-3"}`}>
+              <div className={`bg-white/20 backdrop-blur-sm rounded-full text-white/90 ${compact ? "px-2 py-0.5 text-[7px]" : "px-3 py-1 text-[9px]"}`}>
                 👥 24 participants
               </div>
             </div>
@@ -202,23 +202,25 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
 function PhoneIllustration({ 
   onParisClick, 
   onEmojiClick,
-  showConfetti 
+  showConfetti,
+  compact
 }: { 
   onParisClick: () => void; 
   onEmojiClick: (emoji: string) => void;
   showConfetti: boolean;
+  compact?: boolean;
 }) {
   const confettiColors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181", "#AA96DA"];
   
   return (
     <motion.div
-      initial={{ opacity: 0, x: 60 }}
+      initial={{ opacity: 0, x: compact ? 20 : 60 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.8, delay: 0.5 }}
+      transition={{ duration: 0.6, delay: compact ? 0.15 : 0.5 }}
       className="relative"
     >
       {/* Phone Frame */}
-      <div className="w-36 md:w-44 bg-slate-800 rounded-[2rem] p-1.5 shadow-2xl">
+      <div className={`${compact ? "w-28 sm:w-32 rounded-[1.5rem] p-1" : "w-36 md:w-44 rounded-[2rem] p-1.5"} bg-slate-800 shadow-2xl`}>
         {/* Screen */}
         <div className="bg-slate-900 rounded-[1.75rem] overflow-hidden">
           {/* Dynamic Island */}
@@ -227,7 +229,7 @@ function PhoneIllustration({
           </div>
           
           {/* App Content */}
-          <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-3 min-h-[200px] md:min-h-[240px] overflow-hidden">
+          <div className={`relative bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden ${compact ? "px-2 py-2 min-h-[140px]" : "px-3 py-3 min-h-[200px] md:min-h-[240px]"}`}>
             {/* Confetti Layer */}
             <AnimatePresence>
               {showConfetti && (
@@ -245,16 +247,16 @@ function PhoneIllustration({
             </AnimatePresence>
             
             {/* Header */}
-            <div className="text-center mb-3 relative z-10">
-              <div className="inline-flex items-center gap-1 bg-primary/20 rounded-full px-2 py-0.5 text-[8px] text-primary mb-1">
+            <div className={`text-center relative z-10 ${compact ? "mb-2" : "mb-3"}`}>
+              <div className={`inline-flex items-center gap-1 bg-primary/20 rounded-full text-primary ${compact ? "px-1.5 py-0.5 text-[6px] mb-0.5" : "px-2 py-0.5 text-[8px] mb-1"}`}>
                 <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" />
                 Connected
               </div>
-              <p className="text-white/70 text-[9px]">Tap your answer!</p>
+              <p className={`text-white/70 ${compact ? "text-[7px]" : "text-[9px]"}`}>Tap your answer!</p>
             </div>
             
             {/* Voting Buttons */}
-            <div className="space-y-2 relative z-10">
+            <div className={`relative z-10 ${compact ? "space-y-1" : "space-y-2"}`}>
               {[
                 { letter: "A", text: "London", color: "from-red-500 to-red-600" },
                 { letter: "B", text: "Paris", color: "from-blue-500 to-blue-600", correct: true },
@@ -269,12 +271,12 @@ function PhoneIllustration({
                   animate={showConfetti && option.correct ? { 
                     scale: [1, 1.08, 1],
                   } : {}}
-                  className={`w-full bg-gradient-to-r ${option.color} rounded-xl px-3 py-2.5 flex items-center gap-2 shadow-lg cursor-pointer transition-transform ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
+                  className={`w-full bg-gradient-to-r ${option.color} ${compact ? "rounded-lg px-2 py-1.5 gap-1" : "rounded-xl px-3 py-2.5 gap-2"} flex items-center shadow-lg cursor-pointer transition-transform ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
                 >
-                  <span className="w-5 h-5 bg-white/30 rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+                  <span className={`bg-white/30 rounded-full flex items-center justify-center font-bold text-white ${compact ? "w-4 h-4 text-[8px]" : "w-5 h-5 text-[10px]"}`}>
                     {option.letter}
                   </span>
-                  <span className="text-white text-xs font-semibold">{option.text}</span>
+                  <span className={`text-white font-semibold ${compact ? "text-[9px]" : "text-xs"}`}>{option.text}</span>
                   {option.correct && showConfetti && (
                     <span className="ml-auto text-sm">✓</span>
                   )}
@@ -283,14 +285,14 @@ function PhoneIllustration({
             </div>
             
             {/* Emoji Reactions */}
-            <div className="mt-3 flex justify-center gap-2 relative z-10">
+            <div className={`flex justify-center gap-2 relative z-10 ${compact ? "mt-1.5 gap-1" : "mt-3"}`}>
               {["🎉", "👍", "❤️", "😮"].map((emoji) => (
                 <motion.button
                   key={emoji}
                   onClick={() => onEmojiClick(emoji)}
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: 0.9 }}
-                  className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center text-sm hover:bg-white/20 transition-colors"
+                  className={`bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors ${compact ? "w-6 h-6 text-xs" : "w-8 h-8 text-sm"}`}
                 >
                   {emoji}
                 </motion.button>
@@ -426,32 +428,33 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
   }, []);
 
   return (
-    <section className="relative min-h-[85vh] sm:min-h-[90vh] flex items-center justify-center px-4 sm:px-4 py-12 sm:py-16 md:py-24 bg-background overflow-hidden pt-24 sm:pt-28">
+    <section className="relative min-h-[85vh] sm:min-h-[90vh] flex flex-col lg:items-center lg:justify-center px-4 sm:px-4 py-12 sm:py-16 md:py-24 bg-background overflow-hidden pt-20 sm:pt-24 lg:pt-28 scroll-mt-20">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-transparent pointer-events-none" />
       
       {/* Soft glow behind the input */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/4 w-[800px] h-[500px] bg-gradient-radial from-primary/5 via-transparent to-transparent blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 container mx-auto max-w-7xl w-full">
-        {/* Top Section with Illustrations and Text */}
-        <div className="relative flex flex-col lg:flex-row items-center justify-center gap-6 sm:gap-8 lg:gap-4 mb-6 sm:mb-10">
-          {/* Sync Connector - ABOVE everything */}
+      <div className="relative z-10 container mx-auto max-w-7xl w-full flex flex-col">
+        {/* MOBILE: Simple vertical flow - headline → subheadline → input → illustrations */}
+        {/* DESKTOP: Original layout with illustrations on sides */}
+        
+        <div className="relative flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-4 mb-4 sm:mb-6 lg:mb-10">
           <SyncConnector />
           
-          {/* Left Illustration - Desktop */}
+          {/* Left Illustration - Desktop only */}
           <div className="hidden lg:block flex-shrink-0 relative z-20">
             <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} />
           </div>
 
-          {/* Center Text Content */}
-          <div className="text-center max-w-2xl px-2 sm:px-4 lg:px-8 relative z-10">
-            {/* Headline - large and prominent on mobile like reference design */}
+          {/* Text + Input - on mobile: headline → subheadline → input (monday vibe style) */}
+          <div className="text-center max-w-2xl w-full px-1 sm:px-4 lg:px-8 relative z-10 flex flex-col items-center">
+            {/* Headline - much larger on mobile, ensure visible */}
             <motion.h1
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="text-3xl sm:text-4xl md:text-4xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-4 sm:mb-5 leading-[1.15] tracking-tight px-1"
+              className="text-4xl sm:text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-4 sm:mb-5 leading-[1.12] tracking-tight"
             >
               Turn your words into{" "}
               <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
@@ -459,30 +462,26 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               </span>
             </motion.h1>
 
-            {/* Sub-headline - clear CTA copy */}
+            {/* Sub-headline */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.15 }}
-              className="text-base sm:text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto leading-relaxed"
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-xl mx-auto leading-relaxed mb-6 sm:mb-8"
             >
               AI builds the full experience in seconds: an interactive deck for the main screen{" "}
               <span className="font-semibold text-foreground/80">and</span>{" "}
               a live interface for every phone in the room.
             </motion.p>
-            
-            {/* Teacher/student illustrations hidden on mobile - not optimized for small screens */}
           </div>
 
-          {/* Right Illustration - Phone */}
+          {/* Right Illustration - Desktop only */}
           <div className="hidden lg:block flex-shrink-0 relative z-20">
             <PhoneIllustration 
               onParisClick={handleParisClick} 
               onEmojiClick={handleEmojiClick}
               showConfetti={showConfetti}
             />
-            
-            {/* Flying Emojis Container */}
             <AnimatePresence>
               {flyingEmojis.map(({ id, emoji }) => (
                 <FlyingEmoji 
@@ -496,12 +495,12 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
           </div>
         </div>
 
-        {/* Large AI Input Box - The Star */}
+        {/* Large AI Input Box - Immediately after text (monday vibe style) */}
         <motion.div
-          initial={{ opacity: 0, y: 40, scale: 0.95 }}
+          initial={{ opacity: 0, y: 30, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="relative max-w-3xl mx-auto w-full"
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="relative max-w-3xl mx-auto w-full mb-0"
         >
           {/* Gradient border effect */}
           <div className="absolute -inset-[2px] rounded-2xl sm:rounded-3xl bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 opacity-60 blur-sm" />
@@ -543,6 +542,19 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
             </div>
           </div>
         </motion.div>
+
+        {/* Mobile-only: Desktop + Phone illustrations AFTER the input box, stacked & adapted */}
+        <div className="lg:hidden flex flex-col items-center gap-6 mt-8 sm:mt-10">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 w-full max-w-sm sm:max-w-md mx-auto">
+            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} compact />
+            <PhoneIllustration 
+              onParisClick={handleParisClick} 
+              onEmojiClick={handleEmojiClick}
+              showConfetti={showConfetti}
+              compact
+            />
+          </div>
+        </div>
 
         {/* Hints below */}
         <motion.div
