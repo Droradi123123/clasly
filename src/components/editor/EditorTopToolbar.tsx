@@ -36,6 +36,7 @@ import { ThemeId } from "@/types/themes";
 import { ThemeSelector } from "./ThemeSelector";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Lock } from "lucide-react";
 
 interface EditorTopToolbarProps {
   slide: Slide;
@@ -45,6 +46,11 @@ interface EditorTopToolbarProps {
   onPremiumThemeBlocked?: () => void;
   /** When logo scope is 'all', propagate to all slides */
   onUpdateDesignForAllSlides?: (updates: Partial<SlideDesign>) => void;
+  /** Pro-only: logo upload. When false and user tries logo, call this. */
+  isPro?: boolean;
+  onPremiumLogoBlocked?: () => void;
+  /** Pro-only: custom color picker. When false and user tries custom color, call this. */
+  onPremiumColorBlocked?: () => void;
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
@@ -69,6 +75,9 @@ export function EditorTopToolbar({
   onSelectTheme,
   onPremiumThemeBlocked,
   onUpdateDesignForAllSlides,
+  isPro = false,
+  onPremiumLogoBlocked,
+  onPremiumColorBlocked,
 }: EditorTopToolbarProps) {
   const design = slide.design || {};
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -298,32 +307,46 @@ export function EditorTopToolbar({
                   ))}
                 </div>
                 <div className="pt-2 border-t border-border/50">
-                  <Label className="text-xs text-muted-foreground">Custom Color</Label>
-                  <div className="flex gap-2 mt-2">
-                    <Input
-                      type="color"
-                      value={customBgColor}
-                      onChange={(e) => setCustomBgColor(e.target.value)}
-                      className="w-10 h-8 p-0 border-0 cursor-pointer"
-                    />
-                    <Input
-                      type="text"
-                      value={customBgColor}
-                      onChange={(e) => setCustomBgColor(e.target.value)}
-                      className="flex-1 h-8 text-xs font-mono"
-                      placeholder="#000000"
-                    />
+                  <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    Custom Color {!isPro && <Lock className="w-3 h-3 text-amber-500" />}
+                  </Label>
+                  {isPro ? (
+                    <div className="flex gap-2 mt-2">
+                      <Input
+                        type="color"
+                        value={customBgColor}
+                        onChange={(e) => setCustomBgColor(e.target.value)}
+                        className="w-10 h-8 p-0 border-0 cursor-pointer"
+                      />
+                      <Input
+                        type="text"
+                        value={customBgColor}
+                        onChange={(e) => setCustomBgColor(e.target.value)}
+                        className="flex-1 h-8 text-xs font-mono"
+                        placeholder="#000000"
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8"
+                        onClick={() => {
+                          updateDesign({ backgroundColor: customBgColor, gradientPreset: undefined });
+                          setShowBgPicker(false);
+                        }}
+                      >
+                        Apply
+                      </Button>
+                    </div>
+                  ) : (
                     <Button
+                      variant="outline"
                       size="sm"
-                      className="h-8"
-                      onClick={() => {
-                        updateDesign({ backgroundColor: customBgColor, gradientPreset: undefined });
-                        setShowBgPicker(false);
-                      }}
+                      className="w-full mt-2 gap-1.5"
+                      onClick={() => onPremiumColorBlocked?.()}
                     >
-                      Apply
+                      <Lock className="w-3.5 h-3.5" />
+                      Unlock with Pro
                     </Button>
-                  </div>
+                  )}
                 </div>
               </div>
             </PopoverContent>
@@ -361,17 +384,31 @@ export function EditorTopToolbar({
             variant="image"
           />
 
-          {/* Logo Picker */}
-          <ImageAndPositionPopover
-            design={design}
-            imageUrlInput={logoUrlInput}
-            setImageUrlInput={setLogoUrlInput}
-            onUpdateDesign={updateDesign}
-            onUpdateDesignForAllSlides={onUpdateDesignForAllSlides}
-            showImagePicker={showLogoPicker}
-            setShowImagePicker={setShowLogoPicker}
-            variant="logo"
-          />
+          {/* Logo Picker – Pro only */}
+          {isPro ? (
+            <ImageAndPositionPopover
+              design={design}
+              imageUrlInput={logoUrlInput}
+              setImageUrlInput={setLogoUrlInput}
+              onUpdateDesign={updateDesign}
+              onUpdateDesignForAllSlides={onUpdateDesignForAllSlides}
+              showImagePicker={showLogoPicker}
+              setShowImagePicker={setShowLogoPicker}
+              variant="logo"
+            />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-xs opacity-70"
+              onClick={() => onPremiumLogoBlocked?.()}
+              title="Logo upload is a Pro feature"
+            >
+              <ImageIcon className="w-4 h-4" />
+              Logo
+              <Lock className="w-3 h-3" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

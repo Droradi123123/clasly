@@ -426,7 +426,7 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
   }, []);
 
   return (
-    <section className="relative min-h-[85vh] sm:min-h-[90vh] flex items-center justify-center px-3 sm:px-4 py-10 sm:py-16 md:py-24 bg-background overflow-hidden">
+    <section className="relative min-h-[85vh] sm:min-h-[90vh] flex items-center justify-center px-4 sm:px-4 py-12 sm:py-16 md:py-24 bg-background overflow-hidden pt-24 sm:pt-28">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-transparent pointer-events-none" />
       
@@ -446,12 +446,12 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
 
           {/* Center Text Content */}
           <div className="text-center max-w-2xl px-2 sm:px-4 lg:px-8 relative z-10">
-            {/* Headline */}
+            {/* Headline - large and prominent on mobile like reference design */}
             <motion.h1
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="text-2xl sm:text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-3 sm:mb-5 leading-[1.15] tracking-tight"
+              className="text-3xl sm:text-4xl md:text-4xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-4 sm:mb-5 leading-[1.15] tracking-tight px-1"
             >
               Turn your words into{" "}
               <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
@@ -459,31 +459,19 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               </span>
             </motion.h1>
 
-            {/* Sub-headline */}
+            {/* Sub-headline - clear CTA copy */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.15 }}
-              className="text-sm sm:text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto"
+              className="text-base sm:text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto leading-relaxed"
             >
               AI builds the full experience in seconds: an interactive deck for the main screen{" "}
               <span className="font-semibold text-foreground/80">and</span>{" "}
               a live interface for every phone in the room.
             </motion.p>
             
-            {/* Mobile Illustrations - Show on smaller screens */}
-            <div className="flex lg:hidden items-center justify-center gap-3 sm:gap-6 mt-6 sm:mt-8 relative scale-90 sm:scale-100">
-              <div className="scale-75 sm:scale-75">
-                <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} />
-              </div>
-              <div className="scale-75">
-                <PhoneIllustration 
-                  onParisClick={handleParisClick} 
-                  onEmojiClick={handleEmojiClick}
-                  showConfetti={showConfetti}
-                />
-              </div>
-            </div>
+            {/* Teacher/student illustrations hidden on mobile - not optimized for small screens */}
           </div>
 
           {/* Right Illustration - Phone */}
@@ -525,9 +513,9 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe your topic, audience, and goal…
+                placeholder="Describe your topic and we'll build your presentation…
 
-Example: Create a fun trivia quiz about world capitals for my geography class. Include multiple choice questions and a word cloud for student feedback."
+Example: Create a trivia quiz about world capitals with multiple choice and word cloud."
                 className="min-h-[140px] sm:min-h-[180px] md:min-h-[200px] w-full border-0 bg-transparent resize-none text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 leading-relaxed"
               />
             </div>

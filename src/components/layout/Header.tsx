@@ -56,8 +56,8 @@ const Header = () => {
   return (
     <>
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+        <div className="container mx-auto px-4 sm:px-6 min-h-16 h-16 flex items-center justify-between gap-2 overflow-hidden">
+          <Link to="/" className="flex items-center gap-2 shrink-0 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-gradient-primary flex items-center justify-center shadow-md">
               <Presentation className="w-5 h-5 text-primary-foreground" />
             </div>
@@ -79,7 +79,7 @@ const Header = () => {
             </Link>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/join">
                 Join Session

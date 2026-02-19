@@ -139,10 +139,6 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
     return (state.credits?.ai_tokens_balance ?? 0) >= amount;
   }, [state.credits?.ai_tokens_balance]);
 
-  const hasVibeCredits = useCallback((amount: number = 1): boolean => {
-    return (state.credits?.vibe_credits_balance ?? 0) >= amount;
-  }, [state.credits?.vibe_credits_balance]);
-
   return {
     ...state,
     isFree,
@@ -150,10 +146,8 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
     isPro,
     canUse,
     hasAITokens,
-    hasVibeCredits,
     maxSlides: state.plan?.max_slides ?? 5,
     aiTokensRemaining: state.credits?.ai_tokens_balance ?? 0,
-    vibeCreditsRemaining: state.credits?.vibe_credits_balance ?? 0,
     planName,
   };
 }

@@ -44,16 +44,12 @@ export function useFeatureAccess() {
 export function useCredits() {
   const {
     aiTokensRemaining,
-    vibeCreditsRemaining,
     hasAITokens,
-    hasVibeCredits,
     credits,
   } = useSubscriptionContext();
   return {
     aiTokensRemaining,
-    vibeCreditsRemaining,
     hasAITokens,
-    hasVibeCredits,
     credits,
   };
 }

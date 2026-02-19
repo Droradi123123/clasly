@@ -57,7 +57,7 @@ async function ensureUserCredits(userId: string): Promise<{ ok: boolean; error?:
   const { error } = await supabase.from("user_credits").insert({
     user_id: userId,
     ai_tokens_balance: INITIAL_FREE_CREDITS,
-    vibe_credits_balance: 20,
+    vibe_credits_balance: 0,
   });
   if (error) {
     console.error("[generate-slides] Failed to create user_credits:", error);

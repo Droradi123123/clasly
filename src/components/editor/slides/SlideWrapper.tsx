@@ -118,20 +118,6 @@ export function SlideWrapper({
     return `hsl(${theme.tokens.textPrimary})`;
   };
 
-  // Get animation config based on theme
-  const getAnimationConfig = () => {
-    switch (theme.tokens.animationStyle) {
-      case 'bouncy':
-        return { type: 'spring' as const, stiffness: 300, damping: 15 };
-      case 'snappy':
-        return { type: 'spring' as const, stiffness: 500, damping: 30 };
-      case 'smooth':
-        return { type: 'tween' as const, duration: 0.4, ease: 'easeOut' as const };
-      default:
-        return { type: 'spring' as const, stiffness: 300, damping: 25 };
-    }
-  };
-
   // Overlay image rendering
   const overlayImage = design.overlayImageUrl && design.overlayImagePosition !== 'none';
   const isBackgroundImage = design.overlayImagePosition === 'background';
@@ -139,10 +125,9 @@ export function SlideWrapper({
 
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.98 }}
+      initial={false}
       animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      transition={getAnimationConfig()}
+      transition={{ duration: 0.15 }}
       className={`
         w-full h-full overflow-hidden relative
         ${getThemeBorderRadius()}

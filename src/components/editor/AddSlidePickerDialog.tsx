@@ -1,4 +1,3 @@
-import { motion } from "framer-motion";
 import {
   Type,
   FileText,
@@ -64,8 +63,9 @@ export function AddSlidePickerDialog({
   const quizTypes = SLIDE_TYPES.filter((t) => t.category === "quiz");
 
   const handleSelect = (type: SlideType) => {
-    onSelect(type);
     onOpenChange(false);
+    // Defer addSlide to next tick so dialog close doesn't overlap with state update (prevents flicker)
+    requestAnimationFrame(() => onSelect(type));
   };
 
   return (
@@ -137,12 +137,9 @@ function Section({
         {types.map((slideType, i) => {
           const Icon = SLIDE_ICONS[slideType.type];
           return (
-            <motion.button
+            <button
               key={slideType.type}
               type="button"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.03 }}
               onClick={() => onSelect(slideType.type)}
               className={cn(
                 "flex items-start gap-3 p-3 rounded-xl text-left border border-border/50",
@@ -167,7 +164,7 @@ function Section({
                   {slideType.description}
                 </p>
               </div>
-            </motion.button>
+            </button>
           );
         })}
       </div>

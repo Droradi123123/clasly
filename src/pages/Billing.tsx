@@ -32,7 +32,6 @@ const Billing = () => {
     isLoading,
     planName,
     aiTokensRemaining,
-    vibeCreditsRemaining,
   } = useSubscriptionContext();
   const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
 
@@ -136,12 +135,7 @@ const Billing = () => {
 
   // Free plan has 0 monthly refill; show balance vs 10 (one-time signup grant)
   const aiTokensMax = (plan?.monthly_ai_tokens ?? 0) || (planName === "Free" ? 10 : 50);
-  const vibeCreditsMax = plan?.monthly_vibe_credits ?? 20;
   const aiTokensPercent = aiTokensMax > 0 ? Math.min((aiTokensRemaining / aiTokensMax) * 100, 100) : 0;
-  const vibeCreditsPercent = Math.min(
-    (vibeCreditsRemaining / vibeCreditsMax) * 100,
-    100
-  );
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -251,35 +245,7 @@ const Billing = () => {
                 </Card>
               </motion.div>
 
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-              >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <Zap className="w-5 h-5 text-accent" />
-                      Vibe Credits
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Remaining</span>
-                        <span className="font-medium">
-                          {vibeCreditsRemaining.toLocaleString()} / {vibeCreditsMax.toLocaleString()}
-                        </span>
-                      </div>
-                      <Progress value={vibeCreditsPercent} className="h-2" />
-                      <p className="text-xs text-muted-foreground">
-                        Used for VibeCoding refinements
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
-            </div>
+              </div>
 
             {/* Credit packs – one-time purchase (all plans) */}
             <motion.div
@@ -322,8 +288,7 @@ const Billing = () => {
                           ${pack.price_usd}
                         </p>
                         <ul className="text-sm text-muted-foreground space-y-1 mb-4">
-                          <li>{pack.ai_tokens} AI credits now</li>
-                          <li>{pack.vibe_credits} Vibe credits</li>
+                          <li>{pack.ai_tokens} AI credits</li>
                         </ul>
                         <Button
                           variant={pack.popular ? "default" : "outline"}

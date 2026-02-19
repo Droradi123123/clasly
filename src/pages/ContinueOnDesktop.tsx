@@ -21,10 +21,10 @@ const ContinueOnDesktop = () => {
             <Monitor className="w-10 h-10" />
           </div>
           <h1 className="text-2xl font-display font-bold text-foreground mb-3">
-            המשך מהדסקטופ
+            Continue on Desktop
           </h1>
           <p className="text-muted-foreground mb-8 leading-relaxed">
-            בניית מצגות אינטראקטיביות זמינה במחשב. פתחו את האתר בדסקטופ כדי ליצור מצגת, לערוך או להציג.
+            Building interactive presentations is available on desktop. Open the site on your computer to create, edit, or present.
           </p>
           <Button
             size="lg"
@@ -32,7 +32,7 @@ const ContinueOnDesktop = () => {
             onClick={() => navigate("/")}
             className="gap-2"
           >
-            חזרה לעמוד הבית
+            Back to Home
             <ArrowRight className="w-4 h-4 rtl:rotate-180" />
           </Button>
         </motion.div>

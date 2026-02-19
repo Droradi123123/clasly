@@ -278,7 +278,7 @@ const Editor = () => {
     }
   };
 
-  const addSlide = (type: SlideType) => {
+  const addSlide = useCallback((type: SlideType) => {
     // Check slide limit for free users
     const slideLimit = maxSlides ?? 5;
     if (isFree && slides.length >= slideLimit) {
@@ -296,7 +296,7 @@ const Editor = () => {
     setSlides(newSlides);
     setCurrentSlideIndex(newSlides.length - 1);
     setHasChanges(true);
-  };
+  }, [slides, isFree, maxSlides, showUpgradeModal]);
 
   const handleSlidesImported = (importedSlides: Slide[]) => {
     setSlides([...slides, ...importedSlides]);
@@ -453,6 +453,17 @@ const Editor = () => {
           title: "Premium theme",
           description: "This theme is only available on the Pro plan. Upgrade to unlock all premium themes.",
         })}
+        isPro={!!isPro}
+        onPremiumLogoBlocked={() => showUpgradeModal({
+          feature: "logo",
+          title: "Logo upload",
+          description: "Logo upload is available on the Pro plan. Upgrade to add your logo to slides.",
+        })}
+        onPremiumColorBlocked={() => showUpgradeModal({
+          feature: "custom color",
+          title: "Custom color picker",
+          description: "Choosing any custom color is available on the Pro plan. Upgrade to unlock full color control.",
+        })}
       />
 
       {/* Import Dialog */}
@@ -472,6 +483,13 @@ const Editor = () => {
 
       {/* Upgrade Modal */}
       <UpgradeModalComponent />
+
+      {/* Add Slide Picker Dialog - at root to avoid flicker when panel re-renders */}
+      <AddSlidePickerDialog
+        open={showAddSlidePicker}
+        onOpenChange={setShowAddSlidePicker}
+        onSelect={addSlide}
+      />
 
       {/* Main Editor Area - Fill remaining height */}
       <div className="flex-1 flex overflow-hidden min-h-0">
@@ -515,11 +533,6 @@ const Editor = () => {
                 <span className="text-primary font-medium text-xs">Add Slide</span>
               </div>
             </Button>
-            <AddSlidePickerDialog
-              open={showAddSlidePicker}
-              onOpenChange={setShowAddSlidePicker}
-              onSelect={addSlide}
-            />
           </div>
 
           {/* Slides list - Scrollable */}

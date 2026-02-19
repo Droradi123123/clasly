@@ -145,42 +145,31 @@ serve(async (req) => {
         console.log("Payment metadata:", metadata);
 
         if (metadata.type === "credits_topup") {
-          // Handle credits top-up
-          const { user_id, ai_tokens, vibe_credits, pack_id } = metadata;
+          // Handle credits top-up – AI credits only (single credit type)
+          const { user_id, ai_tokens, pack_id } = metadata;
 
-          // Update user credits
-          const { error: updateError } = await supabase.rpc(
-            "increment_user_credits",
-            {
-              p_user_id: user_id,
-              p_ai_tokens: ai_tokens,
-              p_vibe_credits: vibe_credits,
-            }
-          );
+          const { data: currentCredits } = await supabase
+            .from("user_credits")
+            .select("*")
+            .eq("user_id", user_id)
+            .single();
 
-          if (updateError) {
-            // Fallback: direct update
-            const { data: currentCredits } = await supabase
+          if (currentCredits) {
+            await supabase
               .from("user_credits")
-              .select("*")
-              .eq("user_id", user_id)
-              .single();
-
-            if (currentCredits) {
-              await supabase
-                .from("user_credits")
-                .update({
-                  ai_tokens_balance:
-                    currentCredits.ai_tokens_balance + ai_tokens,
-                  vibe_credits_balance:
-                    currentCredits.vibe_credits_balance + vibe_credits,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("user_id", user_id);
-            }
+              .update({
+                ai_tokens_balance: currentCredits.ai_tokens_balance + ai_tokens,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("user_id", user_id);
+          } else {
+            await supabase.from("user_credits").insert({
+              user_id,
+              ai_tokens_balance: ai_tokens,
+              vibe_credits_balance: 0,
+            });
           }
 
-          // Log transaction
           await supabase.from("credit_transactions").insert({
             user_id,
             credit_type: "ai_tokens",
@@ -189,15 +178,7 @@ serve(async (req) => {
             description: `Purchased ${pack_id} pack`,
           });
 
-          await supabase.from("credit_transactions").insert({
-            user_id,
-            credit_type: "vibe_credits",
-            transaction_type: "purchase",
-            amount: vibe_credits,
-            description: `Purchased ${pack_id} pack`,
-          });
-
-          console.log(`Credits added for user ${user_id}`);
+          console.log(`AI credits added for user ${user_id}: ${ai_tokens}`);
         } else {
           // Handle subscription payment
           const { user_id, plan_id, interval } = metadata;
@@ -230,13 +211,12 @@ serve(async (req) => {
             .single();
 
           if (plan) {
-            // Refill credits based on plan
+            // Refill AI credits only (single credit type)
             await supabase
               .from("user_credits")
               .upsert({
                 user_id,
                 ai_tokens_balance: plan.monthly_ai_tokens,
-                vibe_credits_balance: plan.monthly_vibe_credits,
                 last_refill_date: new Date().toISOString(),
                 updated_at: new Date().toISOString(),
               })

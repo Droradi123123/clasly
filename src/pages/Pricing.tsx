@@ -115,10 +115,6 @@ const Pricing = () => {
     } else {
       baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
     }
-    if (plan.monthly_vibe_credits > 0) {
-      baseFeatures.push(`${plan.monthly_vibe_credits.toLocaleString()} Vibe credits/month`);
-    }
-
     // Plan-specific features
     if (plan.name === "Free") {
       baseFeatures.push("Basic slide types (Poll, WordCloud)");

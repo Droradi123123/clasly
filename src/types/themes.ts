@@ -167,12 +167,13 @@ export const THEMES: Record<ThemeId, Theme> = {
     ],
   },
 
-  // 3. Professional – clean, business, minimal (dark + one accent)
+  // 3. Professional – clean, business, minimal (dark + one accent) – Pro only
   'swiss-minimal': {
     id: 'swiss-minimal',
     name: 'Professional',
     description: 'Clean & bold – perfect for corporate and formal presentations',
     emoji: '⬛',
+    isPremium: true,
     preview: {
       gradient: 'linear-gradient(180deg, #0c0c0c 0%, #171717 40%, #262626 100%)',
       accentColor: '#EF4444',
@@ -316,12 +317,13 @@ export const THEMES: Record<ThemeId, Theme> = {
     ],
   },
 
-  // 6. Modern – tech, contemporary (neon / digital)
+  // 6. Modern – tech, contemporary (neon / digital) – Pro only
   'neon-cyber': {
     id: 'neon-cyber',
     name: 'Modern',
     description: 'Tech & contemporary – ideal for STEM and digital topics',
     emoji: '🌌',
+    isPremium: true,
     preview: {
       gradient: 'linear-gradient(140deg, #030712 0%, #0f172a 25%, #1e1b4b 60%, #312e81 100%)',
       accentColor: '#00FF94',
