@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, ArrowRight, Play } from "lucide-react";
+import { Sparkles, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import AuthModal from "@/components/auth/AuthModal";
 
 export default function CTASection() {
   const navigate = useNavigate();
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   return (
     <section className="py-20 px-4">
@@ -44,7 +47,7 @@ export default function CTASection() {
               <Button 
                 size="xl" 
                 variant="glass"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => setShowAuthModal(true)}
                 className="bg-white/90 text-primary hover:bg-white"
               >
                 <Sparkles className="w-5 h-5" />
@@ -52,8 +55,7 @@ export default function CTASection() {
               </Button>
               <Button 
                 size="xl" 
-                variant="outline"
-                className="border-white/30 text-primary-foreground hover:bg-white/10"
+                className="bg-white/95 text-primary hover:bg-white border-2 border-white font-medium"
                 onClick={() => navigate("/pricing")}
               >
                 View Plans
@@ -63,6 +65,10 @@ export default function CTASection() {
           </div>
         </motion.div>
       </div>
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+      />
     </section>
   );
 }

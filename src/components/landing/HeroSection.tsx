@@ -544,6 +544,29 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
           </div>
         </motion.div>
 
+        {/* Suggestions - immediately under text box (desktop & mobile) */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+          className="mt-4 sm:mt-5 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-1"
+        >
+          <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 shrink-0">Try:</span>
+          {[
+            "Lecture on photosynthesis with quiz",
+            "Class feedback poll",
+            "Course recap with Q&A",
+          ].map((template) => (
+            <button
+              key={template}
+              onClick={() => setPrompt(`Create an interactive ${template.toLowerCase()} for my students`)}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-muted/60 text-xs sm:text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
+            >
+              {template}
+            </button>
+          ))}
+        </motion.div>
+
         {/* How it works - steps flow (desktop & mobile) */}
         <div className="mt-8 sm:mt-10 lg:mt-12 w-full">
           <HowItWorks />
@@ -577,29 +600,6 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
             <Settings2 className="w-4 h-4 text-primary/60" />
             <span>No setup required</span>
           </div>
-        </motion.div>
-
-        {/* Quick templates */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.6 }}
-          className="mt-6 sm:mt-10 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 px-1"
-        >
-          <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 shrink-0">Try:</span>
-          {[
-            "Team ice-breaker quiz",
-            "Product launch poll",
-            "Classroom Q&A",
-          ].map((template) => (
-            <button
-              key={template}
-              onClick={() => setPrompt(`Create a ${template.toLowerCase()} with interactive questions that engage participants`)}
-              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-muted/60 text-xs sm:text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
-            >
-              {template}
-            </button>
-          ))}
         </motion.div>
       </div>
 
