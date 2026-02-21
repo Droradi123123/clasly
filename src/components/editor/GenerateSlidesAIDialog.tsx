@@ -77,7 +77,7 @@ export default function GenerateSlidesAIDialog({
   const [generatedThemeName, setGeneratedThemeName] = useState<string | null>(null);
   
   // Get subscription info for slide limits and credits
-  const { isFree, maxSlides, hasAITokens, aiTokensRemaining } = useSubscriptionContext();
+  const { isFree, maxSlides, hasAITokens, credits, aiTokensRemaining } = useSubscriptionContext();
   const planSlideLimit = isFree ? (maxSlides ?? 5) : 8;
   const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
 
@@ -115,7 +115,10 @@ export default function GenerateSlidesAIDialog({
   };
 
   const expectedCount = getExpectedSlideCount();
-  const hasEnoughCredits = hasAITokens(expectedCount);
+  // Only block when we KNOW user has insufficient credits. When credits is null (e.g. new user),
+  // let the server create the row via ensureUserCredits and validate.
+  const creditsKnown = credits != null;
+  const hasEnoughCredits = creditsKnown ? hasAITokens(expectedCount) : true;
 
   const handleGenerate = async () => {
     if (!description.trim()) {

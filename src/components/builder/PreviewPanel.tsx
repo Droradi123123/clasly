@@ -4,12 +4,14 @@ import { Loader2, Eye } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversationalBuilder } from '@/hooks/useConversationalBuilder';
 import { SlideRenderer } from '@/components/editor/SlideRenderer';
+import { BuilderPreviewProvider } from '@/contexts/BuilderPreviewContext';
 
 interface PreviewPanelProps {
   isInitialLoading?: boolean;
+  initialPrompt?: string;
 }
 
-const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading }) => {
+const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading, initialPrompt }) => {
   const { 
     sandboxSlides, 
     currentPreviewIndex, 
@@ -19,12 +21,52 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading }) => {
   
   if (isInitialLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-muted/20">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
-          <p className="text-lg font-medium">Creating your presentation...</p>
-          <p className="text-sm text-muted-foreground mt-2">This may take a moment</p>
-        </div>
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-b from-primary/[0.04] to-transparent min-h-0">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center max-w-md px-8"
+        >
+          <div className="relative inline-flex mb-6">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+              className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center"
+            >
+              <Loader2 className="w-10 h-10 text-primary" />
+            </motion.div>
+            <motion.div
+              animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+              className="absolute -inset-1 rounded-2xl border-2 border-primary/20"
+            />
+          </div>
+          <h2 className="text-xl font-display font-bold text-foreground mb-2">
+            Building your interactive presentation
+          </h2>
+          <p className="text-muted-foreground mb-2">
+            Based on your instructions:
+          </p>
+          {initialPrompt && (
+            <p className="text-sm text-foreground/80 bg-muted/50 rounded-lg px-4 py-3 mb-4 text-left max-h-24 overflow-y-auto">
+              &ldquo;{initialPrompt}&rdquo;
+            </p>
+          )}
+          <p className="text-muted-foreground text-sm">
+            AI is creating slides, quizzes, and engagement elements. Almost there...
+          </p>
+          <div className="flex justify-center gap-2">
+            {[0, 1, 2].map((i) => (
+              <motion.div
+                key={i}
+                animate={{ opacity: [0.4, 1, 0.4] }}
+                transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+                className="w-2 h-2 rounded-full bg-primary/60"
+              />
+            ))}
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -97,12 +139,17 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading }) => {
                 )}
               </div>
               
-              {/* Full-size slide preview */}
-              <div className="w-full aspect-video rounded-xl overflow-hidden shadow-lg border border-border">
-                <SlideRenderer
-                  slide={slide}
-                  isEditing={false}
-                />
+              {/* Full-size slide preview - scrollable when content overflows */}
+              <div className="w-full aspect-video rounded-xl overflow-hidden shadow-lg border border-border min-h-0 flex flex-col">
+                <BuilderPreviewProvider allowContentScroll>
+                  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+                    <SlideRenderer
+                      slide={slide}
+                      isEditing={false}
+                      showCorrectAnswer
+                    />
+                  </div>
+                </BuilderPreviewProvider>
               </div>
               
               {/* Slide title/question preview */}

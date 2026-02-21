@@ -30,7 +30,8 @@ export function PostLoginRedirect() {
     } else if (!isMobile && hasPendingPrompt) {
       navigate(`/builder?prompt=${encodeURIComponent(pendingPrompt)}&audience=general`, { replace: true });
     } else {
-      didRedirect.current = false;
+      // Logged-in user on homepage -> redirect to Dashboard (their "home")
+      navigate('/dashboard', { replace: true });
     }
   }, [user, isAuthLoading, isMobile, location.pathname, navigate]);
 

@@ -45,11 +45,15 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
         // Close modal and navigate
         onClose();
         
-        // Mobile: always go to Continue on Desktop
+        // Always save prompt before redirect so user never loses it (mobile: for when they continue on desktop)
+        if (promptText && redirectTo === 'builder') {
+          localStorage.setItem('clasly_pending_prompt', promptText);
+        }
+        
+        // Mobile: go to Continue on Desktop (prompt saved for when they open on desktop)
         if (isMobile) {
           navigate('/continue-on-desktop', { replace: true });
         } else if (promptText && redirectTo === 'builder') {
-          localStorage.setItem('clasly_pending_prompt', promptText);
           navigate(`/builder?prompt=${encodeURIComponent(promptText)}&audience=general`);
         } else {
           navigate('/dashboard');

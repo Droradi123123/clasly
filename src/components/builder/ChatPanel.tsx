@@ -180,7 +180,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, 
           </div>
           <div>
             <h3 className="font-semibold text-sm">AI Assistant</h3>
-            <p className="text-xs text-muted-foreground">Refine your presentation</p>
+            <p className="text-xs text-muted-foreground">Type what you want—AI edits your slides</p>
           </div>
         </div>
       </div>
@@ -195,12 +195,15 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, 
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="text-center text-muted-foreground py-8"
+              className="text-center text-muted-foreground py-8 px-4"
             >
-              <Sparkles className="w-8 h-8 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">Ask me to refine your slides</p>
-              <p className="text-xs mt-2 opacity-70">
-                Try: "Make slide 3 more engaging" or "Add a quiz about..."
+              <Sparkles className="w-10 h-10 mx-auto mb-4 text-primary/60" />
+              <p className="text-sm font-medium text-foreground mb-1">Your presentation is ready</p>
+              <p className="text-sm mb-4">
+                Use the chat below to ask for changes. Just type what you want—AI applies it to your slides.
+              </p>
+              <p className="text-xs opacity-80">
+                Try: &quot;Make slide 3 more engaging&quot; · &quot;Add a quiz&quot; · &quot;Change the tone to professional&quot;
               </p>
             </motion.div>
           ) : (
@@ -232,17 +235,23 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, 
         </AnimatePresence>
       </ScrollArea>
       
-      {/* Input */}
+      {/* Input - Chat with AI to refine (VIBE) */}
       <div className="p-4 border-t border-border bg-muted/20">
+        <div className="mb-3">
+          <p className="text-sm font-medium text-foreground">Chat with AI to refine</p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Type what you want changed—AI updates your slides instantly
+          </p>
+        </div>
         <div className="flex gap-2 items-end">
           <Textarea
             ref={textareaRef}
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={hasCredits ? "Type your message..." : "No credits remaining..."}
+            placeholder={hasCredits ? "e.g. Make slide 3 more engaging, Add a quiz after slide 2..." : "No credits remaining..."}
             disabled={isGenerating || !hasCredits}
-            className="min-h-[44px] max-h-[150px] resize-none"
+            className="min-h-[48px] max-h-[150px] resize-none"
             rows={1}
           />
           <Button
@@ -257,6 +266,19 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, 
               <Send className="w-4 h-4" />
             )}
           </Button>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5 justify-center">
+          {['Change tone', 'Add quiz', 'Edit slide 2'].map((hint) => (
+            <button
+              key={hint}
+              type="button"
+              onClick={() => setInput(hint)}
+              disabled={isGenerating || !hasCredits}
+              className="text-xs px-2.5 py-1 rounded-full bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+            >
+              {hint}
+            </button>
+          ))}
         </div>
         <p className="text-xs text-muted-foreground mt-2 text-center">
           AI can make mistakes. Always verify important details.

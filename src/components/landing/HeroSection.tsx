@@ -387,13 +387,15 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
 
   const handleGenerate = () => {
     if (!prompt.trim()) return;
+    const trimmed = prompt.trim();
     
     if (user) {
       // User is logged in, go directly to builder
-      navigate(`/builder?prompt=${encodeURIComponent(prompt.trim())}&audience=general`);
+      navigate(`/builder?prompt=${encodeURIComponent(trimmed)}&audience=general`);
     } else {
-      // Store prompt and show auth modal
-      setPendingPrompt(prompt.trim());
+      // Save prompt immediately so we never lose it (before auth, OAuth redirect, etc.)
+      localStorage.setItem('clasly_pending_prompt', trimmed);
+      setPendingPrompt(trimmed);
       setShowAuthModal(true);
     }
   };
@@ -496,18 +498,15 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
           </div>
         </div>
 
-        {/* Large AI Input Box - Immediately after text (monday vibe style) */}
+        {/* Large AI Input Box - Immediately after text (monday vibe reference) */}
         <motion.div
           initial={{ opacity: 0, y: 30, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.6, delay: 0.2 }}
-          className="relative max-w-3xl mx-auto w-full mb-0"
+          className="relative max-w-3xl mx-auto w-full mb-0 p-[3px] rounded-2xl sm:rounded-3xl bg-gradient-to-r from-violet-500 via-pink-400 to-amber-400 shadow-xl shadow-pink-500/20"
         >
-          {/* Gradient border effect */}
-          <div className="absolute -inset-[2px] rounded-2xl sm:rounded-3xl bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 opacity-60 blur-sm" />
-          
-          {/* Main container */}
-          <div className="relative bg-card rounded-2xl sm:rounded-3xl border border-border shadow-2xl shadow-primary/5 overflow-hidden">
+          {/* Main container - solid background inside gradient frame */}
+          <div className="relative bg-card rounded-xl sm:rounded-[1.35rem] shadow-2xl overflow-hidden">
             {/* Textarea - The Canvas */}
             <div className="p-4 sm:p-6 pb-3 sm:pb-4">
               <Textarea

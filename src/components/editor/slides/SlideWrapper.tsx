@@ -4,6 +4,7 @@ import { Slide, GRADIENT_PRESETS } from "@/types/slides";
 import { ThemeId, getTheme, DEFAULT_THEME_ID } from "@/types/themes";
 import { ThemedDecorations } from "@/components/effects/ThemedDecorations";
 import { inferDirectionFromSlide } from "@/lib/textDirection";
+import { useBuilderPreview } from "@/contexts/BuilderPreviewContext";
 
 interface SlideWrapperProps {
   slide: Slide;
@@ -20,6 +21,7 @@ export function SlideWrapper({
   showEffects = true,
   themeId = DEFAULT_THEME_ID
 }: SlideWrapperProps) {
+  const { allowContentScroll } = useBuilderPreview();
   const design = slide.design || {};
   const theme = useMemo(() => getTheme(themeId), [themeId]);
 
@@ -178,7 +180,11 @@ export function SlideWrapper({
             <img key={design.overlayImageUrl} src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" loading="eager" />
           </div>
         )}
-        <div className={`${isSideImage ? 'flex-1' : 'h-full'} flex flex-col`}>
+        <div
+          className={`${isSideImage ? 'flex-1' : 'h-full'} flex flex-col ${
+            allowContentScroll ? 'min-h-0 overflow-y-auto overflow-x-hidden' : ''
+          }`}
+        >
           {children}
         </div>
         {overlayImage && design.overlayImagePosition === 'right' && (

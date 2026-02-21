@@ -22,7 +22,7 @@ const ConversationalBuilder: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const isMobile = useIsMobile();
-  const { maxSlides, isFree, hasAITokens } = useSubscriptionContext();
+  const { maxSlides, isFree, hasAITokens, isLoading: isSubLoading } = useSubscriptionContext();
   
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -114,6 +114,8 @@ const ConversationalBuilder: React.FC = () => {
     if (!user || isAuthLoading) return;
     if (sandboxSlides.length > 0) return;
     if (originalPrompt) return; // Already set, don't run again
+    // Wait for subscription/credits to load before credit check (avoids false "no credits" when loading)
+    if (isSubLoading) return;
 
     // Clear pending prompt from localStorage immediately
     localStorage.removeItem('clasly_pending_prompt');
@@ -122,7 +124,7 @@ const ConversationalBuilder: React.FC = () => {
     setHasStartedGeneration(true);
     setOriginalPrompt(initialPrompt, audience);
     generateInitialPresentation(initialPrompt, audience);
-  }, [initialPrompt, user, isAuthLoading, hasStartedGeneration, sandboxSlides.length, originalPrompt]);
+  }, [initialPrompt, user, isAuthLoading, isSubLoading, hasStartedGeneration, sandboxSlides.length, originalPrompt]);
 
   // Keep draft in DB in sync when user edits via chat (debounced)
   useEffect(() => {
@@ -137,21 +139,17 @@ const ConversationalBuilder: React.FC = () => {
   
   const generateInitialPresentation = async (prompt: string, targetAudience: string) => {
     const slideCount = isFree ? (maxSlides ?? 5) : 7;
-    if (!hasAITokens(slideCount)) {
-      setShowOutOfCreditsModal(true);
-      addMessage({
-        role: 'assistant',
-        content: `You need ${slideCount} credits to generate this presentation. Add credits or upgrade your plan to continue.`,
-      });
-      return;
-    }
+    // No client-side credit block; server is source of truth (ensureUserCredits + checkCreditsBalance).
+    // On 402, catch handler sets showOutOfCreditsModal.
 
     setIsInitialLoading(true);
     setIsGenerating(true);
-    
+
+    // Show user's prompt in chat so they see what they asked for
+    addMessage({ role: 'user', content: prompt });
     addMessage({
       role: 'assistant',
-      content: `I'm creating a presentation about "${prompt}". Just a moment...`,
+      content: `I'm building a presentation now:\n\n"${prompt}"`,
     });
     
     try {
@@ -384,7 +382,7 @@ const ConversationalBuilder: React.FC = () => {
           animate={{ x: 0, opacity: 1 }}
           className="flex-1"
         >
-          <PreviewPanel isInitialLoading={isInitialLoading} />
+          <PreviewPanel isInitialLoading={isInitialLoading} initialPrompt={initialPrompt} />
         </motion.div>
       </div>
       

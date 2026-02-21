@@ -49,7 +49,7 @@ interface Lecture {
   title: string;
   status: string;
   lecture_code: string;
-  slides: Slide[];
+  slides?: Slide[];
   created_at: string;
   updated_at: string;
 }
@@ -104,7 +104,7 @@ const Dashboard = () => {
       try {
         const { data, error } = await supabase
           .from('lectures')
-          .select('id, title, status, lecture_code, slides, created_at, updated_at, user_id')
+          .select('id, title, status, lecture_code, created_at, updated_at, user_id')
           .eq('user_id', user.id)
           .order('updated_at', { ascending: false });
 
@@ -549,7 +549,9 @@ const Dashboard = () => {
                         </span>
                         <span className="flex items-center gap-1">
                           <Presentation className="w-4 h-4" />
-                          {(lecture.slides as unknown as Slide[])?.length || 0} slides
+                          {lecture.slides != null
+                            ? `${(lecture.slides as unknown as Slide[]).length} slides`
+                            : '—'}
                         </span>
                         <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">
                           {lecture.lecture_code}

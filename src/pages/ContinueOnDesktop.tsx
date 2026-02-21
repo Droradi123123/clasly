@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Monitor, ArrowRight } from "lucide-react";
@@ -6,6 +7,11 @@ import Header from "@/components/layout/Header";
 
 const ContinueOnDesktop = () => {
   const navigate = useNavigate();
+  const [hasSavedPrompt, setHasSavedPrompt] = useState(false);
+  
+  useEffect(() => {
+    setHasSavedPrompt(!!localStorage.getItem('clasly_pending_prompt'));
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -25,6 +31,11 @@ const ContinueOnDesktop = () => {
           </h1>
           <p className="text-muted-foreground mb-8 leading-relaxed">
             Building interactive presentations is available on desktop. Open the site on your computer to create, edit, or present.
+            {hasSavedPrompt && (
+              <span className="block mt-3 text-sm font-medium text-primary">
+                Your prompt is saved—it will continue when you open on desktop.
+              </span>
+            )}
           </p>
           <Button
             size="lg"

@@ -165,7 +165,7 @@ export function QuizSlide({
                           ${isMinimal ? '' : shadowClass}
                           ${isHighlighted 
                             ? 'bg-green-500/40 border-green-400' 
-                            : isEditing && isCorrect
+                            : (isEditing || showCorrectAnswer) && isCorrect
                             ? 'bg-green-500/30 border-green-400/50'
                             : `${optionColorClass} border-white/20`
                           }
@@ -232,8 +232,8 @@ export function QuizSlide({
                           />
                         )}
 
-                        {/* Correct answer check mark */}
-                        {isHighlighted && (
+                        {/* Correct answer check mark - show when revealed or in builder/editor preview */}
+                        {(isHighlighted || (showCorrectAnswer && isCorrect)) && (
                           <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
