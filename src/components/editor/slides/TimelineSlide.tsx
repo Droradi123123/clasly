@@ -30,6 +30,7 @@ export function TimelineSlide({
 
   const content = normalizeTimelineContent(rawContent);
   const textColor = slide.design?.textColor || "hsl(var(--foreground))";
+  const textAlign = (slide.design?.textAlign || "center") as "left" | "center" | "right";
 
   const handleTitleChange = (title: string) => {
     onUpdate?.({ ...content, title });
@@ -68,21 +69,21 @@ export function TimelineSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex flex-col h-full p-4 md:p-6 min-h-0">
+      <div className="flex flex-col h-full p-4 md:p-6 min-h-0" dir={slide.design?.direction}>
         {/* Title */}
         {isEditing ? (
           <AutoResizeTextarea
             value={content.title}
             onChange={(e) => handleTitleChange(e.target.value)}
-            className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-3 text-center placeholder:opacity-50"
-            style={{ color: textColor }}
+            className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-3 placeholder:opacity-50 w-full"
+            style={{ color: textColor, textAlign }}
             placeholder="Timeline title..."
             minRows={1}
           />
         ) : (
           <h2
-            className="text-xl md:text-3xl font-bold mb-3 text-center break-words"
-            style={{ color: textColor }}
+            className="text-xl md:text-3xl font-bold mb-3 break-words w-full"
+            style={{ color: textColor, textAlign }}
           >
             {content.title}
           </h2>

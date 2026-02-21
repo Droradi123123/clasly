@@ -21,6 +21,7 @@ import { EditorTopToolbar } from "@/components/editor/EditorTopToolbar";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { ImportPresentationDialog } from "@/components/editor/ImportPresentationDialog";
 import { AddSlidePickerDialog } from "@/components/editor/AddSlidePickerDialog";
+import GenerateSlidesAIDialog from "@/components/editor/GenerateSlidesAIDialog";
 import { SortableSlideItem } from "@/components/editor/SortableSlideItem";
 import { AnimateButton } from "@/components/editor/AnimateButton";
 import { StudentPreview } from "@/components/editor/StudentPreview";
@@ -35,6 +36,11 @@ import {
   createNewSlide,
   isQuizSlide,
 } from "@/types/slides";
+
+const isParticipativeSlide = (type: SlideType) => {
+  const info = SLIDE_TYPES.find((t) => t.type === type);
+  return info?.category === "interactive" || info?.category === "quiz";
+};
 import {
   Play,
   Plus,
@@ -112,6 +118,7 @@ const Editor = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
+  const [showGenerateAIDialog, setShowGenerateAIDialog] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('academic-pro');
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
@@ -146,6 +153,13 @@ const Editor = () => {
       navigate("/continue-on-desktop", { replace: true });
     }
   }, [isMobile, navigate]);
+
+  // Hide phone preview when switching to a non-interactive slide
+  useEffect(() => {
+    if (showPhonePreview && !isParticipativeSlide(currentSlide?.type ?? "title")) {
+      setShowPhonePreview(false);
+    }
+  }, [currentSlideIndex, currentSlide?.type]);
 
   // Load lecture from database if it exists (only own lectures)
   useEffect(() => {
@@ -489,6 +503,18 @@ const Editor = () => {
         open={showAddSlidePicker}
         onOpenChange={setShowAddSlidePicker}
         onSelect={addSlide}
+        onGenerateWithAI={() => setShowGenerateAIDialog(true)}
+      />
+
+      <GenerateSlidesAIDialog
+        open={showGenerateAIDialog}
+        onOpenChange={setShowGenerateAIDialog}
+        onSlidesGenerated={(newSlides) => {
+          const insertIndex = slides.length;
+          setSlides((prev) => [...prev, ...newSlides].map((s, idx) => ({ ...s, order: idx })));
+          setCurrentSlideIndex(insertIndex);
+          setHasChanges(true);
+        }}
       />
 
       {/* Main Editor Area - Fill remaining height */}
@@ -650,26 +676,28 @@ const Editor = () => {
 
               {/* Center controls */}
               <div className="flex items-center gap-2">
-                {/* Phone Preview Toggle */}
-                <Button
-                  variant={showPhonePreview ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setShowPhonePreview(!showPhonePreview)}
-                  className="gap-2"
-                  title="Preview as student phone"
-                >
-                  {showPhonePreview ? (
-                    <>
-                      <Monitor className="w-4 h-4" />
-                      Presenter
-                    </>
-                  ) : (
-                    <>
-                      <Smartphone className="w-4 h-4" />
-                      Student View
-                    </>
-                  )}
-                </Button>
+                {/* Phone Preview Toggle - only on interactive/quiz slides */}
+                {isParticipativeSlide(currentSlide.type) && (
+                  <Button
+                    variant={showPhonePreview ? "secondary" : "outline"}
+                    size="sm"
+                    onClick={() => setShowPhonePreview(!showPhonePreview)}
+                    className="gap-2"
+                    title="Preview as student phone"
+                  >
+                    {showPhonePreview ? (
+                      <>
+                        <Monitor className="w-4 h-4" />
+                        Presenter
+                      </>
+                    ) : (
+                      <>
+                        <Smartphone className="w-4 h-4" />
+                        Student View
+                      </>
+                    )}
+                  </Button>
+                )}
 
                 <div className="w-px h-6 bg-border" />
 
@@ -680,10 +708,9 @@ const Editor = () => {
                 />
 
                 <Button
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                   onClick={() => {
-                    // Open Chat Builder and focus the slide the user is on
                     localStorage.setItem(
                       "clasly_builder_slides",
                       JSON.stringify(slides)
@@ -691,10 +718,10 @@ const Editor = () => {
                     localStorage.setItem("clasly_builder_source", "editor");
                     navigate(`/builder?slide=${currentSlideIndex}`);
                   }}
-                  className="gap-2"
+                  className="gap-2 border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-medium"
                 >
                   <Wand2 className="w-4 h-4" />
-                  AI
+                  Edit with AI
                 </Button>
               </div>
 

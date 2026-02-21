@@ -1,10 +1,19 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Eye } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversationalBuilder } from '@/hooks/useConversationalBuilder';
 import { SlideRenderer } from '@/components/editor/SlideRenderer';
 import { BuilderPreviewProvider } from '@/contexts/BuilderPreviewContext';
+
+const BUILDER_TIPS = [
+  'Students join with a QR code—no app download needed.',
+  'Add quizzes and polls to boost engagement during your lecture.',
+  'Use Student View to see exactly what your audience sees on their phones.',
+  'Change slide themes anytime—each presentation can have its own style.',
+  'AI can refine your slides—describe changes in the chat to apply them instantly.',
+  'Export your presentation to images or PDF when you\'re done.',
+];
 
 interface PreviewPanelProps {
   isInitialLoading?: boolean;
@@ -12,59 +21,57 @@ interface PreviewPanelProps {
 }
 
 const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading, initialPrompt }) => {
-  const { 
-    sandboxSlides, 
-    currentPreviewIndex, 
+  const {
+    sandboxSlides,
+    currentPreviewIndex,
     setCurrentPreviewIndex,
     isGenerating,
   } = useConversationalBuilder();
-  
+
+  const [tipIndex, setTipIndex] = useState(0);
+  useEffect(() => {
+    if (!isInitialLoading) return;
+    const t = setInterval(() => {
+      setTipIndex((i) => (i + 1) % BUILDER_TIPS.length);
+    }, 4500);
+    return () => clearInterval(t);
+  }, [isInitialLoading]);
+
   if (isInitialLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gradient-to-b from-primary/[0.04] to-transparent min-h-0">
+      <div className="flex-1 flex flex-col items-center justify-center min-h-0 p-6">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="text-center max-w-md px-8"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4 }}
+          className="flex flex-col items-center justify-center text-center max-w-sm"
         >
-          <div className="relative inline-flex mb-6">
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-              className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center"
-            >
-              <Loader2 className="w-10 h-10 text-primary" />
-            </motion.div>
-            <motion.div
-              animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
-              className="absolute -inset-1 rounded-2xl border-2 border-primary/20"
-            />
-          </div>
-          <h2 className="text-xl font-display font-bold text-foreground mb-2">
-            Building your interactive presentation
-          </h2>
-          <p className="text-muted-foreground mb-2">
-            Based on your instructions:
-          </p>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+            className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-5"
+          >
+            <Loader2 className="w-7 h-7 text-primary" />
+          </motion.div>
+          <p className="text-sm text-muted-foreground mb-1">Building your presentation</p>
           {initialPrompt && (
-            <p className="text-sm text-foreground/80 bg-muted/50 rounded-lg px-4 py-3 mb-4 text-left max-h-24 overflow-y-auto">
+            <p className="text-xs text-foreground/70 bg-muted/40 rounded-lg px-3 py-2 mb-5 text-left max-h-16 overflow-y-auto line-clamp-2">
               &ldquo;{initialPrompt}&rdquo;
             </p>
           )}
-          <p className="text-muted-foreground text-sm">
-            AI is creating slides, quizzes, and engagement elements. Almost there...
-          </p>
-          <div className="flex justify-center gap-2">
-            {[0, 1, 2].map((i) => (
-              <motion.div
-                key={i}
-                animate={{ opacity: [0.4, 1, 0.4] }}
-                transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-                className="w-2 h-2 rounded-full bg-primary/60"
-              />
-            ))}
+          <div className="h-10 flex items-center justify-center">
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={tipIndex}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.3 }}
+                className="text-xs text-muted-foreground/90 italic"
+              >
+                {BUILDER_TIPS[tipIndex]}
+              </motion.p>
+            </AnimatePresence>
           </div>
         </motion.div>
       </div>

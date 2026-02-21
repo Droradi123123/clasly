@@ -38,6 +38,7 @@ export function BarChartSlide({
 }: BarChartSlideProps) {
   const content = slide.content as BarChartSlideContent;
   const textColor = slide.design?.textColor || '#ffffff';
+  const textAlign = (slide.design?.textAlign || "center") as "left" | "center" | "right";
   
   const bars = content.bars || [
     { label: 'Item 1', value: 25 },
@@ -86,19 +87,19 @@ export function BarChartSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex flex-col h-full p-8">
+      <div className="flex flex-col h-full p-8" dir={slide.design?.direction}>
         {/* Title */}
-        <div className="text-center mb-8">
+        <div className="mb-8 w-full" style={{ textAlign }}>
           {isEditing ? (
             <input
               value={content.title || ''}
               onChange={(e) => handleTitleChange(e.target.value)}
-              className="text-3xl md:text-4xl font-bold bg-transparent border-0 outline-none text-center w-full"
-              style={{ color: textColor }}
+              className="text-3xl md:text-4xl font-bold bg-transparent border-0 outline-none w-full"
+              style={{ color: textColor, textAlign }}
               placeholder="Add your title here"
             />
           ) : (
-            <h2 className="text-3xl md:text-4xl font-bold" style={{ color: textColor }}>
+            <h2 className="text-3xl md:text-4xl font-bold w-full" style={{ color: textColor, textAlign }}>
               {content.title || 'Add your title here'}
             </h2>
           )}
@@ -108,12 +109,12 @@ export function BarChartSlide({
               <input
                 value={content.subtitle || ''}
                 onChange={(e) => handleSubtitleChange(e.target.value)}
-                className="text-lg md:text-xl bg-transparent border-0 outline-none text-center w-full mt-2 opacity-80"
-                style={{ color: textColor }}
+                className="text-lg md:text-xl bg-transparent border-0 outline-none w-full mt-2 opacity-80"
+                style={{ color: textColor, textAlign }}
                 placeholder="Optional subtitle..."
               />
             ) : (
-              <p className="text-lg md:text-xl mt-2 opacity-80" style={{ color: textColor }}>
+              <p className="text-lg md:text-xl mt-2 opacity-80 w-full" style={{ color: textColor, textAlign }}>
                 {content.subtitle}
               </p>
             )

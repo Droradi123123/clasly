@@ -16,6 +16,7 @@ import {
   Sliders,
   MessageSquare,
   Heart,
+  Sparkles,
 } from "lucide-react";
 import {
   Dialog,
@@ -51,12 +52,14 @@ interface AddSlidePickerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (type: SlideType) => void;
+  onGenerateWithAI?: () => void;
 }
 
 export function AddSlidePickerDialog({
   open,
   onOpenChange,
   onSelect,
+  onGenerateWithAI,
 }: AddSlidePickerDialogProps) {
   const contentTypes = SLIDE_TYPES.filter((t) => t.category === "content");
   const interactiveTypes = SLIDE_TYPES.filter((t) => t.category === "interactive");
@@ -64,8 +67,12 @@ export function AddSlidePickerDialog({
 
   const handleSelect = (type: SlideType) => {
     onOpenChange(false);
-    // Defer addSlide to next tick so dialog close doesn't overlap with state update (prevents flicker)
     requestAnimationFrame(() => onSelect(type));
+  };
+
+  const handleGenerateWithAI = () => {
+    onOpenChange(false);
+    requestAnimationFrame(() => onGenerateWithAI?.());
   };
 
   return (
@@ -81,6 +88,33 @@ export function AddSlidePickerDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6">
+          {/* AI generation - first option when callback provided */}
+          {onGenerateWithAI && (
+            <div>
+              <h3 className="text-sm font-semibold text-foreground mb-0.5">Generate with AI</h3>
+              <p className="text-xs text-muted-foreground mb-3">Describe your topic and AI creates slides for you</p>
+              <button
+                type="button"
+                onClick={handleGenerateWithAI}
+                className={cn(
+                  "flex items-start gap-3 p-4 w-full rounded-xl text-left border-2 border-primary/30",
+                  "bg-primary/5 hover:bg-primary/10 hover:border-primary/50",
+                  "transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2"
+                )}
+              >
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center bg-primary/20 text-primary">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm text-foreground leading-tight">Generate slides with AI</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    AI creates multiple slides based on your topic—quizzes, polls, and content.
+                  </p>
+                </div>
+              </button>
+            </div>
+          )}
+
           {/* Content slides */}
           <Section
             title="Content"
