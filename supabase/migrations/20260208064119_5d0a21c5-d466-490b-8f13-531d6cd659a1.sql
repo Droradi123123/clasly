@@ -45,20 +45,31 @@ CREATE POLICY "Admins can delete roles"
 ON public.user_roles FOR DELETE
 USING (public.has_role(auth.uid(), 'admin'));
 
--- 4. Add user_id to lectures table
-ALTER TABLE public.lectures ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+-- 4. Add user_id to lectures table (IF NOT EXISTS for idempotency)
+ALTER TABLE public.lectures ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 
 -- 5. Add max_lectures to subscription_plans
-ALTER TABLE public.subscription_plans ADD COLUMN max_lectures INTEGER DEFAULT 3;
+ALTER TABLE public.subscription_plans ADD COLUMN IF NOT EXISTS max_lectures INTEGER DEFAULT 3;
 
--- 6. Rename stripe columns to paypal in user_subscriptions
-ALTER TABLE public.user_subscriptions RENAME COLUMN stripe_subscription_id TO paypal_subscription_id;
-ALTER TABLE public.user_subscriptions RENAME COLUMN stripe_customer_id TO paypal_payer_id;
+-- 6. Rename stripe columns to paypal in user_subscriptions (only if they exist)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_subscriptions' AND column_name = 'stripe_subscription_id') THEN
+    ALTER TABLE public.user_subscriptions RENAME COLUMN stripe_subscription_id TO paypal_subscription_id;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'user_subscriptions' AND column_name = 'stripe_customer_id') THEN
+    ALTER TABLE public.user_subscriptions RENAME COLUMN stripe_customer_id TO paypal_payer_id;
+  END IF;
+END $$;
 
 -- 7. Drop old RLS policies on lectures and create new ones
 DROP POLICY IF EXISTS "Allow public insert to lectures" ON public.lectures;
 DROP POLICY IF EXISTS "Allow public read access to lectures" ON public.lectures;
 DROP POLICY IF EXISTS "Allow public update to lectures" ON public.lectures;
+DROP POLICY IF EXISTS "Users can view own lectures" ON public.lectures;
+DROP POLICY IF EXISTS "Users can insert own lectures" ON public.lectures;
+DROP POLICY IF EXISTS "Users can update own lectures" ON public.lectures;
+DROP POLICY IF EXISTS "Users can delete own lectures" ON public.lectures;
 
 -- New lecture policies - users see only their own, admins see all
 CREATE POLICY "Users can view own lectures"
@@ -79,6 +90,9 @@ USING (auth.uid() = user_id OR public.has_role(auth.uid(), 'admin'));
 
 -- 8. Add admin policies for user_credits management
 DROP POLICY IF EXISTS "Users can view own credits" ON public.user_credits;
+DROP POLICY IF EXISTS "Users can view own credits or admin all" ON public.user_credits;
+DROP POLICY IF EXISTS "Admins can update credits" ON public.user_credits;
+DROP POLICY IF EXISTS "Admins can insert credits" ON public.user_credits;
 
 CREATE POLICY "Users can view own credits or admin all"
 ON public.user_credits FOR SELECT
@@ -94,6 +108,9 @@ WITH CHECK (public.has_role(auth.uid(), 'admin'));
 
 -- 9. Add admin policies for user_subscriptions management
 DROP POLICY IF EXISTS "Users can view own subscription" ON public.user_subscriptions;
+DROP POLICY IF EXISTS "Users can view own subscription or admin all" ON public.user_subscriptions;
+DROP POLICY IF EXISTS "Admins can update subscriptions" ON public.user_subscriptions;
+DROP POLICY IF EXISTS "Admins can insert subscriptions" ON public.user_subscriptions;
 
 CREATE POLICY "Users can view own subscription or admin all"
 ON public.user_subscriptions FOR SELECT

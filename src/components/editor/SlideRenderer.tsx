@@ -40,6 +40,7 @@ import {
 import { Image } from "lucide-react";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import { ImageUploader } from "@/components/editor/ImageUploader";
+import { SlideImage } from "@/components/editor/SlideImage";
 
 interface SlideRendererProps {
   slide: Slide;
@@ -326,7 +327,7 @@ export function SlideRenderer({
             {(slide.content as any).imageUrl ? (
               <>
                 <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
-                  <img
+                  <SlideImage
                     src={(slide.content as any).imageUrl}
                     alt={(slide.content as any).title || "Slide image"}
                     className="w-full h-full object-cover"

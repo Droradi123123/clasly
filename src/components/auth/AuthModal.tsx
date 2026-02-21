@@ -320,7 +320,10 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
           {/* Trust indicators */}
           <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-border/50">
             <p className="text-xs text-center text-muted-foreground">
-              By continuing, you agree to our Terms of Service and Privacy Policy
+              By continuing, you agree to our{" "}
+              <a href="/terms" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              {" "}and{" "}
+              <a href="/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
             </p>
           </div>
         </div>

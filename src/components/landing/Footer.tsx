@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { Zap } from "lucide-react";
 
 export default function Footer() {
@@ -10,9 +11,17 @@ export default function Footer() {
           </div>
           <span className="font-display font-semibold text-foreground">Clasly</span>
         </div>
-        <p className="text-sm text-muted-foreground">
-          © 2024 Clasly. Making presentations interactive.
-        </p>
+        <div className="flex items-center gap-6">
+          <Link to="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Terms of Service
+          </Link>
+          <Link to="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Privacy Policy
+          </Link>
+          <p className="text-sm text-muted-foreground">
+            © 2026 Clasly. Making presentations interactive.
+          </p>
+        </div>
       </div>
     </footer>
   );

@@ -1,6 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle } from "lucide-react";
+import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/auth/AuthModal";
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
@@ -20,6 +21,7 @@ const Header = () => {
   const location = useLocation();
   const isHome = location.pathname === "/";
   const { user, isLoading, signOut } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
   
   // Subscription data
@@ -196,6 +198,14 @@ const Header = () => {
                     )}
                     
                     <DropdownMenuSeparator />
+                    {isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin/conversations" className="cursor-pointer">
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          View User Conversations
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem asChild>
                       <Link to="/dashboard" className="cursor-pointer">
                         <LayoutDashboard className="w-4 h-4 mr-2" />

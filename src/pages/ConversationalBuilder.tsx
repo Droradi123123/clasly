@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Check, X } from 'lucide-react';
@@ -8,6 +8,7 @@ import ChatPanel from '@/components/builder/ChatPanel';
 import PreviewPanel from '@/components/builder/PreviewPanel';
 import { useConversationalBuilder } from '@/hooks/useConversationalBuilder';
 import { createLecture, updateLecture } from '@/lib/lectureService';
+import { saveBuilderConversation } from '@/lib/builderConversations';
 import { Slide } from '@/types/slides';
 import { useAuth } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -34,6 +35,7 @@ const ConversationalBuilder: React.FC = () => {
   const {
     sandboxSlides,
     setSandboxSlides,
+    messages,
     addMessage,
     updateLastMessage,
     setIsGenerating,
@@ -46,6 +48,8 @@ const ConversationalBuilder: React.FC = () => {
     setCurrentPreviewIndex,
     reset,
   } = useConversationalBuilder();
+
+  const saveDebounceRef = useRef<NodeJS.Timeout | null>(null);
   
   // Track if we've already started generation to prevent duplicates
   const [hasStartedGeneration, setHasStartedGeneration] = useState(false);
@@ -73,6 +77,31 @@ const ConversationalBuilder: React.FC = () => {
       setShowAuthModal(true);
     }
   }, [isAuthLoading, user]);
+
+  // Debounced save of chat conversation to DB (1.5s after last message change)
+  useEffect(() => {
+    if (!user?.id || messages.length === 0) return;
+
+    if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    saveDebounceRef.current = setTimeout(() => {
+      saveBuilderConversation({
+        userId: user.id,
+        messages: messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+        })),
+        lectureId: draftLectureId,
+        originalPrompt: originalPrompt || undefined,
+        targetAudience: targetAudience || undefined,
+      });
+      saveDebounceRef.current = null;
+    }, 1500);
+
+    return () => {
+      if (saveDebounceRef.current) clearTimeout(saveDebounceRef.current);
+    };
+  }, [user?.id, messages, draftLectureId, originalPrompt, targetAudience]);
 
   // If opened from Editor, load slides from localStorage once and focus the requested slide
   useEffect(() => {

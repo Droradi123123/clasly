@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical } from "lucide-react";
+import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
 import {
   getLectureByCode,
@@ -602,6 +602,15 @@ const Student = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/20"
+              onClick={() => lecture?.id && refetchLectureState(lecture.id)}
+              title="Refresh to see latest"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
             <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-400" : "bg-red-400"}`} />
             <span className="text-sm text-primary-foreground/80">
               {isConnected ? "Connected" : "Reconnecting..."}

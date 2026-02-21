@@ -5,6 +5,7 @@ import type { Slide, SplitContentSlideContent, ImagePosition } from "@/types/sli
 import type { ThemeId } from "@/types/themes";
 import { Button } from "@/components/ui/button";
 import { ImageUploader } from "@/components/editor/ImageUploader";
+import { SlideImage } from "@/components/editor/SlideImage";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import { inferDirectionFromSlide } from "@/lib/textDirection";
 
@@ -149,7 +150,7 @@ export function SplitContentSlide({
     <div className="flex-1 flex items-center justify-center p-4 bg-gradient-to-br from-primary/20 to-primary/40 rounded-2xl m-4">
       {content.imageUrl ? (
         <div className="relative w-full h-full flex items-center justify-center">
-          <img
+          <SlideImage
             src={content.imageUrl}
             alt="Slide image"
             className="max-w-full max-h-full object-contain rounded-xl shadow-2xl"

@@ -1,9 +1,21 @@
 #!/bin/bash
 # הפקודה להטמעת כל הקוד בפרודקשן
+# שימוש: ./scripts/deploy-production.sh [--skip-db]
+#   --skip-db   דלג על מיגרציות (אם הרצת manual-schema-setup.sql ידנית)
 set -e
 
-echo "=== 1. מריצים מיגרציות Supabase ==="
-npx -y supabase db push --project-ref gctdhjgxrshrltbntjqj
+SKIP_DB=false
+for arg in "$@"; do
+  [ "$arg" = "--skip-db" ] && SKIP_DB=true
+done
+
+if [ "$SKIP_DB" = false ]; then
+  echo "=== 1. מריצים מיגרציות Supabase ==="
+  echo "אם עדיין לא קישרת את הפרויקט, הרץ קודם: npx supabase link --project-ref gctdhjgxrshrltbntjqj"
+  npx -y supabase db push || { echo "המיגרציות נכשלו. אם הרצת manual-schema-setup.sql ידנית, הרץ: ./scripts/deploy-production.sh --skip-db"; exit 1; }
+else
+  echo "=== 1. מדלג על מיגרציות (--skip-db) ==="
+fi
 
 echo ""
 echo "=== 2. מעלים Edge Functions (AI, משחקים, תמונות) ==="

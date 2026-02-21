@@ -98,6 +98,24 @@ t# איך להעלות את האתר ל-Vercel (אונליין)
 
 ---
 
+## הרצת מיגרציות Supabase
+
+לפני הפעם הראשונה (או כשיש מיגרציות חדשות):
+
+1. **קישור הפרויקט** (פעם אחת):
+   ```text
+   cd ~/Desktop/interactive-lecture-hub-main
+   npx supabase link --project-ref gctdhjgxrshrltbntjqj
+   ```
+   (יבקש סיסמה – הזן את ה-database password מ-Supabase Dashboard → Settings → Database)
+
+2. **הרצת המיגרציות**:
+   ```text
+   npx supabase db push
+   ```
+
+---
+
 ## אחרי ההעלאה
 
 - **כל עדכון ב-GitHub** (push ל-main) יבנה ויעלה גרסה חדשה אוטומטית.

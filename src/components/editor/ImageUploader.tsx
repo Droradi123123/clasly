@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { Upload, Image, Link as LinkIcon, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SlideImage } from "@/components/editor/SlideImage";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
@@ -54,21 +55,9 @@ export function ImageUploader({
         throw uploadError;
       }
 
-      let displayUrl: string;
-      try {
-        const { data: signedData } = await supabase.storage
-          .from('slide-images')
-          .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
-        if (signedData?.signedUrl) {
-          displayUrl = signedData.signedUrl;
-        } else {
-          const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
-          displayUrl = publicData.publicUrl;
-        }
-      } catch {
-        const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
-        displayUrl = publicData.publicUrl;
-      }
+      // Use public URL when bucket is public – stable, no expiry, fewer CORS issues
+      const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+      const displayUrl = publicData.publicUrl;
       onChange(displayUrl);
       toast.success('Image uploaded successfully');
     } catch (error: any) {
@@ -93,9 +82,9 @@ export function ImageUploader({
   if (value) {
     return (
       <div className={`relative rounded-lg overflow-hidden ${className}`}>
-        <img 
-          src={value} 
-          alt="Uploaded" 
+        <SlideImage
+          src={value}
+          alt="Uploaded"
           className="w-full h-full object-cover"
         />
         <button

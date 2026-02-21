@@ -11,13 +11,16 @@
     "preview": "vite preview",
     "supabase": "npx -y supabase",
     "deploy:functions": "npx -y supabase functions deploy generate-slides --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy chat-builder --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy generate-image --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy parse-presentation --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy convert-to-images --project-ref gctdhjgxrshrltbntjqj",
-    "deploy:paypal": "npx -y supabase functions deploy create-checkout-session --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy create-credits-checkout --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy capture-paypal-order --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy paypal-webhook --project-ref gctdhjgxrshrltbntjqj"
+    "deploy:paypal": "npx -y supabase functions deploy create-checkout-session --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy create-credits-checkout --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy capture-paypal-order --project-ref gctdhjgxrshrltbntjqj && npx -y supabase functions deploy paypal-webhook --project-ref gctdhjgxrshrltbntjqj",
+    "deploy:prod": "bash scripts/deploy-production.sh",
+    "deploy:prod:no-db": "bash scripts/deploy-production.sh --skip-db"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^3.10.0",
+    "@microsoft/clarity": "^1.0.2",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-aspect-ratio": "^1.1.7",

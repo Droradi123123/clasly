@@ -44,6 +44,39 @@ export type Database = {
         }
         Relationships: []
       }
+      builder_conversations: {
+        Row: {
+          id: string
+          user_id: string
+          lecture_id: string | null
+          messages: Json
+          original_prompt: string | null
+          target_audience: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          lecture_id?: string | null
+          messages: Json
+          original_prompt?: string | null
+          target_audience?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          lecture_id?: string | null
+          messages?: Json
+          original_prompt?: string | null
+          target_audience?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       lectures: {
         Row: {
           created_at: string

@@ -16,6 +16,9 @@ import Billing from "./pages/Billing";
 import ConversationalBuilder from "./pages/ConversationalBuilder";
 import LectureAnalytics from "./pages/LectureAnalytics";
 import ContinueOnDesktop from "./pages/ContinueOnDesktop";
+import TermsOfService from "./pages/TermsOfService";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import AdminConversations from "./pages/AdminConversations";
 import NotFound from "./pages/NotFound";
 import { PostLoginRedirect } from "./components/auth/PostLoginRedirect";
 
@@ -57,6 +60,9 @@ const App = () => {
               <Route path="/billing" element={<Billing />} />
               <Route path="/builder" element={<ConversationalBuilder />} />
               <Route path="/continue-on-desktop" element={<ContinueOnDesktop />} />
+              <Route path="/terms" element={<TermsOfService />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/admin/conversations" element={<AdminConversations />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>
