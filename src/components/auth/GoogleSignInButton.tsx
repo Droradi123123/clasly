@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
+import { getOAuthAllowedHosts } from "@/lib/authUtils";
 import { toast } from "sonner";
 
 interface GoogleSignInButtonProps {
@@ -31,8 +32,8 @@ export const GoogleSignInButton = ({ className, size = "lg" }: GoogleSignInButto
 
       if (data?.url) {
         const oauthUrl = new URL(data.url);
-        const allowedHosts = ["accounts.google.com", "gctdhjgxrshrltbntjqj.supabase.co"];
-        if (!allowedHosts.some((host) => oauthUrl.hostname.endsWith(host))) {
+        const allowedHosts = getOAuthAllowedHosts();
+        if (!allowedHosts.some((host) => oauthUrl.hostname === host || oauthUrl.hostname.endsWith("." + host))) {
           throw new Error("Invalid OAuth redirect URL");
         }
         window.location.href = data.url;

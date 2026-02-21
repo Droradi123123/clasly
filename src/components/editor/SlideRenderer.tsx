@@ -39,6 +39,7 @@ import {
 } from "./slides";
 import { Image } from "lucide-react";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
+import { ImageUploader } from "@/components/editor/ImageUploader";
 
 interface SlideRendererProps {
   slide: Slide;
@@ -321,31 +322,46 @@ export function SlideRenderer({
     case "image":
       return (
         <SlideWrapper slide={slide} themeId={themeId}>
-          <div className="relative w-full h-full flex flex-col min-h-0">
+          <div className="relative w-full h-full flex flex-col min-h-0 p-4">
             {(slide.content as any).imageUrl ? (
-              <img
-                src={(slide.content as any).imageUrl}
-                alt={(slide.content as any).title || "Slide image"}
-                className="w-full h-full object-cover flex-1 min-h-0"
-              />
+              <>
+                <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
+                  <img
+                    src={(slide.content as any).imageUrl}
+                    alt={(slide.content as any).title || "Slide image"}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                {isEditing && (
+                  <div className="flex-shrink-0 mt-3">
+                    <ImageUploader
+                      value={(slide.content as any).imageUrl}
+                      onChange={(url) =>
+                        onUpdateContent?.({ ...slide.content, imageUrl: url })
+                      }
+                      placeholder="Replace image"
+                      className="min-h-[100px]"
+                    />
+                  </div>
+                )}
+              </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center min-h-0 bg-muted/30">
-                <Image className="w-20 h-20 opacity-40 mb-4 text-muted-foreground" />
-                <p className="opacity-60 text-muted-foreground text-sm mb-2">No image yet</p>
-                <p className="opacity-50 text-muted-foreground text-xs">Paste an image URL below</p>
-              </div>
-            )}
-            {isEditing && (
-              <div className="flex-shrink-0 p-4 bg-background/80 backdrop-blur border-t border-border">
-                <input
-                  type="url"
-                  value={(slide.content as any).imageUrl || ""}
-                  onChange={(e) =>
-                    onUpdateContent?.({ ...slide.content, imageUrl: e.target.value.trim() })
-                  }
-                  className="w-full px-4 py-3 rounded-lg border border-border bg-background text-sm placeholder:text-muted-foreground"
-                  placeholder="Paste image URL (e.g. https://example.com/image.jpg)"
-                />
+              <div className="flex-1 min-h-0 flex items-center justify-center">
+                {isEditing ? (
+                  <ImageUploader
+                    value=""
+                    onChange={(url) =>
+                      onUpdateContent?.({ ...slide.content, imageUrl: url })
+                    }
+                    placeholder="Upload or paste image URL"
+                    className="w-full max-w-md min-h-[180px]"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center text-muted-foreground">
+                    <Image className="w-20 h-20 opacity-40 mb-4" />
+                    <p className="text-sm">No image added yet</p>
+                  </div>
+                )}
               </div>
             )}
           </div>

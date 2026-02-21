@@ -380,7 +380,7 @@ const ConversationalBuilder: React.FC = () => {
         <motion.div
           initial={{ x: 20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="flex-1"
+          className="flex-1 flex flex-col min-h-0"
         >
           <PreviewPanel isInitialLoading={isInitialLoading} initialPrompt={initialPrompt} />
         </motion.div>

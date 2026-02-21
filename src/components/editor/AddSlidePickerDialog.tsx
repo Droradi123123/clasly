@@ -3,6 +3,7 @@ import {
   FileText,
   Image,
   Columns,
+  Lock,
   ArrowLeftRight,
   List,
   Clock,
@@ -25,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SlideType, SLIDE_TYPES } from "@/types/slides";
+import { PREMIUM_SLIDE_TYPES } from "@/types/subscription";
 import { cn } from "@/lib/utils";
 
 const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
@@ -53,6 +55,8 @@ interface AddSlidePickerDialogProps {
   onOpenChange: (open: boolean) => void;
   onSelect: (type: SlideType) => void;
   onGenerateWithAI?: () => void;
+  isFree?: boolean;
+  onUpgradeClick?: () => void;
 }
 
 export function AddSlidePickerDialog({
@@ -60,6 +64,8 @@ export function AddSlidePickerDialog({
   onOpenChange,
   onSelect,
   onGenerateWithAI,
+  isFree = false,
+  onUpgradeClick,
 }: AddSlidePickerDialogProps) {
   const contentTypes = SLIDE_TYPES.filter((t) => t.category === "content");
   const interactiveTypes = SLIDE_TYPES.filter((t) => t.category === "interactive");
@@ -123,6 +129,8 @@ export function AddSlidePickerDialog({
             onSelect={handleSelect}
             iconBg="bg-muted"
             iconColor="text-foreground"
+            isFree={isFree}
+            onUpgradeClick={onUpgradeClick}
           />
           {/* Interactive */}
           <Section
@@ -132,6 +140,8 @@ export function AddSlidePickerDialog({
             onSelect={handleSelect}
             iconBg="bg-blue-500/20"
             iconColor="text-blue-600 dark:text-blue-400"
+            isFree={isFree}
+            onUpgradeClick={onUpgradeClick}
           />
           {/* Quiz */}
           <Section
@@ -141,6 +151,8 @@ export function AddSlidePickerDialog({
             onSelect={handleSelect}
             iconBg="bg-emerald-500/20"
             iconColor="text-emerald-600 dark:text-emerald-400"
+            isFree={isFree}
+            onUpgradeClick={onUpgradeClick}
           />
         </div>
       </DialogContent>
@@ -155,6 +167,8 @@ function Section({
   onSelect,
   iconBg,
   iconColor,
+  isFree = false,
+  onUpgradeClick,
 }: {
   title: string;
   subtitle: string;
@@ -162,30 +176,44 @@ function Section({
   onSelect: (type: SlideType) => void;
   iconBg: string;
   iconColor: string;
+  isFree?: boolean;
+  onUpgradeClick?: () => void;
 }) {
   return (
     <div>
       <h3 className="text-sm font-semibold text-foreground mb-0.5">{title}</h3>
       <p className="text-xs text-muted-foreground mb-3">{subtitle}</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {types.map((slideType, i) => {
+        {types.map((slideType) => {
           const Icon = SLIDE_ICONS[slideType.type];
+          const isLocked = isFree && PREMIUM_SLIDE_TYPES.includes(slideType.type);
           return (
             <button
               key={slideType.type}
               type="button"
-              onClick={() => onSelect(slideType.type)}
+              onClick={() => {
+                if (isLocked) onUpgradeClick?.();
+                else onSelect(slideType.type);
+              }}
               className={cn(
-                "flex items-start gap-3 p-3 rounded-xl text-left border border-border/50",
-                "bg-card hover:bg-muted/60 hover:border-primary/30 hover:shadow-md",
+                "flex items-start gap-3 p-3 rounded-xl text-left border border-border/50 relative",
+                isLocked
+                  ? "bg-muted/40 hover:bg-muted/60 cursor-pointer"
+                  : "bg-card hover:bg-muted/60 hover:border-primary/30 hover:shadow-md",
                 "transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2"
               )}
             >
+              {isLocked && (
+                <div className="absolute top-2 right-2">
+                  <Lock className="w-3.5 h-3.5 text-muted-foreground" />
+                </div>
+              )}
               <div
                 className={cn(
                   "flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
                   iconBg,
-                  iconColor
+                  iconColor,
+                  isLocked && "opacity-60"
                 )}
               >
                 {Icon && <Icon className="w-5 h-5" />}
@@ -193,6 +221,9 @@ function Section({
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-sm text-foreground leading-tight">
                   {slideType.label}
+                  {isLocked && (
+                    <span className="ml-1 text-xs text-muted-foreground">(Upgrade)</span>
+                  )}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                   {slideType.description}

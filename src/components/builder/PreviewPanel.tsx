@@ -13,6 +13,8 @@ const BUILDER_TIPS = [
   'Change slide themes anytime—each presentation can have its own style.',
   'AI can refine your slides—describe changes in the chat to apply them instantly.',
   'Export your presentation to images or PDF when you\'re done.',
+  'Present live—students answer in real time on their phones.',
+  'Try the mobile preview to see how your slides look on small screens.',
 ];
 
 interface PreviewPanelProps {
@@ -39,40 +41,41 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading, initialPr
 
   if (isInitialLoading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center min-h-0 p-6">
+      <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.4 }}
-          className="flex flex-col items-center justify-center text-center max-w-sm"
+          className="flex flex-col items-center text-center max-w-md"
         >
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-            className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-5"
+            className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6"
           >
-            <Loader2 className="w-7 h-7 text-primary" />
+            <Loader2 className="w-8 h-8 text-primary" />
           </motion.div>
-          <p className="text-sm text-muted-foreground mb-1">Building your presentation</p>
+          <p className="text-sm text-muted-foreground mb-4">Building your presentation</p>
           {initialPrompt && (
-            <p className="text-xs text-foreground/70 bg-muted/40 rounded-lg px-3 py-2 mb-5 text-left max-h-16 overflow-y-auto line-clamp-2">
+            <p className="text-xs text-foreground/60 mb-6 line-clamp-2">
               &ldquo;{initialPrompt}&rdquo;
             </p>
           )}
-          <div className="h-10 flex items-center justify-center">
+          <div className="w-full max-w-xs rounded-xl bg-muted/40 border border-border/50 px-4 py-4 min-h-[72px] flex items-center justify-center">
             <AnimatePresence mode="wait">
               <motion.p
                 key={tipIndex}
-                initial={{ opacity: 0, y: 4 }}
+                initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.3 }}
-                className="text-xs text-muted-foreground/90 italic"
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.35 }}
+                className="text-sm text-muted-foreground text-center leading-relaxed"
               >
                 {BUILDER_TIPS[tipIndex]}
               </motion.p>
             </AnimatePresence>
           </div>
+          <p className="text-[10px] text-muted-foreground/60 mt-3">Tip {tipIndex + 1} of {BUILDER_TIPS.length}</p>
         </motion.div>
       </div>
     );

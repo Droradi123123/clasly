@@ -489,8 +489,8 @@ const Editor = () => {
         onUpgradeRequired={() =>
           showUpgradeModal({
             feature: "import",
-            title: "Import is a Pro feature",
-            description: "Upgrade to Pro to import PowerPoint and PDF presentations.",
+          title: "Import is a paid feature",
+          description: "Upgrade to Standard or Pro to import PowerPoint and PDF presentations.",
           })
         }
       />
@@ -504,6 +504,15 @@ const Editor = () => {
         onOpenChange={setShowAddSlidePicker}
         onSelect={addSlide}
         onGenerateWithAI={() => setShowGenerateAIDialog(true)}
+        isFree={isFree}
+        onUpgradeClick={() => {
+          setShowAddSlidePicker(false);
+          showUpgradeModal({
+            feature: "more slides",
+            title: "Unlock premium slide types",
+            description: "Upgrade to Standard or Pro to add Timeline, Bar Chart, Quiz, Poll, and more interactive slide types.",
+          });
+        }}
       />
 
       <GenerateSlidesAIDialog

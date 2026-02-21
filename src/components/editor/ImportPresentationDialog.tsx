@@ -333,14 +333,14 @@ export function ImportPresentationDialog({
             {!canImport && (
               <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 text-xs font-medium">
                 <Crown className="w-3 h-3" />
-                Pro
+                Standard or Pro
               </span>
             )}
           </DialogTitle>
           <DialogDescription>
             {canImport 
               ? "Upload a PDF or images - each slide becomes a pixel-perfect image"
-              : "Upgrade to Pro to import PowerPoint and PDF presentations"
+              : "Upgrade to Standard or Pro to import PowerPoint and PDF presentations"
             }
           </DialogDescription>
         </DialogHeader>
@@ -358,16 +358,16 @@ export function ImportPresentationDialog({
                 <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
                   <Lock className="w-8 h-8 text-yellow-500" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Pro Feature</h3>
+                <h3 className="text-lg font-semibold mb-2">Paid Feature</h3>
                 <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-                  Import presentations from PowerPoint, PDF, and images with a Pro subscription.
+                  Import presentations from PowerPoint, PDF, and images with a Standard or Pro subscription.
                 </p>
                 <Button onClick={() => {
                   onOpenChange(false);
                   onUpgradeRequired?.();
                 }}>
                   <Crown className="w-4 h-4 mr-2" />
-                  Upgrade to Pro
+                  Upgrade to unlock
                 </Button>
               </motion.div>
             ) : importedSlides.length === 0 ? (

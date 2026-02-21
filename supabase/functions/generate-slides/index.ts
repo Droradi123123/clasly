@@ -38,7 +38,7 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
 // CREDIT CONSUMPTION
 // =============================================================================
 
-const INITIAL_FREE_CREDITS = 10;
+const INITIAL_FREE_CREDITS = 15;
 
 /** Ensure user has a user_credits row (creates one with initial credits if missing). */
 async function ensureUserCredits(userId: string): Promise<{ ok: boolean; error?: string }> {

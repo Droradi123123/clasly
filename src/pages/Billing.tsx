@@ -133,8 +133,8 @@ const Billing = () => {
     );
   }
 
-  // Free plan has 0 monthly refill; show balance vs 10 (one-time signup grant)
-  const aiTokensMax = (plan?.monthly_ai_tokens ?? 0) || (planName === "Free" ? 10 : 50);
+  // Free plan has 0 monthly refill; show balance vs 15 (one-time signup grant)
+  const aiTokensMax = (plan?.monthly_ai_tokens ?? 0) || (planName === "Free" ? 15 : (planName === "Standard" ? 100 : 250));
   const aiTokensPercent = aiTokensMax > 0 ? Math.min((aiTokensRemaining / aiTokensMax) * 100, 100) : 0;
 
   return (
@@ -233,7 +233,7 @@ const Billing = () => {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Remaining</span>
                         <span className="font-medium">
-                          {aiTokensRemaining.toLocaleString()} / {planName === "Free" ? "10 (one-time)" : aiTokensMax.toLocaleString() + "/mo"}
+                          {aiTokensRemaining.toLocaleString()} / {planName === "Free" ? "15 (one-time)" : aiTokensMax.toLocaleString() + "/mo"}
                         </span>
                       </div>
                       <Progress value={aiTokensPercent} className="h-2" />
