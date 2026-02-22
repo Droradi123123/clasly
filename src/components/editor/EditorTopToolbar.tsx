@@ -74,7 +74,7 @@ export function EditorTopToolbar({
   selectedThemeId,
   onSelectTheme,
   onPremiumThemeBlocked,
-!   isPro = false,
+  isPro = false,
   onPremiumLogoBlocked,
   onPremiumColorBlocked,
 }: EditorTopToolbarProps) {
