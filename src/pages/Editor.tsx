@@ -21,7 +21,6 @@ import { EditorTopToolbar } from "@/components/editor/EditorTopToolbar";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { ImportPresentationDialog } from "@/components/editor/ImportPresentationDialog";
 import { AddSlidePickerDialog } from "@/components/editor/AddSlidePickerDialog";
-import GenerateSlidesAIDialog from "@/components/editor/GenerateSlidesAIDialog";
 import { SortableSlideItem } from "@/components/editor/SortableSlideItem";
 import { AnimateButton } from "@/components/editor/AnimateButton";
 import { StudentPreview } from "@/components/editor/StudentPreview";
@@ -118,7 +117,6 @@ const Editor = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
-  const [showGenerateAIDialog, setShowGenerateAIDialog] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('academic-pro');
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
@@ -503,27 +501,7 @@ const Editor = () => {
         open={showAddSlidePicker}
         onOpenChange={setShowAddSlidePicker}
         onSelect={addSlide}
-        onGenerateWithAI={() => setShowGenerateAIDialog(true)}
-        isFree={isFree}
-        onUpgradeClick={() => {
-          setShowAddSlidePicker(false);
-          showUpgradeModal({
-            feature: "more slides",
-            title: "Unlock premium slide types",
-            description: "Upgrade to Standard or Pro to add Timeline, Bar Chart, Quiz, Poll, and more interactive slide types.",
-          });
-        }}
-      />
-
-      <GenerateSlidesAIDialog
-        open={showGenerateAIDialog}
-        onOpenChange={setShowGenerateAIDialog}
-        onSlidesGenerated={(newSlides) => {
-          const insertIndex = slides.length;
-          setSlides((prev) => [...prev, ...newSlides].map((s, idx) => ({ ...s, order: idx })));
-          setCurrentSlideIndex(insertIndex);
-          setHasChanges(true);
-        }}
+        onNavigateToBuilder={() => navigate(lectureId ? `/builder?lectureId=${lectureId}` : '/builder')}
       />
 
       {/* Main Editor Area - Fill remaining height */}

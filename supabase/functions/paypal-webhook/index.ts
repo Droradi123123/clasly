@@ -166,7 +166,6 @@ serve(async (req) => {
             await supabase.from("user_credits").insert({
               user_id,
               ai_tokens_balance: ai_tokens,
-              vibe_credits_balance: 0,
             });
           }
 

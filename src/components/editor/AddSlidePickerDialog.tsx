@@ -3,7 +3,6 @@ import {
   FileText,
   Image,
   Columns,
-  Lock,
   ArrowLeftRight,
   List,
   Clock,
@@ -26,7 +25,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { SlideType, SLIDE_TYPES } from "@/types/slides";
-import { PREMIUM_SLIDE_TYPES } from "@/types/subscription";
 import { cn } from "@/lib/utils";
 
 const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
@@ -54,18 +52,14 @@ interface AddSlidePickerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (type: SlideType) => void;
-  onGenerateWithAI?: () => void;
-  isFree?: boolean;
-  onUpgradeClick?: () => void;
+  onNavigateToBuilder?: () => void;
 }
 
 export function AddSlidePickerDialog({
   open,
   onOpenChange,
   onSelect,
-  onGenerateWithAI,
-  isFree = false,
-  onUpgradeClick,
+  onNavigateToBuilder,
 }: AddSlidePickerDialogProps) {
   const contentTypes = SLIDE_TYPES.filter((t) => t.category === "content");
   const interactiveTypes = SLIDE_TYPES.filter((t) => t.category === "interactive");
@@ -76,9 +70,9 @@ export function AddSlidePickerDialog({
     requestAnimationFrame(() => onSelect(type));
   };
 
-  const handleGenerateWithAI = () => {
+  const handleNavigateToBuilder = () => {
     onOpenChange(false);
-    requestAnimationFrame(() => onGenerateWithAI?.());
+    requestAnimationFrame(() => onNavigateToBuilder?.());
   };
 
   return (
@@ -94,14 +88,14 @@ export function AddSlidePickerDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6">
-          {/* AI generation - first option when callback provided */}
-          {onGenerateWithAI && (
+          {/* AI generation - navigate to Builder (the only place to build with AI) */}
+          {onNavigateToBuilder && (
             <div>
-              <h3 className="text-sm font-semibold text-foreground mb-0.5">Generate with AI</h3>
-              <p className="text-xs text-muted-foreground mb-3">Describe your topic and AI creates slides for you</p>
+              <h3 className="text-sm font-semibold text-foreground mb-0.5">Build with AI</h3>
+              <p className="text-xs text-muted-foreground mb-3">Describe your topic in the Builder and AI creates slides for you</p>
               <button
                 type="button"
-                onClick={handleGenerateWithAI}
+                onClick={handleNavigateToBuilder}
                 className={cn(
                   "flex items-start gap-3 p-4 w-full rounded-xl text-left border-2 border-primary/30",
                   "bg-primary/5 hover:bg-primary/10 hover:border-primary/50",
@@ -112,16 +106,16 @@ export function AddSlidePickerDialog({
                   <Sparkles className="w-5 h-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm text-foreground leading-tight">Generate slides with AI</p>
+                  <p className="font-medium text-sm text-foreground leading-tight">Go to Builder</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    AI creates multiple slides based on your topic—quizzes, polls, and content.
+                    Open the AI Builder to create slides from your topic—quizzes, polls, and content.
                   </p>
                 </div>
               </button>
             </div>
           )}
 
-          {/* Content slides */}
+          {/* Content slides - all types open for all plans */}
           <Section
             title="Content"
             subtitle="Static slides for titles, text, images, and structure"
@@ -129,8 +123,6 @@ export function AddSlidePickerDialog({
             onSelect={handleSelect}
             iconBg="bg-muted"
             iconColor="text-foreground"
-            isFree={isFree}
-            onUpgradeClick={onUpgradeClick}
           />
           {/* Interactive */}
           <Section
@@ -140,8 +132,6 @@ export function AddSlidePickerDialog({
             onSelect={handleSelect}
             iconBg="bg-blue-500/20"
             iconColor="text-blue-600 dark:text-blue-400"
-            isFree={isFree}
-            onUpgradeClick={onUpgradeClick}
           />
           {/* Quiz */}
           <Section
@@ -151,8 +141,6 @@ export function AddSlidePickerDialog({
             onSelect={handleSelect}
             iconBg="bg-emerald-500/20"
             iconColor="text-emerald-600 dark:text-emerald-400"
-            isFree={isFree}
-            onUpgradeClick={onUpgradeClick}
           />
         </div>
       </DialogContent>
@@ -167,8 +155,6 @@ function Section({
   onSelect,
   iconBg,
   iconColor,
-  isFree = false,
-  onUpgradeClick,
 }: {
   title: string;
   subtitle: string;
@@ -176,8 +162,6 @@ function Section({
   onSelect: (type: SlideType) => void;
   iconBg: string;
   iconColor: string;
-  isFree?: boolean;
-  onUpgradeClick?: () => void;
 }) {
   return (
     <div>
@@ -186,34 +170,22 @@ function Section({
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
         {types.map((slideType) => {
           const Icon = SLIDE_ICONS[slideType.type];
-          const isLocked = isFree && PREMIUM_SLIDE_TYPES.includes(slideType.type);
           return (
             <button
               key={slideType.type}
               type="button"
-              onClick={() => {
-                if (isLocked) onUpgradeClick?.();
-                else onSelect(slideType.type);
-              }}
+              onClick={() => onSelect(slideType.type)}
               className={cn(
                 "flex items-start gap-3 p-3 rounded-xl text-left border border-border/50 relative",
-                isLocked
-                  ? "bg-muted/40 hover:bg-muted/60 cursor-pointer"
-                  : "bg-card hover:bg-muted/60 hover:border-primary/30 hover:shadow-md",
+                "bg-card hover:bg-muted/60 hover:border-primary/30 hover:shadow-md",
                 "transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:ring-offset-2"
               )}
             >
-              {isLocked && (
-                <div className="absolute top-2 right-2">
-                  <Lock className="w-3.5 h-3.5 text-muted-foreground" />
-                </div>
-              )}
               <div
                 className={cn(
                   "flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center",
                   iconBg,
-                  iconColor,
-                  isLocked && "opacity-60"
+                  iconColor
                 )}
               >
                 {Icon && <Icon className="w-5 h-5" />}
@@ -221,9 +193,6 @@ function Section({
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-sm text-foreground leading-tight">
                   {slideType.label}
-                  {isLocked && (
-                    <span className="ml-1 text-xs text-muted-foreground">(Upgrade)</span>
-                  )}
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
                   {slideType.description}

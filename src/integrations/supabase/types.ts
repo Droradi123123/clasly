@@ -240,7 +240,6 @@ export type Database = {
           max_lectures: number | null
           max_slides: number | null
           monthly_ai_tokens: number
-          monthly_vibe_credits: number
           name: string
           price_monthly_usd: number
           price_yearly_usd: number
@@ -252,7 +251,6 @@ export type Database = {
           max_lectures?: number | null
           max_slides?: number | null
           monthly_ai_tokens?: number
-          monthly_vibe_credits?: number
           name: string
           price_monthly_usd?: number
           price_yearly_usd?: number
@@ -264,7 +262,6 @@ export type Database = {
           max_lectures?: number | null
           max_slides?: number | null
           monthly_ai_tokens?: number
-          monthly_vibe_credits?: number
           name?: string
           price_monthly_usd?: number
           price_yearly_usd?: number
@@ -280,7 +277,6 @@ export type Database = {
           slides_created: number
           updated_at: string | null
           user_id: string
-          vibe_credits_balance: number
         }
         Insert: {
           ai_tokens_balance?: number
@@ -290,7 +286,6 @@ export type Database = {
           slides_created?: number
           updated_at?: string | null
           user_id: string
-          vibe_credits_balance?: number
         }
         Update: {
           ai_tokens_balance?: number
@@ -300,7 +295,6 @@ export type Database = {
           slides_created?: number
           updated_at?: string | null
           user_id?: string
-          vibe_credits_balance?: number
         }
         Relationships: []
       }

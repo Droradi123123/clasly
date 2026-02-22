@@ -158,6 +158,10 @@ CREATE POLICY "Questions readable for lecture" ON public.questions FOR SELECT US
 CREATE POLICY "Lecture owners can update questions" ON public.questions FOR UPDATE
   USING (EXISTS (SELECT 1 FROM public.lectures WHERE lectures.id = questions.lecture_id AND (lectures.user_id = auth.uid() OR public.has_role(auth.uid(), 'admin'::public.app_role))));
 
+-- 16b. Remove vibe_credits (unused, causes confusion)
+ALTER TABLE public.user_credits DROP COLUMN IF EXISTS vibe_credits_balance;
+ALTER TABLE public.subscription_plans DROP COLUMN IF EXISTS monthly_vibe_credits;
+
 -- 17. handle_new_user_signup - final version (15 credits, Free plan)
 CREATE OR REPLACE FUNCTION public.handle_new_user_signup()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
@@ -166,7 +170,7 @@ DECLARE free_plan_id UUID;
 BEGIN
   SELECT id INTO free_plan_id FROM public.subscription_plans WHERE name = 'Free' LIMIT 1;
   INSERT INTO public.user_subscriptions (user_id, plan_id, status) VALUES (new.id, free_plan_id, 'active');
-  INSERT INTO public.user_credits (user_id, ai_tokens_balance, vibe_credits_balance) VALUES (new.id, 15, 0);
+  INSERT INTO public.user_credits (user_id, ai_tokens_balance) VALUES (new.id, 15);
   RETURN new;
 END;
 $func$;

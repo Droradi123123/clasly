@@ -113,7 +113,6 @@ serve(async (req) => {
             await supabase.from("user_credits").insert({
               user_id,
               ai_tokens_balance: ai_tokens,
-              vibe_credits_balance: 0,
             });
           }
 
@@ -190,7 +189,6 @@ serve(async (req) => {
               await supabase.from("user_credits").insert({
                 user_id,
                 ai_tokens_balance: plan.monthly_ai_tokens,
-                vibe_credits_balance: 0,
                 last_refill_date: new Date().toISOString(),
               });
             }
