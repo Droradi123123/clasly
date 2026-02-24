@@ -105,6 +105,14 @@ CREATE POLICY "Users can view own subscription or admin all" ON public.user_subs
 CREATE POLICY "Admins can update subscriptions" ON public.user_subscriptions FOR UPDATE USING (public.has_role(auth.uid(), 'admin'::public.app_role));
 CREATE POLICY "Admins can insert subscriptions" ON public.user_subscriptions FOR INSERT WITH CHECK (public.has_role(auth.uid(), 'admin'::public.app_role));
 
+-- Fix signup: allow new user to insert own row on first signup
+DROP POLICY IF EXISTS "Users can insert own credits on signup" ON public.user_credits;
+CREATE POLICY "Users can insert own credits on signup" ON public.user_credits FOR INSERT
+  WITH CHECK (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.user_credits uc WHERE uc.user_id = auth.uid()));
+DROP POLICY IF EXISTS "Users can insert own subscription on signup" ON public.user_subscriptions;
+CREATE POLICY "Users can insert own subscription on signup" ON public.user_subscriptions FOR INSERT
+  WITH CHECK (auth.uid() = user_id AND NOT EXISTS (SELECT 1 FROM public.user_subscriptions us WHERE us.user_id = auth.uid()));
+
 -- 12. subscription_plans limits
 UPDATE public.subscription_plans SET max_lectures = 3 WHERE name = 'Free';
 UPDATE public.subscription_plans SET max_lectures = 10 WHERE name = 'Standard';
