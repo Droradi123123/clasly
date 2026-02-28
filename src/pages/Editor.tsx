@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   DndContext,
   closestCenter,
@@ -122,6 +122,7 @@ const Editor = () => {
   const [isSlidesPanelCollapsed, setIsSlidesPanelCollapsed] = useState(false);
   const { lectureId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const isMobile = useIsMobile();
@@ -148,6 +149,7 @@ const Editor = () => {
   const slideRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const skipScrollObserverRef = useRef(false);
+  const [slideSize, setSlideSize] = useState<{ width: number; height: number } | null>(null);
 
   // Subscription & upgrade modal
   const { isFree, maxSlides, isPro, hasAITokens, isLoading: isSubLoading } = useSubscriptionContext();
@@ -282,7 +284,10 @@ const Editor = () => {
           const newLecture = await createLecture(draftTitle, processedSlides);
           setLectureDbId(newLecture.id);
           setLectureCode(newLecture.lecture_code);
-          navigate(`/editor/${newLecture.id}?ai=1`, { replace: true });
+          navigate(`/editor/${newLecture.id}?ai=1`, {
+            replace: true,
+            state: { preloadedLecture: { ...newLecture, slides: processedSlides } },
+          });
         } catch (e) {
           console.warn('Failed to auto-save draft:', e);
         }
@@ -383,15 +388,42 @@ const Editor = () => {
     }
   }, [currentSlideIndex, currentSlide?.type]);
 
+  // Apply lecture data (shared logic for preloaded and fetched)
+  const applyLectureData = useCallback((lecture: { id: string; title?: string; lecture_code?: string; slides?: unknown; settings?: unknown }) => {
+    const lectureUserId = (lecture as { user_id?: string }).user_id;
+    if (user && lectureUserId && lectureUserId !== user.id) {
+      toast.error("You don't have access to this lecture");
+      navigate("/dashboard");
+      return;
+    }
+    setLectureDbId(lecture.id);
+    setLectureTitle(lecture.title ?? 'Untitled Lecture');
+    setLectureCode(lecture.lecture_code ?? '');
+    const raw = lecture.slides;
+    const loadedSlides = Array.isArray(raw) ? (raw as unknown as Slide[]) : null;
+    if (loadedSlides && loadedSlides.length > 0) {
+      const valid = loadedSlides.every((s) => s && typeof s === 'object' && s.id && s.type);
+      if (valid) setSlides(loadedSlides);
+    }
+    const settings = lecture.settings as Record<string, unknown> | null;
+    if (settings?.themeId) setSelectedThemeId(settings.themeId as ThemeId);
+    if (settings?.designStyleId) setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
+  }, [user?.id, navigate]);
+
   // Load lecture from database if it exists (only own lectures)
-  // Wait for auth to be ready before loading to avoid stuck state
+  // Use preloaded data when navigating after create to avoid race/fetch failure
   useEffect(() => {
     if (!lectureId || lectureId === 'new') {
       setIsLoading(false);
       return;
     }
-    if (isAuthLoading) {
-      return; // Keep loading state until auth is ready
+    if (isAuthLoading) return;
+
+    const preloaded = (location.state as { preloadedLecture?: { id: string } })?.preloadedLecture;
+    if (preloaded && preloaded.id === lectureId) {
+      applyLectureData(preloaded);
+      setIsLoading(false);
+      return;
     }
 
     let cancelled = false;
@@ -401,31 +433,7 @@ const Editor = () => {
         const lecture = await getLecture(lectureId);
         if (cancelled) return;
         if (lecture) {
-          const lectureUserId = (lecture as { user_id?: string }).user_id;
-          if (user && lectureUserId && lectureUserId !== user.id) {
-            toast.error("You don't have access to this lecture");
-            navigate("/dashboard");
-            return;
-          }
-          setLectureDbId(lecture.id);
-          setLectureTitle(lecture.title);
-          setLectureCode(lecture.lecture_code);
-          const raw = lecture.slides;
-          const loadedSlides = Array.isArray(raw) ? (raw as unknown as Slide[]) : null;
-          if (loadedSlides && loadedSlides.length > 0) {
-            // Ensure each slide has required fields to avoid render crashes
-            const valid = loadedSlides.every((s) => s && typeof s === 'object' && s.id && s.type);
-            if (valid) {
-              setSlides(loadedSlides);
-            }
-          }
-          const settings = lecture.settings as Record<string, unknown> | null;
-          if (settings?.themeId) {
-            setSelectedThemeId(settings.themeId as ThemeId);
-          }
-          if (settings?.designStyleId) {
-            setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
-          }
+          applyLectureData(lecture);
         } else {
           toast.error('Lecture not found');
           navigate("/dashboard", { replace: true });
@@ -433,7 +441,10 @@ const Editor = () => {
       } catch (error) {
         if (cancelled) return;
         console.error('Error loading lecture:', error);
-        toast.error('Failed to load lecture');
+        const msg = error instanceof Error && error.message.includes('timed out')
+          ? 'Lecture load timed out. Please try again.'
+          : 'Failed to load lecture';
+        toast.error(msg);
         navigate("/dashboard", { replace: true });
       } finally {
         if (!cancelled) setIsLoading(false);
@@ -442,7 +453,7 @@ const Editor = () => {
 
     loadLecture();
     return () => { cancelled = true; };
-  }, [lectureId, user?.id, isAuthLoading, navigate]);
+  }, [lectureId, user?.id, isAuthLoading, navigate, location.state, applyLectureData]);
 
   // Auto-save with debounce - also saves theme settings
   const saveToDatabase = useCallback(async () => {
@@ -610,6 +621,41 @@ const Editor = () => {
       observer.disconnect();
     };
   }, [slides.length]);
+
+  // ResizeObserver: compute slide size from canvas so slides are as large as possible while fitting
+  useEffect(() => {
+    if (isInitialGenerating) return;
+
+    const container = slidePreviewRef.current;
+    if (!container) return;
+
+    const updateSize = () => {
+      const cw = container.clientWidth;
+      const ch = container.clientHeight;
+      if (cw <= 0 || ch <= 0) return;
+      // Reserve space for phone preview (280) + gap (16) when shown; padding matches scroll content p-2 (16)
+      const reservedW = showPhonePreview ? 280 + 16 : 0;
+      const pad = 16;
+      const maxW = Math.max(200, cw - reservedW - pad);
+      const maxH = Math.max(112, ch - pad); // min ~200x112 for 16:9
+      const maxRem = 96 * 16; // 96rem cap for large screens (1536px)
+      const w = Math.min(maxW, maxH * (16 / 9), maxRem);
+      const h = w * (9 / 16);
+      setSlideSize({ width: Math.round(w), height: Math.round(h) });
+    };
+
+    let disconnect: (() => void) | undefined;
+    const id = requestAnimationFrame(() => {
+      updateSize();
+      const ro = new ResizeObserver(updateSize);
+      ro.observe(container);
+      disconnect = () => ro.disconnect();
+    });
+    return () => {
+      cancelAnimationFrame(id);
+      disconnect?.();
+    };
+  }, [isInitialGenerating, isAIPanelOpen, showPhonePreview, isSlidesPanelCollapsed]);
 
   const handleSlidesImported = (importedSlides: Slide[]) => {
     setSlides([...slides, ...importedSlides]);
@@ -957,7 +1003,7 @@ const Editor = () => {
               </div>
             ) : (
             <ScrollArea className="flex-1 w-full" viewportRef={scrollViewportRef}>
-              <div className={`p-4 flex gap-6 w-full ${showPhonePreview ? 'flex-row items-start' : 'flex-col items-center'} min-h-full`}>
+              <div className={`p-2 flex gap-4 w-full ${showPhonePreview ? 'flex-row items-start' : 'flex-col items-center'} min-h-full`}>
                 {slides.map((slide, index) => (
                   <motion.div
                     key={slide.id}
@@ -979,9 +1025,15 @@ const Editor = () => {
                       className={
                         showPhonePreview
                           ? "w-full max-w-[32rem] aspect-video"
-                          : "aspect-video w-full"
+                          : "aspect-video"
                       }
-                      style={showPhonePreview ? undefined : { maxWidth: 'min(72rem, calc((100vh - 200px) * 16 / 9))' }}
+                      style={
+                        showPhonePreview
+                          ? undefined
+                          : slideSize
+                            ? { width: slideSize.width, height: slideSize.height }
+                            : { maxWidth: 'min(80rem, calc((100vh - 180px) * 16 / 9))', minWidth: 400 }
+                      }
                     >
                       <SlideRenderer
                         slide={slide}

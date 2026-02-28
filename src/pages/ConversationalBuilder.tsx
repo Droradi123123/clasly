@@ -327,11 +327,13 @@ const ConversationalBuilder: React.FC = () => {
     
     try {
       if (draftLectureId) {
-        await updateLecture(draftLectureId, { slides: sandboxSlides });
+        const updated = await updateLecture(draftLectureId, { slides: sandboxSlides });
         toast.success('Presentation saved!');
         reset();
         setDraftLectureId(null);
-        navigate(`/editor/${draftLectureId}`);
+        navigate(`/editor/${draftLectureId}`, {
+          state: { preloadedLecture: { ...updated, slides: sandboxSlides } },
+        });
       } else {
         let title = originalPrompt || '';
         if (!title && sandboxSlides.length > 0) {
@@ -342,7 +344,9 @@ const ConversationalBuilder: React.FC = () => {
         const newLecture = await createLecture(title || 'Untitled Presentation', sandboxSlides);
         toast.success('Presentation saved!');
         reset();
-        navigate(`/editor/${newLecture.id}`);
+        navigate(`/editor/${newLecture.id}`, {
+          state: { preloadedLecture: { ...newLecture, slides: sandboxSlides } },
+        });
       }
     } catch (error) {
       console.error('Error saving presentation:', error);

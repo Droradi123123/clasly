@@ -46,29 +46,44 @@ export async function createLecture(title: string, slides: Slide[], userId?: str
   return data;
 }
 
-// Get lecture by ID (with 10s timeout to avoid indefinite hang)
+// Get lecture by ID (with 10s timeout and retry for transient failures)
 const LECTURE_FETCH_TIMEOUT_MS = 10000;
+const LECTURE_FETCH_RETRY_DELAY_MS = 1500;
+const LECTURE_FETCH_MAX_RETRIES = 2;
+
+async function fetchLectureOnce(lectureId: string) {
+  const { data, error } = await supabase
+    .from('lectures')
+    .select('*')
+    .eq('id', lectureId)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
 
 export async function getLecture(lectureId: string) {
-  const fetchPromise = (async () => {
-    const { data, error } = await supabase
-      .from('lectures')
-      .select('*')
-      .eq('id', lectureId)
-      .single();
+  let lastError: Error | null = null;
 
-    if (error) throw error;
-    return data;
-  })();
+  for (let attempt = 0; attempt <= LECTURE_FETCH_MAX_RETRIES; attempt++) {
+    try {
+      const fetchPromise = fetchLectureOnce(lectureId);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error('Lecture load timed out. Please try again.')),
+          LECTURE_FETCH_TIMEOUT_MS
+        );
+      });
+      return await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < LECTURE_FETCH_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, LECTURE_FETCH_RETRY_DELAY_MS));
+      }
+    }
+  }
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(
-      () => reject(new Error('Lecture load timed out. Please try again.')),
-      LECTURE_FETCH_TIMEOUT_MS
-    );
-  });
-
-  return Promise.race([fetchPromise, timeoutPromise]);
+  throw lastError ?? new Error('Failed to load lecture');
 }
 
 // Get lecture by code (for students joining)

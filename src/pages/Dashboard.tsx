@@ -158,7 +158,7 @@ const Dashboard = () => {
       setLectures([newLecture as unknown as Lecture, ...lectures]);
       resetCreateDialog();
       setIsCreateOpen(false);
-      navigate(`/editor/${newLecture.id}`);
+      navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
     } catch (error) {
       console.error('Error creating lecture:', error);
       toast.error('Failed to create lecture');
@@ -192,7 +192,7 @@ const Dashboard = () => {
       const newLecture = await duplicateLecture(lectureId);
       setLectures((prev) => [newLecture as unknown as Lecture, ...prev]);
       toast.success("Lecture duplicated. Only content was copied; analytics are not included.");
-      navigate(`/editor/${newLecture.id}`);
+      navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
     } catch (error) {
       console.error("Duplicate failed:", error);
       toast.error("Failed to duplicate lecture");
