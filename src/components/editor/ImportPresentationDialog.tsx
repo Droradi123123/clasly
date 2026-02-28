@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import { pdfFileToPngDataUrls } from "@/lib/pdfToImages";
 import { svgToPng, resizeImage } from "@/lib/imageUtils";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
+import { SlideImage } from "@/components/editor/SlideImage";
 
 interface ImportedSlide {
   pageNumber: number;
@@ -470,7 +471,7 @@ export function ImportPresentationDialog({
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                     >
-                      <img
+                      <SlideImage
                         src={slide.imageUrl}
                         alt={slide.title || `Slide ${slide.pageNumber}`}
                         className="w-full h-full object-contain bg-white"

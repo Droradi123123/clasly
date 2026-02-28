@@ -15,6 +15,9 @@ import {
   ChevronDown,
   Loader2,
   X,
+  IndentIncrease,
+  IndentDecrease,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +34,11 @@ import {
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Slide, SlideDesign, FontFamily, FontSize, TextAlign, GRADIENT_PRESETS, OverlayImagePosition, LogoPosition, LogoScope } from "@/types/slides";
 import { ThemeId } from "@/types/themes";
 import { ThemeSelector } from "./ThemeSelector";
@@ -51,6 +59,8 @@ interface EditorTopToolbarProps {
   onPremiumLogoBlocked?: () => void;
   /** Pro-only: custom color picker. When false and user tries custom color, call this. */
   onPremiumColorBlocked?: () => void;
+  /** Import presentation (PPT/PDF) - opens Import dialog */
+  onImportClick?: () => void;
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
@@ -74,9 +84,11 @@ export function EditorTopToolbar({
   selectedThemeId,
   onSelectTheme,
   onPremiumThemeBlocked,
+  onUpdateDesignForAllSlides,
   isPro = false,
   onPremiumLogoBlocked,
   onPremiumColorBlocked,
+  onImportClick,
 }: EditorTopToolbarProps) {
   const design = slide.design || {};
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -220,39 +232,46 @@ export function EditorTopToolbar({
           {/* Divider */}
           <div className="w-px h-5 bg-border/50 mx-1" />
 
-          {/* RTL / LTR Toggle */}
-          <Button
-            variant={isRtl ? "secondary" : "ghost"}
-            size="sm"
-            className="h-8 px-2 gap-1 text-xs"
-            onClick={() => {
-              const nextDir = isRtl ? "ltr" : "rtl";
-              const updates: Partial<SlideDesign> = { direction: nextDir };
-              // Auto-adjust alignment with direction if not centered
-              if (design.textAlign !== "center") {
-                updates.textAlign = nextDir === "rtl" ? "right" : "left";
-              }
-              updateDesign(updates);
-            }}
-          >
-            <span className="font-bold">עב</span>
-            RTL
-          </Button>
-          <Button
-            variant={!isRtl ? "secondary" : "ghost"}
-            size="sm"
-            className="h-8 px-2 gap-1 text-xs"
-            onClick={() => {
-              const updates: Partial<SlideDesign> = { direction: "ltr" };
-              if (design.textAlign !== "center") {
-                updates.textAlign = "left";
-              }
-              updateDesign(updates);
-            }}
-          >
-            <span className="font-bold">EN</span>
-            LTR
-          </Button>
+          {/* RTL / LTR Toggle - standard paragraph+arrow style */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={isRtl ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => {
+                  const nextDir = isRtl ? "ltr" : "rtl";
+                  const updates: Partial<SlideDesign> = { direction: nextDir };
+                  if (design.textAlign !== "center") {
+                    updates.textAlign = nextDir === "rtl" ? "right" : "left";
+                  }
+                  updateDesign(updates);
+                }}
+              >
+                <IndentIncrease className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>RTL</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={!isRtl ? "secondary" : "ghost"}
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={() => {
+                  const updates: Partial<SlideDesign> = { direction: "ltr" };
+                  if (design.textAlign !== "center") {
+                    updates.textAlign = "left";
+                  }
+                  updateDesign(updates);
+                }}
+              >
+                <IndentDecrease className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>LTR</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Group C - Slide Style */}
@@ -407,6 +426,22 @@ export function EditorTopToolbar({
               Logo
               <Lock className="w-3 h-3" />
             </Button>
+          )}
+
+          {/* Import - document-level action */}
+          {onImportClick && (
+            <>
+              <div className="w-px h-5 bg-border/50 mx-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                onClick={onImportClick}
+              >
+                <Upload className="w-4 h-4" />
+                Import
+              </Button>
+            </>
           )}
         </div>
       </div>

@@ -46,16 +46,29 @@ export async function createLecture(title: string, slides: Slide[], userId?: str
   return data;
 }
 
-// Get lecture by ID
-export async function getLecture(lectureId: string) {
-  const { data, error } = await supabase
-    .from('lectures')
-    .select('*')
-    .eq('id', lectureId)
-    .single();
+// Get lecture by ID (with 10s timeout to avoid indefinite hang)
+const LECTURE_FETCH_TIMEOUT_MS = 10000;
 
-  if (error) throw error;
-  return data;
+export async function getLecture(lectureId: string) {
+  const fetchPromise = (async () => {
+    const { data, error } = await supabase
+      .from('lectures')
+      .select('*')
+      .eq('id', lectureId)
+      .single();
+
+    if (error) throw error;
+    return data;
+  })();
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(
+      () => reject(new Error('Lecture load timed out. Please try again.')),
+      LECTURE_FETCH_TIMEOUT_MS
+    );
+  });
+
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
 // Get lecture by code (for students joining)

@@ -27,6 +27,7 @@ import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { Slide, SLIDE_TYPES, isQuizSlide } from "@/types/slides";
 import { Confetti } from "@/components/effects/Confetti";
 import { FloatingParticles } from "@/components/effects/FloatingParticles";
+import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { Leaderboard } from "@/components/present/Leaderboard";
 import { MiniLeaderboard } from "@/components/present/MiniLeaderboard";
 import { FruitCatchGame } from "@/components/game";
@@ -194,27 +195,65 @@ const Present = () => {
 
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const slideSyncReadyRef = useRef(false);
+  const pendingBroadcastRef = useRef<{ lectureId: string; currentSlideIndex: number; ts: number } | null>(null);
+  const slideContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!lectureId) return;
 
+    slideSyncReadyRef.current = false;
     const channel = supabase.channel(`lecture-sync-${lectureId}`, {
       config: { broadcast: { self: false } },
     });
 
     channel.subscribe((status) => {
       console.log('[Present] Slide sync channel status:', status);
+      slideSyncReadyRef.current = status === 'SUBSCRIBED';
+      if (status === 'SUBSCRIBED' && pendingBroadcastRef.current) {
+        const pending = pendingBroadcastRef.current;
+        pendingBroadcastRef.current = null;
+        channel.send({
+          type: 'broadcast',
+          event: 'slide_changed',
+          payload: { lectureId: pending.lectureId, currentSlideIndex: pending.currentSlideIndex, ts: pending.ts },
+        });
+      }
     });
 
     slideSyncChannelRef.current = channel;
 
     return () => {
+      pendingBroadcastRef.current = null;
       if (slideSyncChannelRef.current) {
         supabase.removeChannel(slideSyncChannelRef.current);
         slideSyncChannelRef.current = null;
       }
+      slideSyncReadyRef.current = false;
     };
   }, [lectureId]);
+
+  const sendSlideBroadcast = useCallback((lectureId: string, newIndex: number) => {
+    const payload = { lectureId, currentSlideIndex: newIndex, ts: Date.now() };
+    if (slideSyncReadyRef.current && slideSyncChannelRef.current) {
+      slideSyncChannelRef.current.send({
+        type: 'broadcast',
+        event: 'slide_changed',
+        payload,
+      });
+      setTimeout(() => {
+        if (slideSyncChannelRef.current) {
+          slideSyncChannelRef.current.send({
+            type: 'broadcast',
+            event: 'slide_changed',
+            payload: { ...payload, ts: Date.now() },
+          });
+        }
+      }, 180);
+    } else {
+      pendingBroadcastRef.current = payload;
+    }
+  }, []);
 
   const currentSlide = slides[currentSlideIndex];
   const unansweredQuestionsCount = questions.filter(q => !q.is_answered).length;
@@ -391,6 +430,17 @@ const Present = () => {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
+  // Auto-enter fullscreen when lecture is loaded
+  const autoFullscreenRequestedRef = useRef(false);
+  useEffect(() => {
+    if (!loading && slides.length > 0 && !document.fullscreenElement && !autoFullscreenRequestedRef.current) {
+      autoFullscreenRequestedRef.current = true;
+      document.documentElement.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+      }).catch(console.error);
+    }
+  }, [loading, slides.length]);
+
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -419,12 +469,7 @@ const Present = () => {
       setCurrentSlideIndex(newIndex);
       setShowCorrectAnswer(false);
       if (lectureId) {
-        // Layer 1: broadcast first (instant to students), then Layer 2: DB (updateLecture sets current_slide_index + updated_at)
-        slideSyncChannelRef.current?.send({
-          type: 'broadcast',
-          event: 'slide_changed',
-          payload: { lectureId, currentSlideIndex: newIndex, ts: Date.now() },
-        });
+        sendSlideBroadcast(lectureId, newIndex);
         await updateLecture(lectureId, { current_slide_index: newIndex });
       }
     }
@@ -436,15 +481,55 @@ const Present = () => {
       setCurrentSlideIndex(newIndex);
       setShowCorrectAnswer(false);
       if (lectureId) {
-        slideSyncChannelRef.current?.send({
-          type: 'broadcast',
-          event: 'slide_changed',
-          payload: { lectureId, currentSlideIndex: newIndex, ts: Date.now() },
-        });
+        sendSlideBroadcast(lectureId, newIndex);
         await updateLecture(lectureId, { current_slide_index: newIndex });
       }
     }
   };
+
+  // Wheel-based slide navigation: scroll within slide first, then advance
+  const WHEEL_THRESHOLD = 20;
+  const handleNextRef = useRef(handleNextSlide);
+  const handlePrevRef = useRef(handlePrevSlide);
+  handleNextRef.current = handleNextSlide;
+  handlePrevRef.current = handlePrevSlide;
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const container = slideContainerRef.current;
+      if (!container || slides.length === 0) return;
+      const scrollEl = container.querySelector<HTMLElement>('[data-slide-scroll]');
+      const isScrollable = scrollEl && scrollEl.scrollHeight > scrollEl.clientHeight;
+
+      if (isScrollable && scrollEl) {
+        const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - WHEEL_THRESHOLD;
+        const atTop = scrollEl.scrollTop <= WHEEL_THRESHOLD;
+        if (e.deltaY > 0) {
+          if (atBottom && currentSlideIndex < slides.length - 1) {
+            e.preventDefault();
+            handleNextRef.current();
+          }
+        } else if (e.deltaY < 0) {
+          if (atTop && currentSlideIndex > 0) {
+            e.preventDefault();
+            handlePrevRef.current();
+          }
+        }
+      } else {
+        if (e.deltaY > 0 && currentSlideIndex < slides.length - 1) {
+          e.preventDefault();
+          handleNextRef.current();
+        } else if (e.deltaY < 0 && currentSlideIndex > 0) {
+          e.preventDefault();
+          handlePrevRef.current();
+        }
+      }
+    };
+    const mainContent = document.querySelector('[data-present-main-content]');
+    if (mainContent) {
+      mainContent.addEventListener('wheel', handleWheel, { passive: false });
+      return () => mainContent.removeEventListener('wheel', handleWheel);
+    }
+  }, [slides.length, currentSlideIndex]);
 
   const handleStartLecture = async () => {
     if (lectureId) {
@@ -667,6 +752,19 @@ const Present = () => {
           >
             <QrCode className="w-4 h-4" />
           </Button>
+          {/* Leaderboard (Top 5) toggle */}
+          {isLive && students.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+              onClick={() => setShowMiniLeaderboard(!showMiniLeaderboard)}
+              title={showMiniLeaderboard ? "Hide leaderboard" : "Show leaderboard"}
+            >
+              {showMiniLeaderboard ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              <span className="ml-1 text-xs">{showMiniLeaderboard ? "Hide" : "Show"} Top 5</span>
+            </Button>
+          )}
           {/* Fullscreen toggle */}
           <Button
             variant="ghost"
@@ -714,7 +812,7 @@ const Present = () => {
       </div>
 
       {/* Main Content - LARGER presentation */}
-      <div className="flex-1 flex items-center justify-center p-2 md:p-4 relative">
+      <div data-present-main-content className="flex-1 flex items-center justify-center p-2 md:p-4 relative">
         {/* Left Navigation Arrow - Always visible */}
         <Button
           variant="ghost"
@@ -728,14 +826,16 @@ const Present = () => {
 
         <AnimatePresence mode="wait">
           <motion.div
+            ref={slideContainerRef}
             key={currentSlide?.id}
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="w-full h-full max-w-[95vw] max-h-[85vh] aspect-video mx-16"
+            className="w-full h-full max-w-[min(95vw,1200px)] max-h-[85vh] aspect-video mx-4 md:mx-8 lg:mx-16"
           >
             {currentSlide && (
+              <BuilderPreviewProvider allowContentScroll={true}>
               <SlideRenderer
                 slide={currentSlide}
                 isEditing={false}
@@ -745,6 +845,7 @@ const Present = () => {
                 hideFooter={true}
                 showCorrectAnswer={showCorrectAnswer}
               />
+              </BuilderPreviewProvider>
             )}
           </motion.div>
         </AnimatePresence>
@@ -768,11 +869,11 @@ const Present = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-2"
+            className="fixed bottom-24 left-0 right-0 z-30 flex flex-col items-center justify-center gap-2"
           >
             <Button
-              size="lg"
-              className="bg-amber-500 hover:bg-amber-600 text-white font-bold text-base md:text-lg shadow-xl shadow-amber-900/30 px-8 py-6 h-auto rounded-2xl border-2 border-amber-400/50"
+              size="default"
+              className="w-fit bg-amber-500 hover:bg-amber-600 text-white font-semibold text-sm md:text-base shadow-lg shadow-amber-900/30 px-5 py-2.5 rounded-xl border border-amber-400/50"
               onClick={handleEndLecture}
               disabled={isEnding}
             >
@@ -803,11 +904,7 @@ const Present = () => {
                 setCurrentSlideIndex(index);
                 setShowCorrectAnswer(false);
                 if (lectureId) {
-                  slideSyncChannelRef.current?.send({
-                    type: 'broadcast',
-                    event: 'slide_changed',
-                    payload: { lectureId, currentSlideIndex: index, ts: Date.now() },
-                  });
+                  sendSlideBroadcast(lectureId, index);
                   await updateLecture(lectureId, { current_slide_index: index });
                 }
               }}
@@ -835,16 +932,16 @@ const Present = () => {
               initial={{ y: 20 }}
               animate={{ y: 0 }}
               exit={{ y: 20 }}
-              className="bg-card/95 backdrop-blur-md rounded-3xl p-10 shadow-2xl border border-border/40"
+              className="bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border/40 max-w-[min(95vw,480px)] max-h-[90vh] overflow-y-auto flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="font-display font-bold text-2xl text-card-foreground">Join the Lecture</h3>
+              <div className="flex items-center justify-between p-6 pb-0 flex-shrink-0 sticky top-0 z-10 bg-card/95 backdrop-blur-md">
+                <h3 className="font-display font-bold text-xl md:text-2xl text-card-foreground">Join the Lecture</h3>
                 {isLive && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-10 w-10 text-muted-foreground hover:text-foreground"
+                    className="h-10 w-10 text-muted-foreground hover:text-foreground flex-shrink-0"
                     onClick={() => setShowQRCode(false)}
                   >
                     <X className="w-5 h-5" />
@@ -852,12 +949,12 @@ const Present = () => {
                 )}
               </div>
               
-              <div className="flex flex-col items-center gap-8">
+              <div className="flex flex-col items-center gap-6 p-6 md:gap-8 md:p-10">
                 {/* QR Code - LARGE and centered */}
-                <div className="bg-white p-6 rounded-3xl shadow-lg">
+                <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl shadow-lg">
                   <QRCodeSVG
                     value={joinUrl}
-                    size={280}
+                    size={240}
                     level="H"
                     includeMargin={false}
                   />
@@ -919,10 +1016,10 @@ const Present = () => {
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-card text-card-foreground rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-hidden flex flex-col shadow-2xl"
+              className="bg-card text-card-foreground rounded-2xl w-full max-w-[min(95vw,28rem)] max-h-[80vh] overflow-hidden flex flex-col shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between p-4 md:p-6 pb-4 flex-shrink-0 sticky top-0 z-10 bg-card">
                 <div className="flex items-center gap-2">
                   <MessageCircle className="w-5 h-5 text-primary" />
                   <h2 className="text-xl font-display font-bold">Student Questions</h2>
@@ -937,7 +1034,7 @@ const Present = () => {
                 </Button>
               </div>
 
-              <div className="flex-1 overflow-y-auto space-y-3">
+              <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-3 p-4 md:p-6 pt-0 md:pt-0">
                 {questions.length === 0 ? (
                   <div className="text-center py-12 text-muted-foreground">
                     <HelpCircle className="w-12 h-12 mx-auto mb-4 opacity-50" />

@@ -53,6 +53,9 @@ const Student = () => {
   const [sentenceInput, setSentenceInput] = useState("");
   const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
   const previousPointsRef = React.useRef<number>(0);
+  const lastBroadcastSlideIndexRef = React.useRef<number | null>(null);
+  const lastBroadcastTsRef = React.useRef<number>(0);
+  const broadcastRefetchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentSlide = slides[currentSlideIndex];
   const slideTypeInfo = currentSlide ? SLIDE_TYPES.find(t => t.type === currentSlide.type) : null;
@@ -89,14 +92,22 @@ const Student = () => {
   }, [lectureCode]);
 
   // Helper to apply lecture update - extracted for reuse
-  const applyLectureUpdate = React.useCallback((updatedLecture: any) => {
+  // Within 3s of a broadcast, trust broadcast for slide index AND never overwrite slides (avoids flicker from stale refetch/poll)
+  const applyLectureUpdate = React.useCallback((updatedLecture: any, _fromRefetch?: boolean) => {
     const newSlideIndex = updatedLecture.current_slide_index;
     const newSlides = (updatedLecture.slides as unknown as Slide[]) || [];
-    
+    const now = Date.now();
+    const recentlyFromBroadcast =
+      lastBroadcastTsRef.current > 0 &&
+      now - lastBroadcastTsRef.current < 3000 &&
+      lastBroadcastSlideIndexRef.current !== null;
+    const indexToApply = recentlyFromBroadcast
+      ? (newSlideIndex === lastBroadcastSlideIndexRef.current ? newSlideIndex : lastBroadcastSlideIndexRef.current!)
+      : newSlideIndex;
+
     // Reset answer state when slide changes
     setCurrentSlideIndex((prevIndex: number) => {
-      if (newSlideIndex !== prevIndex) {
-        console.log('[Student] Slide changed from', prevIndex, 'to', newSlideIndex);
+      if (indexToApply !== prevIndex) {
         setHasAnswered(false);
         setSelectedOption(null);
         setWordInput("");
@@ -107,16 +118,18 @@ const Student = () => {
         setAgreeValue([50]);
         setSentenceInput("");
       }
-      return newSlideIndex;
+      return indexToApply;
     });
-    
-    // Update slides if they changed
-    setSlides(newSlides);
+
+    // During broadcast window: never overwrite slides – avoids flicker from stale refetch/poll
+    if (!recentlyFromBroadcast && newSlides.length > 0) {
+      setSlides(newSlides);
+    }
     setLecture(updatedLecture);
   }, []);
 
   // Hard refetch lecture state (used for guaranteed instant sync)
-  const refetchLectureState = React.useCallback(async (lectureId: string) => {
+  const refetchLectureState = React.useCallback(async (lectureId: string, fromRefetch = false) => {
     const { data, error } = await supabase
       .from('lectures')
       .select('*')
@@ -124,7 +137,7 @@ const Student = () => {
       .single();
 
     if (!error && data) {
-      applyLectureUpdate(data);
+      applyLectureUpdate(data, fromRefetch);
       return data;
     }
     if (error) {
@@ -233,7 +246,7 @@ const Student = () => {
     };
   }, [lecture?.id, applyLectureUpdate, refetchLectureState]);
 
-  // Layer 1: broadcast – presenter sends slide_changed on lecture-sync-${id}; apply immediately then refetch
+  // Layer 1: broadcast – presenter sends slide_changed on lecture-sync-${id}; apply immediately, then delayed debounced refetch
   useEffect(() => {
     if (!lecture?.id) return;
 
@@ -242,10 +255,12 @@ const Student = () => {
     });
 
     channel
-      .on('broadcast', { event: 'slide_changed' }, async ({ payload }) => {
+      .on('broadcast', { event: 'slide_changed' }, ({ payload }) => {
         const p = payload as { currentSlideIndex?: number; lectureId?: string; ts?: number };
         const newIndex = p.currentSlideIndex;
         if (typeof newIndex === 'number') {
+          lastBroadcastSlideIndexRef.current = newIndex;
+          lastBroadcastTsRef.current = Date.now();
           // Apply immediately so student sees the right slide without waiting for refetch
           setCurrentSlideIndex(newIndex);
           setHasAnswered(false);
@@ -257,15 +272,21 @@ const Student = () => {
           setSentimentValue([50]);
           setAgreeValue([50]);
           setSentenceInput('');
+          // Debounced refetch: cancel any pending, schedule after 800ms so DB write has completed (avoids stale data flicker)
+          if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
+          const lid = lecture.id;
+          broadcastRefetchTimeoutRef.current = setTimeout(() => {
+            broadcastRefetchTimeoutRef.current = null;
+            refetchLectureState(lid, true);
+          }, 800);
         }
-        // Refetch in background for full lecture/slides data
-        if (lecture?.id) refetchLectureState(lecture.id);
       })
       .subscribe((status) => {
         console.log('[Student] Slide sync channel status:', status);
       });
 
     return () => {
+      if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
       supabase.removeChannel(channel);
     };
   }, [lecture?.id, refetchLectureState]);
@@ -554,6 +575,12 @@ const Student = () => {
         </div>
       </div>
     );
+  }
+
+  // Redirect to join if studentId is missing (e.g. direct link without joining)
+  if (lecture && !studentId && lectureCode) {
+    navigate(`/join?code=${lectureCode}`, { replace: true });
+    return null;
   }
 
   // Show game controls when game is active

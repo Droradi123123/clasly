@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { SubscriptionPlan } from "@/types/subscription";
+import { CONTACT_EMAIL } from "@/lib/constants";
 
 const Pricing = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -325,10 +326,10 @@ const Pricing = () => {
             <p className="text-muted-foreground mb-6">
               We're here to help. Contact us at{" "}
               <a
-                href="mailto:hello@clasly.app"
+                href={`mailto:${CONTACT_EMAIL}`}
                 className="text-primary hover:underline"
               >
-                hello@clasly.app
+                {CONTACT_EMAIL}
               </a>
             </p>
           </motion.div>

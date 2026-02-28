@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -19,15 +19,7 @@ const Join = () => {
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  // Check for code in URL params
-  useEffect(() => {
-    const codeFromUrl = searchParams.get("code");
-    if (codeFromUrl && codeFromUrl.length === 6) {
-      setLectureCode(codeFromUrl);
-      handleCodeSubmit(codeFromUrl);
-    }
-  }, [searchParams]);
+  const processedUrlCodeRef = useRef<string | null>(null);
 
   const handleCodeSubmit = async (codeToCheck?: string) => {
     const code = codeToCheck || lectureCode;
@@ -62,6 +54,20 @@ const Join = () => {
       setIsLoading(false);
     }
   };
+
+  // Check for code in URL params - fill field and auto-submit when length is 6
+  useEffect(() => {
+    const codeFromUrl = searchParams.get("code")?.trim() || "";
+    if (codeFromUrl) {
+      setLectureCode(codeFromUrl);
+      if (codeFromUrl.length === 6 && processedUrlCodeRef.current !== codeFromUrl) {
+        processedUrlCodeRef.current = codeFromUrl;
+        handleCodeSubmit(codeFromUrl);
+      }
+    } else {
+      processedUrlCodeRef.current = null;
+    }
+  }, [searchParams]);
 
   const handleJoin = async () => {
     if (!name.trim()) return;

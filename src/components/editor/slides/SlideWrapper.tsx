@@ -181,6 +181,7 @@ export function SlideWrapper({
           </div>
         )}
         <div
+          data-slide-scroll
           className={`${isSideImage ? 'flex-1' : 'h-full'} flex flex-col ${
             allowContentScroll ? 'min-h-0 overflow-y-auto overflow-x-hidden' : ''
           }`}

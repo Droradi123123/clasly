@@ -1,7 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare } from "lucide-react";
+import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare, Gift, Copy } from "lucide-react";
 import { useState } from "react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { useReferralCode } from "@/hooks/useReferralCode";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/auth/AuthModal";
 import {
@@ -23,6 +30,7 @@ const Header = () => {
   const { user, isLoading, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const { code: referralCode, isLoading: isReferralLoading } = useReferralCode();
   
   // Subscription data
   const { 
@@ -33,9 +41,9 @@ const Header = () => {
     plan
   } = useSubscriptionContext();
   
-  // Free plan has 0 monthly refill; show balance vs initial 10-credit grant for progress
+  // Free plan has 0 monthly refill; show balance vs initial 15-credit grant for progress
   const monthlyTokens = plan?.monthly_ai_tokens ?? 0;
-  const displayCap = isFree ? 10 : (monthlyTokens || 1);
+  const displayCap = isFree ? 15 : (monthlyTokens || 1);
   const tokenPercentage = displayCap > 0 ? Math.min(100, (aiTokensRemaining / displayCap) * 100) : 0;
   const isLowCredits = isFree ? aiTokensRemaining <= 2 : (monthlyTokens > 0 && (aiTokensRemaining / monthlyTokens) < 0.2);
 
@@ -92,6 +100,43 @@ const Header = () => {
               <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
             ) : user ? (
               <>
+                {/* Referral: share link, get 20 credits per signup */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" title="Share & earn 20 credits">
+                      <Gift className="h-5 w-5 text-primary" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80" align="end">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Gift className="h-5 w-5 text-primary shrink-0" />
+                        <h4 className="font-semibold text-sm">Share & earn credits</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Share your link. When someone signs up with it, you get <strong>20 AI credits</strong>.
+                      </p>
+                      {isReferralLoading ? (
+                        <div className="h-9 rounded-md bg-muted animate-pulse" />
+                      ) : referralCode ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="w-full justify-start gap-2 font-mono text-xs"
+                          onClick={() => {
+                            const url = `${typeof window !== "undefined" ? window.location.origin : ""}/?ref=${referralCode}`;
+                            navigator.clipboard.writeText(url).then(() => toast.success("Link copied!"));
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy my link
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Loading your link…</p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="relative h-9 w-9 rounded-full">

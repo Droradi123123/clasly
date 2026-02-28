@@ -232,7 +232,7 @@ const ConversationalBuilder: React.FC = () => {
         `- "Add a quiz after slide 2"\n` +
         `- "Delete the timeline slide"\n` +
         `- "Change images to a different style"\n\n` +
-        `When you're happy with the result, **save and continue to the full editor** using the button above or the **"Continue to Edit"** button below.`
+        `You can **keep editing by typing** what you want changed in the box below, or click **Continue to Edit** to open the full editor.`
       );
     } catch (error) {
       console.error('Error generating presentation:', error);
@@ -277,9 +277,15 @@ const ConversationalBuilder: React.FC = () => {
         throw new Error("Please sign in to use the chat builder");
       }
 
+      const conversationHistory = messages
+        .slice(0, -1)
+        .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.isLoading)
+        .slice(-20)
+        .map((m) => ({ role: m.role, content: m.content }));
       const { data, error: fnError } = await supabase.functions.invoke('chat-builder', {
         body: {
           message: userMessage,
+          conversationHistory,
           slides: sandboxSlides,
           currentSlideIndex: currentPreviewIndex,
           originalPrompt,
@@ -385,18 +391,18 @@ const ConversationalBuilder: React.FC = () => {
             disabled={sandboxSlides.length === 0 || isSaving || isGenerating}
           >
             <Check className="w-4 h-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Approve & Continue to Edit'}
+            {isSaving ? 'Saving...' : 'Continue to Edit'}
           </Button>
         </div>
       </header>
       
       {/* Main content - Split view */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Chat panel - Left side */}
+        {/* Chat panel - Left side (wider, clearer for "type to edit") */}
         <motion.div
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="w-[400px] min-w-[350px] max-w-[500px] border-r border-border"
+          className="w-[min(380px,36%)] min-w-[300px] max-w-[400px] border-r border-border flex flex-col"
         >
           <ChatPanel
           onSendMessage={handleSendMessage}

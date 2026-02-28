@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import Header from "@/components/layout/Header";
 import HeroSection from "@/components/landing/HeroSection";
 import AIGenerationPreview from "@/components/landing/AIGenerationPreview";
@@ -12,7 +13,19 @@ import Footer from "@/components/landing/Footer";
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Show auth error when user returns from failed signup (e.g. Database error saving new user)
+  useEffect(() => {
+    const error = searchParams.get("error");
+    const desc = searchParams.get("error_description");
+    if (error || desc) {
+      const msg = desc ? decodeURIComponent(desc.replace(/\+/g, " ")) : "ההרשמה נכשלה. נסה שוב מאוחר יותר.";
+      toast.error(msg);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [generationPrompt, setGenerationPrompt] = useState("");
 
   const handleGenerate = (prompt: string) => {

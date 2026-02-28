@@ -133,7 +133,7 @@ export function RankingSlide({
                         placeholder={`Item ${index + 1}`}
                       />
                     ) : (
-                      <span className="flex-1 text-white font-semibold text-sm md:text-base truncate">
+                      <span className="flex-1 min-w-0 text-white font-semibold text-sm md:text-base break-words">
                         {item}
                       </span>
                     )}

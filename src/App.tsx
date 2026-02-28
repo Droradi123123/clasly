@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import Index from "./pages/Index";
 import Dashboard from "./pages/Dashboard";
@@ -21,8 +21,17 @@ import PrivacyPolicy from "./pages/PrivacyPolicy";
 import AdminConversations from "./pages/AdminConversations";
 import NotFound from "./pages/NotFound";
 import { PostLoginRedirect } from "./components/auth/PostLoginRedirect";
+import { ReferralHandler } from "./components/referral/ReferralHandler";
 
 const queryClient = new QueryClient();
+
+/** Redirects /builder to /editor/new with same params + ai=1 (unified Editor) */
+const BuilderRedirect = () => {
+  const [searchParams] = useSearchParams();
+  const params = new URLSearchParams(searchParams);
+  params.set('ai', '1');
+  return <Navigate to={`/editor/new?${params.toString()}`} replace />;
+};
 
 // Global error handler for unhandled promise rejections
 const useGlobalErrorHandler = () => {
@@ -47,6 +56,7 @@ const App = () => {
           <Toaster />
           <Sonner />
           <BrowserRouter>
+            <ReferralHandler />
             <PostLoginRedirect />
             <Routes>
               <Route path="/" element={<Index />} />
@@ -58,7 +68,7 @@ const App = () => {
               <Route path="/student/:lectureCode" element={<Student />} />
               <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={<Billing />} />
-              <Route path="/builder" element={<ConversationalBuilder />} />
+              <Route path="/builder" element={<BuilderRedirect />} />
               <Route path="/continue-on-desktop" element={<ContinueOnDesktop />} />
               <Route path="/terms" element={<TermsOfService />} />
               <Route path="/privacy" element={<PrivacyPolicy />} />

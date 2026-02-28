@@ -55,9 +55,22 @@ export function ImageUploader({
         throw uploadError;
       }
 
-      // Use public URL when bucket is public – stable, no expiry, fewer CORS issues
-      const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
-      const displayUrl = publicData.publicUrl;
+      // Prefer signed URL so image loads even when bucket is private; fallback to public URL
+      let displayUrl: string;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('slide-images')
+          .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
+        if (signedData?.signedUrl) {
+          displayUrl = signedData.signedUrl;
+        } else {
+          const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+          displayUrl = publicData.publicUrl;
+        }
+      } catch {
+        const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+        displayUrl = publicData.publicUrl;
+      }
       onChange(displayUrl);
       toast.success('Image uploaded successfully');
     } catch (error: any) {

@@ -473,69 +473,82 @@ function getImageCacheKey(prompt: string): string {
 // =============================================================================
 
 function cleanAndParseJSON(rawContent: string): any {
-  let text = rawContent;
+  let text = (rawContent || "").trim();
+  if (!text) return null;
 
+  // Extract from markdown code blocks
   const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonBlockMatch) {
-    text = jsonBlockMatch[1];
-  }
-  // Some models return "Here is the JSON:" or similar before the array
-  const arrayStart = text.indexOf("[");
-  if (arrayStart > 0 && arrayStart < 100) {
-    text = text.slice(arrayStart);
+    text = jsonBlockMatch[1].trim();
   }
 
+  // Some models add preamble before the JSON - find start of array or object
+  const arrayStart = text.indexOf("[");
+  const objectStart = text.indexOf("{");
+  const firstJson = arrayStart >= 0 && (objectStart < 0 || arrayStart <= objectStart)
+    ? arrayStart
+    : objectStart;
+  if (firstJson > 0 && firstJson < 300) {
+    text = text.slice(firstJson);
+  }
+
+  // Clean common JSON issues
   text = text
     .trim()
     .replace(/\/\/.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/,(\s*[}\]])/g, "$1")
-    .replace(/(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+    .replace(/([\{\,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, (_, prefix, key) => `${prefix}"${key}":`);
 
+  // Balance braces (helps with truncated responses)
   const openBraces = (text.match(/{/g) || []).length;
   const closeBraces = (text.match(/}/g) || []).length;
   const openBrackets = (text.match(/\[/g) || []).length;
   const closeBrackets = (text.match(/]/g) || []).length;
-
   if (openBraces > closeBraces) text += "}".repeat(openBraces - closeBraces);
   if (openBrackets > closeBrackets) text += "]".repeat(openBrackets - closeBrackets);
 
   try {
     return JSON.parse(text);
-  } catch (firstError) {
-    console.error("First parse attempt failed:", firstError);
-
+  } catch {
+    // Fallback: extract outermost array
     const arrayMatch = text.match(/\[[\s\S]*\]/);
     if (arrayMatch) {
       try {
         return JSON.parse(arrayMatch[0]);
       } catch {}
     }
-
+    // Fallback: extract outermost object
     const objectMatch = text.match(/\{[\s\S]*\}/);
     if (objectMatch) {
       try {
         return JSON.parse(objectMatch[0]);
       } catch {}
     }
-
-    console.error("JSON content preview:", text.substring(0, 500));
+    console.error("[generate-slides] JSON parse failed. Preview:", text.substring(0, 400));
     return null;
   }
 }
 
+/** Recursively search for slides array in nested objects. */
+function findSlidesArray(obj: any, depth = 0): any[] | null {
+  if (depth > 3) return null;
+  if (Array.isArray(obj) && obj.length > 0) return obj;
+  if (obj && typeof obj === "object") {
+    for (const key of ["slides", "data", "content", "result", "presentation", "output"]) {
+      const found = findSlidesArray(obj[key], depth + 1);
+      if (found) return found;
+    }
+    // Single slide: { type, content }
+    if (obj.type && obj.content && typeof obj.content === "object") return [obj];
+  }
+  return null;
+}
+
 /** If AI returned { "slides": [...] } or similar, extract the array. Handles single-slide object. */
 function normalizeToSlidesArray(parsed: any): any[] | null {
-  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-  if (parsed && typeof parsed === "object") {
-    for (const key of ["slides", "data", "content", "result"]) {
-      if (Array.isArray(parsed[key]) && parsed[key].length > 0) return parsed[key];
-    }
-    // Single slide returned as one object (type + content)
-    if (parsed.type && parsed.content && typeof parsed.content === "object") {
-      return [parsed];
-    }
-  }
+  const found = findSlidesArray(parsed);
+  if (found) return found;
   return null;
 }
 
@@ -924,9 +937,11 @@ ${effectiveSlideCount > 7 ? `### Additional slides: Mix of content, quiz, and en
 - For title: subtle, abstract, soft backgrounds that evoke the topic mood
 - For split_content: clear subject, professional style, emotionally resonant
 
-## OUTPUT FORMAT
-Return ONLY valid JSON array with EXACTLY ${effectiveSlideCount} slides. No markdown, no explanation:
-[{ "type": "title", ... }, ...]
+## OUTPUT FORMAT (CRITICAL)
+Return EXACTLY ${effectiveSlideCount} slides as a valid JSON array. No markdown, no code blocks, no explanation.
+- Output MUST start with [ and end with ]
+- Each slide: {"type":"...","content":{...},"imagePrompt":"..." optional}
+- Valid JSON only - no trailing commas, all keys in double quotes
 `;
 }
 
@@ -1027,7 +1042,7 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string):
       ],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 4096,
+        maxOutputTokens: 8192,
         responseMimeType: "application/json",
       },
     }),

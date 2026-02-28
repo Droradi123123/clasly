@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import {
   DndContext,
   closestCenter,
@@ -77,6 +77,24 @@ import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { UpgradeModal, useUpgradeModal } from "@/components/billing/UpgradeModal";
+import ChatPanel from "@/components/builder/ChatPanel";
+import { useConversationalBuilder } from "@/hooks/useConversationalBuilder";
+import { supabase } from "@/integrations/supabase/client";
+import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
+import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { motion, AnimatePresence } from "framer-motion";
+
+const BUILDER_TIPS = [
+  'Students join with a QR code—no app download needed.',
+  'Add quizzes and polls to boost engagement during your lecture.',
+  'Use Student View to see exactly what your audience sees on their phones.',
+  'Change slide themes anytime—each presentation can have its own style.',
+  'AI can refine your slides—describe changes in the chat to apply them instantly.',
+  'Export your presentation to images or PDF when you\'re done.',
+  'Present live—students answer in real time on their phones.',
+  'Try the mobile preview to see how your slides look on small screens.',
+];
 
 // Icon mapping for slide types
 const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
@@ -104,7 +122,8 @@ const Editor = () => {
   const [isSlidesPanelCollapsed, setIsSlidesPanelCollapsed] = useState(false);
   const { lectureId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const isMobile = useIsMobile();
   const [lectureTitle, setLectureTitle] = useState("Untitled Lecture");
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -121,9 +140,17 @@ const Editor = () => {
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
   const [showPhonePreview, setShowPhonePreview] = useState(false);
+  const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
+  const [isInitialGenerating, setIsInitialGenerating] = useState(false);
+  const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
+  const hasTriggeredInitialGen = useRef(false);
+  const slideRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const skipScrollObserverRef = useRef(false);
 
   // Subscription & upgrade modal
-  const { isFree, maxSlides, isPro } = useSubscriptionContext();
+  const { isFree, maxSlides, isPro, hasAITokens, isLoading: isSubLoading } = useSubscriptionContext();
   const { showUpgradeModal, UpgradeModal: UpgradeModalComponent } = useUpgradeModal();
 
   // Initialize with proper Slide objects
@@ -144,6 +171,203 @@ const Editor = () => {
   );
 
   const currentSlide = slides[currentSlideIndex];
+  const slidePreviewRef = useRef<HTMLDivElement>(null);
+
+  // AI Panel (useConversationalBuilder) - sync with Editor slides
+  const {
+    sandboxSlides,
+    setSandboxSlides,
+    setCurrentPreviewIndex,
+    addMessage,
+    updateLastMessage,
+    setIsGenerating,
+    isGenerating,
+    messages,
+    originalPrompt,
+    targetAudience,
+    setOriginalPrompt,
+    setGeneratedTheme,
+    reset: resetConversationalBuilder,
+  } = useConversationalBuilder();
+
+  // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
+  useEffect(() => {
+    const prompt = searchParams.get('prompt');
+    const ai = searchParams.get('ai');
+    if (lectureId !== 'new' || !prompt || ai !== '1') return;
+    resetConversationalBuilder();
+    hasTriggeredInitialGen.current = false;
+    setLectureDbId(null);
+    setLectureCode('');
+    setSlides([createNewSlide('title', 0)]);
+    setLectureTitle('Untitled Lecture');
+    setCurrentSlideIndex(0);
+    setHasChanges(false);
+  }, [lectureId, searchParams, resetConversationalBuilder]);
+
+  // When landing with ?ai=1, open AI panel
+  useEffect(() => {
+    if (searchParams.get('ai') === '1') setIsAIPanelOpen(true);
+  }, []);
+
+  // On entering AI mode: initialize sandbox from Editor slides (skip when generating from prompt or sandbox already populated)
+  useEffect(() => {
+    if (searchParams.get('prompt')) return; // Generating fresh from URL prompt
+    if (sandboxSlides.length > 0) return; // Sandbox already has content (e.g. from just-finished generation)
+    if (isAIPanelOpen && slides.length > 0) {
+      setSandboxSlides(slides);
+      setCurrentPreviewIndex(Math.min(currentSlideIndex, slides.length - 1));
+    }
+  }, [isAIPanelOpen]); // Only when toggling into AI mode
+
+  // When AI updates sandboxSlides: push to Editor slides
+  useEffect(() => {
+    if (!isAIPanelOpen || sandboxSlides.length === 0) return;
+    setSlides(sandboxSlides);
+    setHasChanges(true);
+  }, [isAIPanelOpen, sandboxSlides]);
+
+  // Generate initial presentation when landing with ?prompt=...&ai=1 (from Dashboard)
+  useEffect(() => {
+    const prompt = searchParams.get('prompt') || '';
+    const audience = searchParams.get('audience') || 'general';
+    if (!prompt || searchParams.get('ai') !== '1') return;
+    if (!user || isAuthLoading || isSubLoading) return;
+    if (hasTriggeredInitialGen.current) return;
+    if (sandboxSlides.length > 0 || originalPrompt) return;
+
+    hasTriggeredInitialGen.current = true;
+    setOriginalPrompt(prompt, audience);
+    setIsInitialGenerating(true);
+    setIsGenerating(true);
+    addMessage({ role: 'user', content: prompt });
+    addMessage({ role: 'assistant', content: `I'm building a presentation now:\n\n"${prompt}"`, isLoading: true });
+
+    const slideCount = isFree ? (maxSlides ?? 5) : 7;
+    (async () => {
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+        if (sessionError || !session) throw new Error("Please sign in to generate presentations");
+
+        const { data, error: fnError } = await supabase.functions.invoke('generate-slides', {
+          body: {
+            description: prompt,
+            contentType: 'interactive',
+            targetAudience: audience,
+            difficulty: 'intermediate',
+            slideCount,
+          },
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+
+        if (fnError) {
+          if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
+          const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
+          throw new Error(msg);
+        }
+        const resData = data as { error?: string; slides?: unknown[]; theme?: unknown };
+        if (resData?.error) throw new Error(resData.error);
+        if (!resData?.slides?.length) throw new Error('No slides returned');
+
+        const processedSlides: Slide[] = (resData.slides as any[]).map((slide: any, index: number) => ({
+          ...slide,
+          id: slide.id || `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+          order: index,
+        }));
+        setSandboxSlides(processedSlides);
+        setGeneratedTheme(resData.theme);
+
+        const draftTitle = (prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')) || 'Untitled Presentation';
+        try {
+          const newLecture = await createLecture(draftTitle, processedSlides);
+          setLectureDbId(newLecture.id);
+          setLectureCode(newLecture.lecture_code);
+          navigate(`/editor/${newLecture.id}?ai=1`, { replace: true });
+        } catch (e) {
+          console.warn('Failed to auto-save draft:', e);
+        }
+
+        updateLastMessage(
+          `I've created a ${processedSlides.length}-slide presentation about "${prompt}".\n\n` +
+          `**What you can ask me:**\n` +
+          `- "Change the text on slide 3"\n` +
+          `- "Make the tone more professional"\n` +
+          `- "Add a quiz after slide 2"\n` +
+          `- "Delete the timeline slide"\n\n` +
+          `Keep editing by typing in the box below.`
+        );
+      } catch (error) {
+        const errorMessage = error instanceof Error
+          ? (error.name === 'AbortError' ? 'Request timed out. Please try again.' : error.message)
+          : 'Please try again.';
+        updateLastMessage(`Sorry, I couldn't generate the presentation. ${errorMessage}`);
+        toast.error('Failed to generate presentation');
+      } finally {
+        setIsInitialGenerating(false);
+        setIsGenerating(false);
+      }
+    })();
+  }, [searchParams, user, isAuthLoading, isSubLoading, sandboxSlides.length, originalPrompt, isFree, maxSlides]);
+
+  useEffect(() => {
+    if (!isInitialGenerating) return;
+    const t = setInterval(() => setAiGenTipIndex((i) => (i + 1) % BUILDER_TIPS.length), 4500);
+    return () => clearInterval(t);
+  }, [isInitialGenerating]);
+
+  const handleSendAIMessage = useCallback(async (userMessage: string) => {
+    if (!hasAITokens(1)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
+    addMessage({ role: 'user', content: userMessage });
+    addMessage({ role: 'assistant', content: '', isLoading: true });
+    setIsGenerating(true);
+
+    try {
+      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+      if (sessionError || !session) throw new Error("Please sign in to use AI editing");
+
+      const currentSlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
+      const conversationHistory = messages
+        .slice(0, -1)
+        .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.isLoading)
+        .slice(-20)
+        .map((m) => ({ role: m.role, content: m.content }));
+      const { data, error: fnError } = await supabase.functions.invoke('chat-builder', {
+        body: {
+          message: userMessage,
+          conversationHistory,
+          slides: currentSlides,
+          currentSlideIndex,
+          originalPrompt: originalPrompt || '',
+          targetAudience: targetAudience || 'general',
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+
+      if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
+        const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to process message.');
+        throw new Error(msg);
+      }
+      const resData = data as { error?: string; message?: string; updatedSlides?: unknown[] };
+      if (resData?.error) throw new Error(resData.error);
+
+      if (resData?.updatedSlides?.length) {
+        setSandboxSlides(resData.updatedSlides as Slide[]);
+      }
+      updateLastMessage(resData?.message || 'Done! Check the updated slides.');
+    } catch (error) {
+      updateLastMessage(
+        `Sorry, I couldn't process that. ${error instanceof Error ? error.message : 'Please try again.'}`
+      );
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [sandboxSlides, slides, currentSlideIndex, originalPrompt, targetAudience, hasAITokens, addMessage, updateLastMessage, setIsGenerating, setSandboxSlides, messages]);
+
+  // (Wheel scroll handled by immersive deck - ScrollArea)
 
   // Redirect mobile users to continue-on-desktop (building is desktop-only)
   useEffect(() => {
@@ -160,15 +384,22 @@ const Editor = () => {
   }, [currentSlideIndex, currentSlide?.type]);
 
   // Load lecture from database if it exists (only own lectures)
+  // Wait for auth to be ready before loading to avoid stuck state
   useEffect(() => {
-    const loadLecture = async () => {
-      if (!lectureId || lectureId === 'new') {
-        setIsLoading(false);
-        return;
-      }
+    if (!lectureId || lectureId === 'new') {
+      setIsLoading(false);
+      return;
+    }
+    if (isAuthLoading) {
+      return; // Keep loading state until auth is ready
+    }
 
+    let cancelled = false;
+
+    const loadLecture = async () => {
       try {
         const lecture = await getLecture(lectureId);
+        if (cancelled) return;
         if (lecture) {
           const lectureUserId = (lecture as { user_id?: string }).user_id;
           if (user && lectureUserId && lectureUserId !== user.id) {
@@ -179,11 +410,15 @@ const Editor = () => {
           setLectureDbId(lecture.id);
           setLectureTitle(lecture.title);
           setLectureCode(lecture.lecture_code);
-          const loadedSlides = lecture.slides as unknown as Slide[];
+          const raw = lecture.slides;
+          const loadedSlides = Array.isArray(raw) ? (raw as unknown as Slide[]) : null;
           if (loadedSlides && loadedSlides.length > 0) {
-            setSlides(loadedSlides);
+            // Ensure each slide has required fields to avoid render crashes
+            const valid = loadedSlides.every((s) => s && typeof s === 'object' && s.id && s.type);
+            if (valid) {
+              setSlides(loadedSlides);
+            }
           }
-          // Load saved theme settings
           const settings = lecture.settings as Record<string, unknown> | null;
           if (settings?.themeId) {
             setSelectedThemeId(settings.themeId as ThemeId);
@@ -191,17 +426,23 @@ const Editor = () => {
           if (settings?.designStyleId) {
             setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
           }
+        } else {
+          toast.error('Lecture not found');
+          navigate("/dashboard", { replace: true });
         }
       } catch (error) {
+        if (cancelled) return;
         console.error('Error loading lecture:', error);
         toast.error('Failed to load lecture');
+        navigate("/dashboard", { replace: true });
       } finally {
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
     loadLecture();
-  }, [lectureId, user?.id, navigate]);
+    return () => { cancelled = true; };
+  }, [lectureId, user?.id, isAuthLoading, navigate]);
 
   // Auto-save with debounce - also saves theme settings
   const saveToDatabase = useCallback(async () => {
@@ -302,13 +543,73 @@ const Editor = () => {
       return;
     }
 
-    // New slides are appended at the end
+    // New slides are appended at the end; select the new slide so user sees it
     const newSlide = createNewSlide(type, slides.length);
     const newSlides = [...slides, newSlide].map((s, idx) => ({ ...s, order: idx }));
     setSlides(newSlides);
     setCurrentSlideIndex(newSlides.length - 1);
     setHasChanges(true);
   }, [slides, isFree, maxSlides, showUpgradeModal]);
+
+  // Scroll to the current slide when it changes (e.g. after adding, click in list, arrows) so user clearly sees which slide they're on
+  useEffect(() => {
+    const el = slideRefs.current.get(currentSlideIndex);
+    if (el) {
+      skipScrollObserverRef.current = true;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const t = setTimeout(() => { skipScrollObserverRef.current = false; }, 600);
+      return () => clearTimeout(t);
+    }
+  }, [currentSlideIndex]);
+
+  // Scroll-based selection: the visible (centered) slide becomes the active one so design changes apply to what the user sees
+  const visibilityRatios = useRef<Map<number, number>>(new Map());
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+
+    const slideEntries = slides.map((_, i) => ({ index: i, el: slideRefs.current.get(i) })).filter((e) => e.el);
+    if (slideEntries.length === 0) return;
+    visibilityRatios.current.clear();
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (skipScrollObserverRef.current) return;
+        for (const entry of entries) {
+          const idx = slideEntries.find((e) => e.el === entry.target)?.index;
+          if (idx !== undefined) {
+            visibilityRatios.current.set(idx, entry.intersectionRatio);
+          }
+        }
+        // Find the slide with the highest visibility
+        let bestIndex = -1;
+        let bestRatio = 0;
+        visibilityRatios.current.forEach((ratio, index) => {
+          if (ratio > bestRatio && ratio >= 0.15) {
+            bestRatio = ratio;
+            bestIndex = index;
+          }
+        });
+        if (bestIndex >= 0) {
+          setCurrentSlideIndex(bestIndex);
+        }
+      },
+      {
+        root: viewport,
+        rootMargin: '-20% 0px -20% 0px', // Prefer slides near vertical center
+        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1],
+      }
+    );
+
+    // Observe after a tick so refs are populated
+    const t = requestAnimationFrame(() => {
+      slideEntries.forEach(({ el }) => el && observer.observe(el));
+    });
+    return () => {
+      cancelAnimationFrame(t);
+      observer.disconnect();
+    };
+  }, [slides.length]);
 
   const handleSlidesImported = (importedSlides: Slide[]) => {
     setSlides([...slides, ...importedSlides]);
@@ -372,11 +673,14 @@ const Editor = () => {
   };
 
   const handlePresent = async () => {
-    // Save before presenting
+    // Enter fullscreen immediately for ideal presentation experience
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    }
+    // Save only when there are actual changes
     if (hasChanges) {
       await saveToDatabase();
     }
-    
     if (lectureDbId) {
       navigate(`/present/${lectureDbId}`);
     } else {
@@ -476,6 +780,7 @@ const Editor = () => {
           title: "Custom color picker",
           description: "Choosing any custom color is available on the Pro plan. Upgrade to unlock full color control.",
         })}
+        onImportClick={() => setShowImportDialog(true)}
       />
 
       {/* Import Dialog */}
@@ -501,78 +806,96 @@ const Editor = () => {
         open={showAddSlidePicker}
         onOpenChange={setShowAddSlidePicker}
         onSelect={addSlide}
-        onNavigateToBuilder={() => navigate(lectureId ? `/builder?lectureId=${lectureId}` : '/builder')}
+        onNavigateToBuilder={() => { setShowAddSlidePicker(false); setIsAIPanelOpen(true); }}
       />
 
       {/* Main Editor Area - Fill remaining height */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Slides Panel - collapsible with CSS transition */}
+        {/* Left Panel - Slides list OR AI Chat (collapsible, wider when AI) */}
         <div
           className={`flex-shrink-0 border-r border-border/50 bg-card/30 flex flex-col overflow-hidden transition-all duration-200 ${
-            isSlidesPanelCollapsed ? 'w-0 opacity-0' : 'w-52 opacity-100'
+            isSlidesPanelCollapsed ? 'w-0 opacity-0' : isAIPanelOpen ? 'w-[min(360px,26vw)] opacity-100' : 'w-52 opacity-100'
           }`}
         >
-          {/* Import + Collapse controls */}
-          <div className="flex-shrink-0 p-2 pb-0 flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowImportDialog(true)}
-              className="flex-1 gap-2"
-            >
-              <Upload className="w-4 h-4" />
-              Import
-            </Button>
+          {/* Collapse + Mode toggle */}
+          <div className="flex-shrink-0 p-2 pb-1 flex items-center gap-1">
             <Button
               variant="ghost"
               size="sm"
               className="h-9 w-9 p-0"
               onClick={() => setIsSlidesPanelCollapsed(true)}
-              title="Hide slides panel"
+              title="Hide panel"
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
-          </div>
-
-          {/* Add Slide - opens rich picker dialog */}
-          <div className="flex-shrink-0 p-2 pt-1 pb-1">
-            <Button
-              variant="outline"
-              className="w-full p-3 h-auto border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 hover:border-primary/50 transition-all rounded-lg"
-              onClick={() => setShowAddSlidePicker(true)}
-            >
-              <div className="flex flex-col items-center justify-center gap-1 py-2 w-full">
-                <Plus className="w-6 h-6 text-primary" />
-                <span className="text-primary font-medium text-xs">Add Slide</span>
-              </div>
-            </Button>
-          </div>
-
-          {/* Slides list - Scrollable */}
-          <div className="flex-1 overflow-y-auto p-2 min-h-0">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={slides.map(s => s.id)}
-                strategy={verticalListSortingStrategy}
+            {isAIPanelOpen ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 gap-1.5"
+                onClick={() => setIsAIPanelOpen(false)}
               >
-                <div className="space-y-1.5">
-                  {slides.map((slide, index) => (
-                    <SortableSlideItem
-                      key={slide.id}
-                      slide={slide}
-                      index={index}
-                      isSelected={index === currentSlideIndex}
-                      onClick={() => setCurrentSlideIndex(index)}
-                    />
-                  ))}
-                </div>
-              </SortableContext>
-            </DndContext>
+                <List className="w-3.5 h-3.5" />
+                Slides
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="flex-1 gap-1.5 border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary"
+                onClick={() => setIsAIPanelOpen(true)}
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                Edit with AI
+              </Button>
+            )}
           </div>
+
+          {isAIPanelOpen ? (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <ChatPanel
+                onSendMessage={handleSendAIMessage}
+                embeddedInEditor
+              />
+            </div>
+          ) : (
+            <>
+              {/* Slides list - Scrollable */}
+              <div className="flex-1 overflow-y-auto p-2 min-h-0">
+                {/* Add Slide CTA - first item */}
+                <button
+                  type="button"
+                  onClick={() => setShowAddSlidePicker(true)}
+                  className="w-full flex items-center gap-2 p-3 mb-2 rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 text-primary font-medium transition-all"
+                >
+                  <Plus className="w-4 h-4 flex-shrink-0" />
+                  Add slide
+                </button>
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={slides.map(s => s.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-1.5">
+                      {slides.map((slide, index) => (
+                        <SortableSlideItem
+                          key={slide.id}
+                          slide={slide}
+                          index={index}
+                          isSelected={index === currentSlideIndex}
+                          onClick={() => setCurrentSlideIndex(index)}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Main Editor - Canvas + Fixed Bottom Toolbar */}
@@ -592,31 +915,95 @@ const Editor = () => {
             </div>
           )}
 
-          {/* Slide Preview - centered, present-like sizing (no cropping) */}
-          <div className="flex-1 p-6 flex items-center justify-center min-h-0 gap-6">
-            {/* Main Presenter Preview - Reduced animations for performance */}
-            <div
-              className={
-                showPhonePreview
-                  ? "w-full max-w-3xl max-h-[80vh] aspect-video transition-all duration-200"
-                  : "w-full h-full max-w-7xl max-h-[80vh] aspect-video transition-all duration-200"
-              }
-            >
-              <SlideRenderer
-                slide={currentSlide}
-                isEditing={simulationData ? false : isEditing}
-                showResults={showResults || !!simulationData}
-                onUpdateContent={updateSlideContent}
-                liveResults={simulationData}
-                totalResponses={simulationData?.total || 0}
-                themeId={selectedThemeId}
-                designStyleId={selectedDesignStyleId}
-                hideFooter={isSlidesPanelCollapsed}
-              />
-            </div>
+          {/* Canvas: AI generation loader OR slide deck */}
+          <div ref={slidePreviewRef} className="flex-1 overflow-hidden flex gap-6 min-h-0">
+            {isInitialGenerating ? (
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6">
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.4 }}
+                  className="flex flex-col items-center text-center max-w-md"
+                >
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                    className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6"
+                  >
+                    <Loader2 className="w-8 h-8 text-primary" />
+                  </motion.div>
+                  <p className="text-base font-medium text-foreground mb-2">Building your presentation with AI</p>
+                  {searchParams.get('prompt') && (
+                    <p className="text-sm text-muted-foreground mb-6 line-clamp-2">
+                      &ldquo;{searchParams.get('prompt')}&rdquo;
+                    </p>
+                  )}
+                  <div className="w-full max-w-xs rounded-xl bg-muted/40 border border-border/50 px-4 py-4 min-h-[72px] flex items-center justify-center">
+                    <AnimatePresence mode="wait">
+                      <motion.p
+                        key={aiGenTipIndex}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.35 }}
+                        className="text-sm text-muted-foreground text-center leading-relaxed"
+                      >
+                        {BUILDER_TIPS[aiGenTipIndex]}
+                      </motion.p>
+                    </AnimatePresence>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground/60 mt-3">Tip {aiGenTipIndex + 1} of {BUILDER_TIPS.length}</p>
+                </motion.div>
+              </div>
+            ) : (
+            <ScrollArea className="flex-1 w-full" viewportRef={scrollViewportRef}>
+              <div className={`p-4 flex gap-6 w-full ${showPhonePreview ? 'flex-row items-start' : 'flex-col items-center'} min-h-full`}>
+                {slides.map((slide, index) => (
+                  <motion.div
+                    key={slide.id}
+                    ref={(el) => { el ? slideRefs.current.set(index, el) : slideRefs.current.delete(index); }}
+                    layout
+                    onClick={() => setCurrentSlideIndex(index)}
+                    className={`cursor-pointer transition-all shrink-0 relative ${
+                      index === currentSlideIndex
+                        ? 'ring-4 ring-primary ring-offset-2 ring-offset-background rounded-xl'
+                        : 'hover:ring-2 hover:ring-primary/30 hover:ring-offset-2 hover:ring-offset-background rounded-xl opacity-90 hover:opacity-100'
+                    }`}
+                  >
+                    <span className={`absolute -top-1 left-3 z-10 text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                      index === currentSlideIndex ? 'bg-primary text-primary-foreground' : 'bg-muted/80 text-muted-foreground'
+                    }`}>
+                      {index + 1} / {slides.length}
+                    </span>
+                    <div
+                      className={
+                        showPhonePreview
+                          ? "w-full max-w-[32rem] aspect-video"
+                          : "aspect-video w-full"
+                      }
+                      style={showPhonePreview ? undefined : { maxWidth: 'min(72rem, calc((100vh - 200px) * 16 / 9))' }}
+                    >
+                      <SlideRenderer
+                        slide={slide}
+                        isEditing={index === currentSlideIndex && !simulationData ? isEditing : false}
+                        showResults={index === currentSlideIndex && (showResults || !!simulationData)}
+                        onUpdateContent={index === currentSlideIndex ? updateSlideContent : () => {}}
+                        liveResults={index === currentSlideIndex ? simulationData : undefined}
+                        totalResponses={simulationData?.total ?? 0}
+                        themeId={selectedThemeId}
+                        designStyleId={selectedDesignStyleId}
+                        hideFooter={isSlidesPanelCollapsed}
+                      />
+                    </div>
+                  </motion.div>
+                ))}
+                <div className="h-2" />
+              </div>
+            </ScrollArea>
+            )}
 
-            {/* Phone Preview - Simplified animation */}
-            {showPhonePreview && (
+            {/* Phone Preview - when enabled (hidden during AI generation) */}
+            {showPhonePreview && !isInitialGenerating && (
               <div className="flex-shrink-0 w-[280px] h-[500px] relative animate-in fade-in slide-in-from-right-4 duration-200">
                 {/* Phone Frame */}
                 <div className="absolute inset-0 bg-black rounded-[2.5rem] p-2 shadow-2xl">
@@ -697,18 +1084,20 @@ const Editor = () => {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => {
-                    localStorage.setItem(
-                      "clasly_builder_slides",
-                      JSON.stringify(slides)
-                    );
-                    localStorage.setItem("clasly_builder_source", "editor");
-                    navigate(`/builder?slide=${currentSlideIndex}`);
-                  }}
+                  onClick={() => setIsAIPanelOpen(true)}
                   className="gap-2 border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-medium"
                 >
                   <Wand2 className="w-4 h-4" />
                   Edit with AI
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAddSlidePicker(true)}
+                  className="gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Slide
                 </Button>
               </div>
 

@@ -298,6 +298,45 @@ export type Database = {
         }
         Relationships: []
       }
+      user_referral_codes: {
+        Row: {
+          user_id: string
+          code: string
+          created_at: string | null
+        }
+        Insert: {
+          user_id: string
+          code: string
+          created_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          code?: string
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          id: string
+          referrer_user_id: string
+          referred_user_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          referrer_user_id: string
+          referred_user_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          referrer_user_id?: string
+          referred_user_id?: string
+          created_at?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -371,6 +410,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      record_referral: {
+        Args: { referral_code: string }
+        Returns: Json
       }
     }
     Enums: {

@@ -13,7 +13,7 @@ export default function Footer() {
         </div>
         <div className="flex items-center gap-6">
           <Link to="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            Terms of Service
+            Terms and Conditions
           </Link>
           <Link to="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Privacy Policy

@@ -20,6 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CREDIT_PACKS, type CreditPack } from "@/types/subscription";
 import { format } from "date-fns";
+import { CONTACT_EMAIL } from "@/lib/constants";
 
 const Billing = () => {
   const [searchParams] = useSearchParams();
@@ -67,7 +68,7 @@ const Billing = () => {
         } catch (error) {
           toast.dismiss();
           console.error("Payment capture error:", error);
-          toast.error("Failed to process payment. Please contact support.");
+          toast.error(`Failed to process payment. Please contact us at ${CONTACT_EMAIL}.`);
         }
       }
 

@@ -463,11 +463,17 @@ function buildToolDefinition() {
 // AI CALL WITH ROBUST PARSING
 // =============================================================================
 
+interface HistoryTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 async function callAI(
   message: string,
   slides: Slide[],
   currentSlideIndex: number,
   language: "he" | "en",
+  conversationHistory: HistoryTurn[] = [],
 ): Promise<{ responseMessage: string; commands: any[] }> {
   const apiKey = Deno.env.get("GEMINI_API_KEY");
   if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
@@ -475,7 +481,40 @@ async function callAI(
   const systemPrompt = buildSystemPrompt(slides, currentSlideIndex, language);
   const isHe = language === "he";
 
-  console.log(`🤖 Calling AI with message: "${message.slice(0, 100)}..."`);
+  console.log(`🤖 Calling AI with message: "${message.slice(0, 100)}..." | History: ${conversationHistory.length} turns`);
+
+  const jsonInstruction = `You must respond with a single JSON object matching this TypeScript type:
+{
+  "responseMessage": string;
+  "commands": {
+    "action": "update_slide" | "insert_slide" | "delete_slide" | "duplicate_slide" | "reorder_slide";
+    "slideIndex": number;
+  }[];
+}
+Do not include any markdown, commentary, or extra text. Return ONLY the JSON.`;
+
+  const contents: { role: string; parts: { text: string }[] }[] = [];
+
+  contents.push({
+    role: "user",
+    parts: [{ text: systemPrompt }],
+  });
+  contents.push({
+    role: "model",
+    parts: [{ text: isHe ? "הבנתי את מבנה המצגת. אני מוכן לעזור." : "I understand the presentation structure. Ready to help." }],
+  });
+
+  for (const turn of conversationHistory) {
+    contents.push({
+      role: turn.role === "assistant" ? "model" : "user",
+      parts: [{ text: turn.content }],
+    });
+  }
+
+  contents.push({
+    role: "user",
+    parts: [{ text: `User request:\n${message}\n\n${jsonInstruction}` }],
+  });
 
   try {
     const geminiModel = "gemini-2.5-flash";
@@ -485,14 +524,7 @@ async function callAI(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{
-              text: `${systemPrompt}\n\nUser request:\n${message}\n\nYou must respond with a single JSON object matching this TypeScript type:\n{\n  "responseMessage": string;\n  "commands": {\n    "action": "update_slide" | "insert_slide" | "delete_slide" | "duplicate_slide" | "reorder_slide";\n    "slideIndex": number;\n  }[];\n}\n\nDo not include any markdown, commentary, or extra text. Return ONLY the JSON.`,
-            }],
-          },
-        ],
+        contents,
         generationConfig: {
           temperature: 0.3,
           responseMimeType: "application/json",
@@ -868,6 +900,34 @@ function buildNewSlideContent(slideType: string, raw: any): SlideContent {
 }
 
 // =============================================================================
+// USER PLAN: MAX SLIDES
+// =============================================================================
+
+async function getUserMaxSlides(userId: string): Promise<number> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) return 5;
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: sub } = await supabase
+    .from("user_subscriptions")
+    .select("plan_id")
+    .eq("user_id", userId)
+    .single();
+
+  if (!sub?.plan_id) return 5;
+
+  const { data: plan } = await supabase
+    .from("subscription_plans")
+    .select("max_slides")
+    .eq("id", sub.plan_id)
+    .single();
+
+  const max = plan?.max_slides;
+  return typeof max === "number" ? max : 5;
+}
+
+// =============================================================================
 // CREDIT CONSUMPTION
 // =============================================================================
 
@@ -952,7 +1012,7 @@ serve(async (req) => {
 
     // Parse body
     const body = await req.json();
-    const { message, slides = [], currentSlideIndex = 0, originalPrompt, targetAudience } = body;
+    const { message, slides = [], currentSlideIndex = 0, originalPrompt, targetAudience, conversationHistory = [] } = body;
 
     // Validate
     if (!message || typeof message !== "string") {
@@ -976,8 +1036,15 @@ serve(async (req) => {
       `📝 Message: "${message.slice(0, 80)}..." | Slides: ${safeSlides.length} | Viewing: ${safeIndex + 1} | Lang: ${language}`,
     );
 
+    const safeHistory: HistoryTurn[] = Array.isArray(conversationHistory)
+      ? conversationHistory
+        .filter((t: any) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
+        .slice(-20)
+        .map((t: any) => ({ role: t.role, content: t.content }))
+      : [];
+
     // Call AI
-    const aiResult = await callAI(message, safeSlides, safeIndex, language);
+    const aiResult = await callAI(message, safeSlides, safeIndex, language, safeHistory);
 
     console.log(
       `🤖 AI response: "${aiResult.responseMessage.slice(0, 60)}..." | Commands: ${aiResult.commands.length}`,
@@ -986,10 +1053,11 @@ serve(async (req) => {
     // Execute commands if any
     let updatedSlides: Slide[] | null = null;
     let creditsConsumed = 0;
-    
+    let outputMessage = aiResult.responseMessage;
+
     if (aiResult.commands.length > 0) {
       // Filter out any invalid commands
-      const validCommands = aiResult.commands.filter((cmd: any) => {
+      let validCommands = aiResult.commands.filter((cmd: any) => {
         if (!cmd.action) {
           console.warn("Skipping command without action:", cmd);
           return false;
@@ -997,6 +1065,31 @@ serve(async (req) => {
         if (cmd.action === "no_change") return false;
         return true;
       });
+
+      // Enforce subscription slide limit: filter out insert_slide/duplicate_slide that would exceed max
+      const maxSlides = await getUserMaxSlides(user.id);
+      let slideLimitMessage = "";
+      let slideCount = safeSlides.length;
+
+      validCommands = validCommands.filter((cmd: any) => {
+        if (cmd.action === "insert_slide" || cmd.action === "duplicate_slide") {
+          slideCount += 1;
+          if (slideCount > maxSlides) {
+            slideLimitMessage = language === "he"
+              ? "מגבלת השקופיות הגיעה. שדרג את התוכנית כדי להוסיף עוד שקופיות."
+              : "Slide limit reached. Upgrade your plan to add more slides.";
+            console.log(`⛔ Skipping ${cmd.action}: would exceed max_slides (${maxSlides})`);
+            return false;
+          }
+        } else if (cmd.action === "delete_slide") {
+          slideCount = Math.max(0, slideCount - 1);
+        }
+        return true;
+      });
+
+      if (slideLimitMessage) {
+        outputMessage = `${aiResult.responseMessage}\n\n${slideLimitMessage}`;
+      }
 
       if (validCommands.length > 0) {
         // Calculate credits: 1 token per AFFECTED SLIDE (not per command)
@@ -1058,7 +1151,7 @@ serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        message: aiResult.responseMessage,
+        message: outputMessage,
         updatedSlides,
         creditsConsumed,
       }),

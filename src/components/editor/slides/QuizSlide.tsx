@@ -154,7 +154,7 @@ export function QuizSlide({
                   return (
                     <motion.div 
                       key={index} 
-                      className="relative group"
+                      className="relative group min-w-0"
                       initial={isMinimal ? { opacity: 0 } : entranceAnim.initial}
                       animate={isMinimal ? { opacity: 1 } : entranceAnim.animate}
                       transition={isMinimal ? { duration: 0.2 } : entranceAnim.transition}
@@ -195,7 +195,7 @@ export function QuizSlide({
                               minRows={1}
                             />
                           ) : (
-                            <span className={`flex-1 text-white font-semibold text-center line-clamp-2 ${
+                            <span className={`flex-1 min-w-0 text-white font-semibold text-center break-words ${
                               styleConfig.optionTextSize === 'large' ? 'text-base md:text-lg' : 'text-sm md:text-base'
                             }`}>
                               {option}
