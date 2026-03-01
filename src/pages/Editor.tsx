@@ -82,7 +82,6 @@ import { useConversationalBuilder } from "@/hooks/useConversationalBuilder";
 import { supabase } from "@/integrations/supabase/client";
 import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { motion, AnimatePresence } from "framer-motion";
 
 const BUILDER_TIPS = [
@@ -119,7 +118,6 @@ const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
 };
 
 const Editor = () => {
-  const [isSlidesPanelCollapsed, setIsSlidesPanelCollapsed] = useState(false);
   const { lectureId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -146,9 +144,6 @@ const Editor = () => {
   const [isInitialGenerating, setIsInitialGenerating] = useState(false);
   const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
   const hasTriggeredInitialGen = useRef(false);
-  const slideRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
-  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
-  const skipScrollObserverRef = useRef(false);
   const [slideSize, setSlideSize] = useState<{ width: number; height: number } | null>(null);
 
   // Subscription & upgrade modal
@@ -172,7 +167,8 @@ const Editor = () => {
     })
   );
 
-  const currentSlide = slides[currentSlideIndex];
+  const safeIndex = Math.min(currentSlideIndex, Math.max(0, slides.length - 1));
+  const currentSlide = slides[safeIndex];
   const slidePreviewRef = useRef<HTMLDivElement>(null);
 
   // AI Panel (useConversationalBuilder) - sync with Editor slides
@@ -212,19 +208,23 @@ const Editor = () => {
     if (searchParams.get('ai') === '1') setIsAIPanelOpen(true);
   }, []);
 
-  // On entering AI mode: initialize sandbox from Editor slides (skip when generating from prompt or sandbox already populated)
+  // On entering AI mode: initialize sandbox from current Editor slides (Edit with AI = work on THIS presentation only)
+  // Do NOT skip when sandbox has content - that could be stale from a previous session; always sync when editing existing
   useEffect(() => {
-    if (searchParams.get('prompt')) return; // Generating fresh from URL prompt
-    if (sandboxSlides.length > 0) return; // Sandbox already has content (e.g. from just-finished generation)
+    if (searchParams.get('prompt')) return; // Generating fresh from URL - don't overwrite
     if (isAIPanelOpen && slides.length > 0) {
       setSandboxSlides(slides);
       setCurrentPreviewIndex(Math.min(currentSlideIndex, slides.length - 1));
     }
-  }, [isAIPanelOpen]); // Only when toggling into AI mode
+  }, [isAIPanelOpen]);
 
-  // When AI updates sandboxSlides: push to Editor slides
+  // When AI updates sandboxSlides: push to Editor slides (only when data actually changed to reduce flicker)
+  const prevSandboxRef = useRef<string>('');
   useEffect(() => {
     if (!isAIPanelOpen || sandboxSlides.length === 0) return;
+    const key = JSON.stringify(sandboxSlides.map((s) => ({ id: s.id, type: s.type, order: s.order })));
+    if (key === prevSandboxRef.current) return;
+    prevSandboxRef.current = key;
     setSlides(sandboxSlides);
     setHasChanges(true);
   }, [isAIPanelOpen, sandboxSlides]);
@@ -246,6 +246,16 @@ const Editor = () => {
     addMessage({ role: 'assistant', content: `I'm building a presentation now:\n\n"${prompt}"`, isLoading: true });
 
     const slideCount = isFree ? (maxSlides ?? 5) : 7;
+    // Optimistic placeholders: show slides immediately so user sees progress
+    const placeholders: Slide[] = Array.from({ length: slideCount }, (_, i) =>
+      createNewSlide(i === 0 ? 'title' : 'content', i)
+    ).map((s, i) => ({
+      ...s,
+      content: i === 0
+        ? { ...s.content, title: 'Generating your presentation...', subtitle: prompt.slice(0, 60) + (prompt.length > 60 ? '...' : '') }
+        : { ...s.content, title: `Slide ${i + 1}`, text: 'Building...' },
+    }));
+    setSandboxSlides(placeholders);
     (async () => {
       try {
         const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
@@ -279,7 +289,12 @@ const Editor = () => {
         setSandboxSlides(processedSlides);
         setGeneratedTheme(resData.theme);
 
-        const draftTitle = (prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')) || 'Untitled Presentation';
+        // Use AI-generated title from first slide when available, else fallback to prompt
+        const firstSlide = processedSlides[0];
+        const aiTitle = firstSlide?.content && typeof (firstSlide.content as { title?: string }).title === 'string'
+          ? (firstSlide.content as { title: string }).title.trim()
+          : '';
+        const draftTitle = aiTitle || (prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')) || 'Untitled Presentation';
         try {
           const newLecture = await createLecture(draftTitle, processedSlides);
           setLectureDbId(newLecture.id);
@@ -372,7 +387,14 @@ const Editor = () => {
     }
   }, [sandboxSlides, slides, currentSlideIndex, originalPrompt, targetAudience, hasAITokens, addMessage, updateLastMessage, setIsGenerating, setSandboxSlides, messages]);
 
-  // (Wheel scroll handled by immersive deck - ScrollArea)
+  // Clamp currentSlideIndex when slides count changes
+  useEffect(() => {
+    if (currentSlideIndex >= slides.length) {
+      setCurrentSlideIndex(Math.max(0, slides.length - 1));
+    }
+  }, [slides.length, currentSlideIndex]);
+
+  // Single-slide canvas; no scroll
 
   // Redirect mobile users to continue-on-desktop (building is desktop-only)
   useEffect(() => {
@@ -562,100 +584,56 @@ const Editor = () => {
     setHasChanges(true);
   }, [slides, isFree, maxSlides, showUpgradeModal]);
 
-  // Scroll to the current slide when it changes (e.g. after adding, click in list, arrows) so user clearly sees which slide they're on
+  // ResizeObserver (debounced): compute slide size from canvas - same logic for AI and Start from scratch
   useEffect(() => {
-    const el = slideRefs.current.get(currentSlideIndex);
-    if (el) {
-      skipScrollObserverRef.current = true;
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      const t = setTimeout(() => { skipScrollObserverRef.current = false; }, 600);
-      return () => clearTimeout(t);
-    }
-  }, [currentSlideIndex]);
-
-  // Scroll-based selection: the visible (centered) slide becomes the active one so design changes apply to what the user sees
-  const visibilityRatios = useRef<Map<number, number>>(new Map());
-  useEffect(() => {
-    const viewport = scrollViewportRef.current;
-    if (!viewport) return;
-
-    const slideEntries = slides.map((_, i) => ({ index: i, el: slideRefs.current.get(i) })).filter((e) => e.el);
-    if (slideEntries.length === 0) return;
-    visibilityRatios.current.clear();
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (skipScrollObserverRef.current) return;
-        for (const entry of entries) {
-          const idx = slideEntries.find((e) => e.el === entry.target)?.index;
-          if (idx !== undefined) {
-            visibilityRatios.current.set(idx, entry.intersectionRatio);
-          }
-        }
-        // Find the slide with the highest visibility
-        let bestIndex = -1;
-        let bestRatio = 0;
-        visibilityRatios.current.forEach((ratio, index) => {
-          if (ratio > bestRatio && ratio >= 0.15) {
-            bestRatio = ratio;
-            bestIndex = index;
-          }
-        });
-        if (bestIndex >= 0) {
-          setCurrentSlideIndex(bestIndex);
-        }
-      },
-      {
-        root: viewport,
-        rootMargin: '-20% 0px -20% 0px', // Prefer slides near vertical center
-        threshold: [0, 0.1, 0.25, 0.5, 0.75, 1],
-      }
-    );
-
-    // Observe after a tick so refs are populated
-    const t = requestAnimationFrame(() => {
-      slideEntries.forEach(({ el }) => el && observer.observe(el));
-    });
-    return () => {
-      cancelAnimationFrame(t);
-      observer.disconnect();
-    };
-  }, [slides.length]);
-
-  // ResizeObserver: compute slide size from canvas so slides are as large as possible while fitting
-  useEffect(() => {
-    if (isInitialGenerating) return;
-
     const container = slidePreviewRef.current;
     if (!container) return;
 
-    const updateSize = () => {
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
+    let retryId: ReturnType<typeof setTimeout> | null = null;
+    const DEBOUNCE_MS = 120;
+
+    const computeSize = () => {
       const cw = container.clientWidth;
       const ch = container.clientHeight;
-      if (cw <= 0 || ch <= 0) return;
-      // Reserve space for phone preview (280) + gap (16) when shown; padding matches scroll content p-2 (16)
+      if (cw <= 0 || ch <= 0) {
+        // Layout may not be ready (e.g. Start from scratch first paint); retry after layout settles
+        retryId = setTimeout(() => {
+          retryId = null;
+          computeSize();
+        }, 150);
+        return;
+      }
       const reservedW = showPhonePreview ? 280 + 16 : 0;
       const pad = 16;
       const maxW = Math.max(200, cw - reservedW - pad);
-      const maxH = Math.max(112, ch - pad); // min ~200x112 for 16:9
-      const maxRem = 96 * 16; // 96rem cap for large screens (1536px)
+      const maxH = Math.max(112, ch - pad);
+      const maxRem = 96 * 16;
       const w = Math.min(maxW, maxH * (16 / 9), maxRem);
       const h = w * (9 / 16);
       setSlideSize({ width: Math.round(w), height: Math.round(h) });
     };
 
-    let disconnect: (() => void) | undefined;
-    const id = requestAnimationFrame(() => {
-      updateSize();
-      const ro = new ResizeObserver(updateSize);
-      ro.observe(container);
-      disconnect = () => ro.disconnect();
-    });
-    return () => {
-      cancelAnimationFrame(id);
-      disconnect?.();
+    const scheduleUpdate = () => {
+      if (debounceId) clearTimeout(debounceId);
+      debounceId = setTimeout(() => {
+        debounceId = null;
+        computeSize();
+      }, DEBOUNCE_MS);
     };
-  }, [isInitialGenerating, isAIPanelOpen, showPhonePreview, isSlidesPanelCollapsed]);
+
+    computeSize();
+    // Re-measure after layout settles (handles Start from scratch / initial load)
+    const settleId = setTimeout(computeSize, 250);
+    const ro = new ResizeObserver(scheduleUpdate);
+    ro.observe(container);
+    return () => {
+      if (debounceId) clearTimeout(debounceId);
+      if (retryId) clearTimeout(retryId);
+      clearTimeout(settleId);
+      ro.disconnect();
+    };
+  }, [isAIPanelOpen, showPhonePreview, slides.length]);
 
   const handleSlidesImported = (importedSlides: Slide[]) => {
     setSlides([...slides, ...importedSlides]);
@@ -857,23 +835,14 @@ const Editor = () => {
 
       {/* Main Editor Area - Fill remaining height */}
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Left Panel - Slides list OR AI Chat (collapsible, wider when AI) */}
+        {/* Left Panel - Slides list OR AI Chat (always visible, wider when AI) */}
         <div
           className={`flex-shrink-0 border-r border-border/50 bg-card/30 flex flex-col overflow-hidden transition-all duration-200 ${
-            isSlidesPanelCollapsed ? 'w-0 opacity-0' : isAIPanelOpen ? 'w-[min(360px,26vw)] opacity-100' : 'w-52 opacity-100'
+            isAIPanelOpen ? 'w-[min(360px,26vw)] opacity-100' : 'w-52 opacity-100'
           }`}
         >
-          {/* Collapse + Mode toggle */}
+          {/* Mode toggle */}
           <div className="flex-shrink-0 p-2 pb-1 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-9 w-9 p-0"
-              onClick={() => setIsSlidesPanelCollapsed(true)}
-              title="Hide panel"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
             {isAIPanelOpen ? (
               <Button
                 variant="outline"
@@ -946,112 +915,47 @@ const Editor = () => {
 
         {/* Main Editor - Canvas + Fixed Bottom Toolbar */}
         <div className="flex-1 flex flex-col overflow-hidden bg-muted/50 relative">
-          {/* Expand handle when slides panel is collapsed */}
-          {isSlidesPanelCollapsed && (
-            <div className="absolute left-2 top-24 z-20">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 w-9 p-0 bg-background/80 backdrop-blur"
-                onClick={() => setIsSlidesPanelCollapsed(false)}
-                title="Show slides panel"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </Button>
-            </div>
-          )}
-
-          {/* Canvas: AI generation loader OR slide deck */}
-          <div ref={slidePreviewRef} className="flex-1 overflow-hidden flex gap-6 min-h-0">
-            {isInitialGenerating ? (
-              <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6">
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.4 }}
-                  className="flex flex-col items-center text-center max-w-md"
+          {/* Canvas: single-slide view (placeholders shown during AI generation) */}
+          <div ref={slidePreviewRef} className="flex-1 overflow-hidden flex gap-6 min-h-0 relative">
+            <div className={`flex-1 flex relative ${showPhonePreview ? 'flex-row items-center justify-center gap-4' : 'items-center justify-center p-2'} min-h-0 overflow-hidden`}>
+              {currentSlide && (
+                <div
+                  className="shrink-0 relative ring-4 ring-primary ring-offset-2 ring-offset-background rounded-xl"
+                  style={
+                    showPhonePreview
+                      ? undefined
+                      : slideSize
+                        ? { width: slideSize.width, height: slideSize.height }
+                        : { width: 960, height: 540 }
+                  }
                 >
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-                    className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6"
-                  >
-                    <Loader2 className="w-8 h-8 text-primary" />
-                  </motion.div>
-                  <p className="text-base font-medium text-foreground mb-2">Building your presentation with AI</p>
-                  {searchParams.get('prompt') && (
-                    <p className="text-sm text-muted-foreground mb-6 line-clamp-2">
-                      &ldquo;{searchParams.get('prompt')}&rdquo;
-                    </p>
-                  )}
-                  <div className="w-full max-w-xs rounded-xl bg-muted/40 border border-border/50 px-4 py-4 min-h-[72px] flex items-center justify-center">
-                    <AnimatePresence mode="wait">
-                      <motion.p
-                        key={aiGenTipIndex}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        transition={{ duration: 0.35 }}
-                        className="text-sm text-muted-foreground text-center leading-relaxed"
-                      >
-                        {BUILDER_TIPS[aiGenTipIndex]}
-                      </motion.p>
-                    </AnimatePresence>
+                  <span className="absolute -top-1 left-3 z-10 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
+                    {safeIndex + 1} / {slides.length}
+                  </span>
+                  <div className={showPhonePreview ? "w-full max-w-[32rem] aspect-video" : "w-full h-full"}>
+                    <SlideRenderer
+                      key={currentSlide.id}
+                      slide={currentSlide}
+                      isEditing={!simulationData ? isEditing : false}
+                      showResults={showResults || !!simulationData}
+                      onUpdateContent={updateSlideContent}
+                      liveResults={simulationData}
+                      totalResponses={simulationData?.total ?? 0}
+                      themeId={selectedThemeId}
+                      designStyleId={selectedDesignStyleId}
+                      hideFooter={false}
+                    />
                   </div>
-                  <p className="text-[10px] text-muted-foreground/60 mt-3">Tip {aiGenTipIndex + 1} of {BUILDER_TIPS.length}</p>
-                </motion.div>
+                </div>
+              )}
+            </div>
+            {/* Overlay during AI generation */}
+            {isInitialGenerating && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
+                <Loader2 className="w-10 h-10 animate-spin text-primary mb-3" />
+                <p className="text-sm font-medium text-foreground">Building your presentation with AI</p>
+                <p className="text-xs text-muted-foreground mt-1">Tip {aiGenTipIndex + 1}: {BUILDER_TIPS[aiGenTipIndex]}</p>
               </div>
-            ) : (
-            <ScrollArea className="flex-1 w-full" viewportRef={scrollViewportRef}>
-              <div className={`p-2 flex gap-4 w-full ${showPhonePreview ? 'flex-row items-start' : 'flex-col items-center'} min-h-full`}>
-                {slides.map((slide, index) => (
-                  <motion.div
-                    key={slide.id}
-                    ref={(el) => { el ? slideRefs.current.set(index, el) : slideRefs.current.delete(index); }}
-                    layout
-                    onClick={() => setCurrentSlideIndex(index)}
-                    className={`cursor-pointer transition-all shrink-0 relative ${
-                      index === currentSlideIndex
-                        ? 'ring-4 ring-primary ring-offset-2 ring-offset-background rounded-xl'
-                        : 'hover:ring-2 hover:ring-primary/30 hover:ring-offset-2 hover:ring-offset-background rounded-xl opacity-90 hover:opacity-100'
-                    }`}
-                  >
-                    <span className={`absolute -top-1 left-3 z-10 text-[10px] font-medium px-2 py-0.5 rounded-full ${
-                      index === currentSlideIndex ? 'bg-primary text-primary-foreground' : 'bg-muted/80 text-muted-foreground'
-                    }`}>
-                      {index + 1} / {slides.length}
-                    </span>
-                    <div
-                      className={
-                        showPhonePreview
-                          ? "w-full max-w-[32rem] aspect-video"
-                          : "aspect-video"
-                      }
-                      style={
-                        showPhonePreview
-                          ? undefined
-                          : slideSize
-                            ? { width: slideSize.width, height: slideSize.height }
-                            : { maxWidth: 'min(80rem, calc((100vh - 180px) * 16 / 9))', minWidth: 400 }
-                      }
-                    >
-                      <SlideRenderer
-                        slide={slide}
-                        isEditing={index === currentSlideIndex && !simulationData ? isEditing : false}
-                        showResults={index === currentSlideIndex && (showResults || !!simulationData)}
-                        onUpdateContent={index === currentSlideIndex ? updateSlideContent : () => {}}
-                        liveResults={index === currentSlideIndex ? simulationData : undefined}
-                        totalResponses={simulationData?.total ?? 0}
-                        themeId={selectedThemeId}
-                        designStyleId={selectedDesignStyleId}
-                        hideFooter={isSlidesPanelCollapsed}
-                      />
-                    </div>
-                  </motion.div>
-                ))}
-                <div className="h-2" />
-              </div>
-            </ScrollArea>
             )}
 
             {/* Phone Preview - when enabled (hidden during AI generation) */}
