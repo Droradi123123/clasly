@@ -18,6 +18,9 @@ export interface AICommand {
 }
 
 interface ConversationalBuilderState {
+  // Which presentation this chat belongs to (null = unset)
+  sessionLectureId: string | null;
+  
   // Sandbox slides (not committed to DB yet)
   sandboxSlides: Slide[];
   
@@ -34,6 +37,9 @@ interface ConversationalBuilderState {
   
   // Theme
   generatedTheme: any;
+  
+  // Ensure chat is scoped to this lecture; reset if switching to a different presentation
+  ensureSessionForLecture: (lectureId: string) => void;
   
   // Actions
   setSandboxSlides: (slides: Slide[]) => void;
@@ -55,6 +61,7 @@ interface ConversationalBuilderState {
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 export const useConversationalBuilder = create<ConversationalBuilderState>((set, get) => ({
+  sessionLectureId: null,
   sandboxSlides: [],
   messages: [],
   isGenerating: false,
@@ -62,6 +69,29 @@ export const useConversationalBuilder = create<ConversationalBuilderState>((set,
   originalPrompt: '',
   targetAudience: 'general',
   generatedTheme: null,
+  
+  ensureSessionForLecture: (lectureId) => {
+    const { sessionLectureId } = get();
+    if (sessionLectureId === lectureId) return;
+    if (sessionLectureId === 'new' && lectureId !== 'new') {
+      set({ sessionLectureId: lectureId });
+      return;
+    }
+    if (sessionLectureId !== null && sessionLectureId !== lectureId) {
+      set({
+        sessionLectureId: lectureId,
+        sandboxSlides: [],
+        messages: [],
+        isGenerating: false,
+        currentPreviewIndex: 0,
+        originalPrompt: '',
+        targetAudience: 'general',
+        generatedTheme: null,
+      });
+      return;
+    }
+    set({ sessionLectureId: lectureId });
+  },
   
   setSandboxSlides: (slides) => set({ sandboxSlides: slides }),
   
@@ -122,6 +152,7 @@ export const useConversationalBuilder = create<ConversationalBuilderState>((set,
   setGeneratedTheme: (theme) => set({ generatedTheme: theme }),
   
   reset: () => set({
+    sessionLectureId: null,
     sandboxSlides: [],
     messages: [],
     isGenerating: false,

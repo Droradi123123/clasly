@@ -170,6 +170,9 @@ const Editor = () => {
   const safeIndex = Math.min(currentSlideIndex, Math.max(0, slides.length - 1));
   const currentSlide = slides[safeIndex];
   const slidePreviewRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const skipScrollSyncRef = useRef(false);
 
   // AI Panel (useConversationalBuilder) - sync with Editor slides
   const {
@@ -186,6 +189,7 @@ const Editor = () => {
     setOriginalPrompt,
     setGeneratedTheme,
     reset: resetConversationalBuilder,
+    ensureSessionForLecture,
   } = useConversationalBuilder();
 
   // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
@@ -208,15 +212,17 @@ const Editor = () => {
     if (searchParams.get('ai') === '1') setIsAIPanelOpen(true);
   }, []);
 
-  // On entering AI mode: initialize sandbox from current Editor slides (Edit with AI = work on THIS presentation only)
-  // Do NOT skip when sandbox has content - that could be stale from a previous session; always sync when editing existing
+  // On entering AI mode: scope chat to this presentation, then initialize sandbox from current Editor slides
   useEffect(() => {
-    if (searchParams.get('prompt')) return; // Generating fresh from URL - don't overwrite
-    if (isAIPanelOpen && slides.length > 0) {
+    if (!isAIPanelOpen) return;
+    const effectiveId = lectureDbId || lectureId || 'new';
+    ensureSessionForLecture(effectiveId);
+    if (searchParams.get('prompt')) return; // Generating fresh from URL - don't overwrite sandbox
+    if (slides.length > 0) {
       setSandboxSlides(slides);
       setCurrentPreviewIndex(Math.min(currentSlideIndex, slides.length - 1));
     }
-  }, [isAIPanelOpen]);
+  }, [isAIPanelOpen, lectureDbId, lectureId]);
 
   // When AI updates sandboxSlides: push to Editor slides (only when data actually changed to reduce flicker)
   const prevSandboxRef = useRef<string>('');
@@ -375,7 +381,14 @@ const Editor = () => {
       if (resData?.error) throw new Error(resData.error);
 
       if (resData?.updatedSlides?.length) {
-        setSandboxSlides(resData.updatedSlides as Slide[]);
+        const updated = resData.updatedSlides as Slide[];
+        setSandboxSlides(updated);
+        // Auto-focus first modified slide so user sees what AI changed
+        const prevIds = new Set((sandboxSlides.length > 0 ? sandboxSlides : slides).map((s) => s.id));
+        const firstModified = updated.findIndex((s) => !prevIds.has(s.id) || slides[currentSlideIndex]?.id !== s.id);
+        const insertIdx = updated.findIndex((s) => !prevIds.has(s.id));
+        const focusIdx = insertIdx >= 0 ? insertIdx : (firstModified >= 0 ? firstModified : 0);
+        if (focusIdx >= 0) setCurrentSlideIndex(Math.min(focusIdx, updated.length - 1));
       }
       updateLastMessage(resData?.message || 'Done! Check the updated slides.');
     } catch (error) {
@@ -394,7 +407,37 @@ const Editor = () => {
     }
   }, [slides.length, currentSlideIndex]);
 
-  // Single-slide canvas; no scroll
+  // Scroll to selected slide when currentSlideIndex changes (arrows, sidebar click)
+  useEffect(() => {
+    if (!scrollContainerRef.current || slideRefs.current[safeIndex] == null) return;
+    skipScrollSyncRef.current = true;
+    slideRefs.current[safeIndex]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const t = setTimeout(() => { skipScrollSyncRef.current = false; }, 400);
+    return () => clearTimeout(t);
+  }, [safeIndex]);
+
+  // On scroll (debounced): update currentSlideIndex from scroll position - low sensitivity
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    let debounceId: ReturnType<typeof setTimeout> | null = null;
+    const handleScroll = () => {
+      if (debounceId) clearTimeout(debounceId);
+      debounceId = setTimeout(() => {
+        debounceId = null;
+        if (skipScrollSyncRef.current) return;
+        const h = el.clientHeight;
+        const idx = Math.round(el.scrollTop / h);
+        const clamped = Math.max(0, Math.min(idx, slides.length - 1));
+        if (clamped !== currentSlideIndex) setCurrentSlideIndex(clamped);
+      }, 150);
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      if (debounceId) clearTimeout(debounceId);
+      el.removeEventListener('scroll', handleScroll);
+    };
+  }, [slides.length, currentSlideIndex]);
 
   // Redirect mobile users to continue-on-desktop (building is desktop-only)
   useEffect(() => {
@@ -696,25 +739,37 @@ const Editor = () => {
     }
   };
 
-  const handlePresent = async () => {
-    // Enter fullscreen immediately for ideal presentation experience
+  const handlePresent = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
-    // Save only when there are actual changes
-    if (hasChanges) {
-      await saveToDatabase();
-    }
     if (lectureDbId) {
-      navigate(`/present/${lectureDbId}`);
-    } else {
-      // Create lecture first
-      try {
-        const newLecture = await createLecture(lectureTitle, slides);
-        navigate(`/present/${newLecture.id}`);
-      } catch (error) {
-        toast.error('Failed to start presentation');
+      navigate(`/present/${lectureDbId}`, {
+        state: {
+          optimisticSlides: slides,
+          optimisticLecture: {
+            id: lectureDbId,
+            title: lectureTitle,
+            lecture_code: lectureCode,
+            slides,
+            current_slide_index: currentSlideIndex,
+          },
+        },
+      });
+      if (hasChanges) {
+        saveToDatabase().catch(() => toast.error('Failed to save'));
       }
+    } else {
+      createLecture(lectureTitle, slides)
+        .then((newLecture) => {
+          navigate(`/present/${newLecture.id}`, {
+            state: {
+              optimisticSlides: (newLecture.slides as unknown as Slide[]) ?? slides,
+              optimisticLecture: newLecture,
+            },
+          });
+        })
+        .catch(() => toast.error('Failed to start presentation'));
     }
   };
 
@@ -915,24 +970,12 @@ const Editor = () => {
 
         {/* Main Editor - Canvas + Fixed Bottom Toolbar */}
         <div className="flex-1 flex flex-col overflow-hidden bg-muted/50 relative">
-          {/* Canvas: single-slide view (placeholders shown during AI generation) */}
+          {/* Canvas: scroll-based (no phone) or single-slide (with phone) */}
           <div ref={slidePreviewRef} className="flex-1 overflow-hidden flex gap-6 min-h-0 relative">
-            <div className={`flex-1 flex relative ${showPhonePreview ? 'flex-row items-center justify-center gap-4' : 'items-center justify-center p-2'} min-h-0 overflow-hidden`}>
-              {currentSlide && (
-                <div
-                  className="shrink-0 relative ring-4 ring-primary ring-offset-2 ring-offset-background rounded-xl"
-                  style={
-                    showPhonePreview
-                      ? undefined
-                      : slideSize
-                        ? { width: slideSize.width, height: slideSize.height }
-                        : { width: 960, height: 540 }
-                  }
-                >
-                  <span className="absolute -top-1 left-3 z-10 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
-                    {safeIndex + 1} / {slides.length}
-                  </span>
-                  <div className={showPhonePreview ? "w-full max-w-[32rem] aspect-video" : "w-full h-full"}>
+            {showPhonePreview ? (
+              <div className="flex-1 flex flex-row items-center justify-center gap-4 min-h-0 overflow-hidden">
+                {currentSlide && (
+                  <div className="shrink-0 relative ring-4 ring-primary ring-offset-2 ring-offset-background rounded-xl w-full max-w-[32rem] aspect-video">
                     <SlideRenderer
                       key={currentSlide.id}
                       slide={currentSlide}
@@ -946,20 +989,48 @@ const Editor = () => {
                       hideFooter={false}
                     />
                   </div>
-                </div>
-              )}
-            </div>
-            {/* Overlay during AI generation */}
-            {isInitialGenerating && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm">
-                <Loader2 className="w-10 h-10 animate-spin text-primary mb-3" />
-                <p className="text-sm font-medium text-foreground">Building your presentation with AI</p>
-                <p className="text-xs text-muted-foreground mt-1">Tip {aiGenTipIndex + 1}: {BUILDER_TIPS[aiGenTipIndex]}</p>
+                )}
+              </div>
+            ) : (
+              <div
+                ref={scrollContainerRef}
+                className="flex-1 overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth min-h-0"
+              >
+                {slides.map((slide, index) => (
+                  <div
+                    key={slide.id}
+                    ref={(el) => { slideRefs.current[index] = el; }}
+                    className="min-h-full snap-center snap-always flex items-center justify-center shrink-0 py-4"
+                  >
+                    <div
+                      className="shrink-0 relative ring-4 ring-primary ring-offset-2 ring-offset-background rounded-xl"
+                      style={slideSize ? { width: slideSize.width, height: slideSize.height } : { width: 960, height: 540 }}
+                    >
+                      <span className="absolute -top-1 left-3 z-10 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
+                        {index + 1} / {slides.length}
+                      </span>
+                      <div className="w-full h-full">
+                        <SlideRenderer
+                          key={slide.id}
+                          slide={slide}
+                          isEditing={index === currentSlideIndex && !simulationData ? isEditing : false}
+                          showResults={index === currentSlideIndex ? (showResults || !!simulationData) : false}
+                          onUpdateContent={updateSlideContent}
+                          liveResults={index === currentSlideIndex ? simulationData : undefined}
+                          totalResponses={index === currentSlideIndex ? (simulationData?.total ?? 0) : 0}
+                          themeId={selectedThemeId}
+                          designStyleId={selectedDesignStyleId}
+                          hideFooter={false}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
-            {/* Phone Preview - when enabled (hidden during AI generation) */}
-            {showPhonePreview && !isInitialGenerating && (
+            {/* Phone Preview - when enabled */}
+            {showPhonePreview && (
               <div className="flex-shrink-0 w-[280px] h-[500px] relative animate-in fade-in slide-in-from-right-4 duration-200">
                 {/* Phone Frame */}
                 <div className="absolute inset-0 bg-black rounded-[2.5rem] p-2 shadow-2xl">

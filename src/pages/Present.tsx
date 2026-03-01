@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { QRCodeSVG } from "qrcode.react";
@@ -170,6 +170,7 @@ function aggregateFinishSentenceResponses(responses: any[]) {
 const Present = () => {
   const { lectureId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [lecture, setLecture] = useState<any>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -258,9 +259,20 @@ const Present = () => {
   const currentSlide = slides[currentSlideIndex];
   const unansweredQuestionsCount = questions.filter(q => !q.is_answered).length;
 
-  // Load lecture data + set status to active immediately so students can join via QR
+  // Load lecture: use optimistic state from Editor for instant render, then sync from DB in background
   useEffect(() => {
     if (!lectureId) return;
+
+    const state = location.state as { optimisticSlides?: Slide[]; optimisticLecture?: { id: string; title?: string; lecture_code?: string; slides?: unknown; current_slide_index?: number } } | null;
+    const optimistic = state?.optimisticSlides?.length && state?.optimisticLecture?.id === lectureId;
+
+    if (optimistic && state?.optimisticSlides && state?.optimisticLecture) {
+      setSlides(state.optimisticSlides);
+      setLecture(state.optimisticLecture);
+      setLectureCode(state.optimisticLecture.lecture_code || '');
+      setCurrentSlideIndex(state.optimisticLecture.current_slide_index ?? 0);
+      setLoading(false);
+    }
 
     const loadLecture = async () => {
       try {
@@ -272,7 +284,6 @@ const Present = () => {
           setLectureCode(data.lecture_code);
           const wasActive = data.status === 'active';
           setIsLive(wasActive);
-          // Open lecture for students as soon as presenter enters Present view
           if (data.status !== 'active' && data.status !== 'ended') {
             await startLecture(lectureId);
             setIsLive(true);
@@ -286,7 +297,7 @@ const Present = () => {
     };
 
     loadLecture();
-  }, [lectureId]);
+  }, [lectureId, location.state]);
 
   // Load students
   useEffect(() => {
