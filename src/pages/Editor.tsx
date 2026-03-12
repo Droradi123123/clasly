@@ -189,10 +189,6 @@ const Editor = () => {
     })
   );
 
-  // Single source of truth for display and Present: prefer sandbox when AI has returned slides (so we show images before sync); else slides. User edits clear sandbox so we show slides.
-  const displaySlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
-  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
-  const currentSlide = displaySlides[safeIndex];
   const slidePreviewRef = useRef<HTMLDivElement>(null);
   const isConstrainedViewport = useConstrainedViewport();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -217,6 +213,11 @@ const Editor = () => {
     reset: resetConversationalBuilder,
     ensureSessionForLecture,
   } = useConversationalBuilder();
+
+  // Single source of truth for display and Present: prefer sandbox when AI has returned slides (so we show images before sync); else slides. User edits clear sandbox so we show slides.
+  const displaySlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
+  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
+  const currentSlide = displaySlides[safeIndex];
 
   // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
   useEffect(() => {

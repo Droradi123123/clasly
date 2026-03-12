@@ -70,6 +70,8 @@ const App = () => {
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/dashboard" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
+              {/* Friendly redirect so /editor or /editor/ always open a new lecture */}
+              <Route path="/editor" element={<Navigate to="/editor/new" replace />} />
               <Route path="/editor/:lectureId" element={<Suspense fallback={<PageLoader />}><Editor /></Suspense>} />
               <Route path="/present/:lectureId" element={<Suspense fallback={<PageLoader />}><Present /></Suspense>} />
               <Route path="/lecture/:lectureId/analytics" element={<Suspense fallback={<PageLoader />}><LectureAnalytics /></Suspense>} />
