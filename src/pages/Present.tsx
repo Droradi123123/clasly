@@ -570,9 +570,10 @@ const Present = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-
-  // Get join URL for QR code
+  
+  // Get join URL for QR code + host label (always matches current origin)
   const joinUrl = `${window.location.origin}/join?code=${lectureCode}`;
+  const joinHost = window.location.host;
 
   // Calculate aggregated results for display
   const getAggregatedResults = () => {
@@ -1023,7 +1024,7 @@ const Present = () => {
                 <div className="text-center space-y-4">
                   <div>
                     <p className="text-base text-muted-foreground mb-1">Go to</p>
-                    <p className="font-bold text-2xl text-card-foreground">clasly.app/join</p>
+                    <p className="font-bold text-2xl text-card-foreground">{joinHost}/join</p>
                   </div>
                   
                   <button
