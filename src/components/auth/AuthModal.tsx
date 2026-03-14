@@ -23,7 +23,7 @@ interface AuthModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   promptText?: string;
-  redirectTo?: 'dashboard' | 'builder';
+  redirectTo?: 'dashboard' | 'builder' | 'pricing';
 }
 
 export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo = 'dashboard' }: AuthModalProps) => {
@@ -62,6 +62,8 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
           navigate('/continue-on-desktop', { replace: true });
         } else if (promptText && redirectTo === 'builder') {
           navigate(`/builder?prompt=${encodeURIComponent(promptText)}&audience=general`);
+        } else if (redirectTo === 'pricing') {
+          navigate('/pricing');
         } else {
           navigate('/dashboard');
         }

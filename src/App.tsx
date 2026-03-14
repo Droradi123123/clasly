@@ -8,7 +8,7 @@ import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
 import Join from "./pages/Join";
-import Pricing from "./pages/Pricing";
+const Pricing = lazy(() => import("./pages/Pricing"));
 import Billing from "./pages/Billing";
 import ContinueOnDesktop from "./pages/ContinueOnDesktop";
 import TermsOfService from "./pages/TermsOfService";
@@ -77,7 +77,7 @@ const App = () => {
               <Route path="/lecture/:lectureId/analytics" element={<Suspense fallback={<PageLoader />}><LectureAnalytics /></Suspense>} />
               <Route path="/join" element={<Join />} />
               <Route path="/student/:lectureCode" element={<Suspense fallback={<PageLoader />}><Student /></Suspense>} />
-              <Route path="/pricing" element={<Pricing />} />
+              <Route path="/pricing" element={<Suspense fallback={<PageLoader />}><Pricing /></Suspense>} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/builder" element={<BuilderRedirect />} />
               <Route path="/continue-on-desktop" element={<ContinueOnDesktop />} />
