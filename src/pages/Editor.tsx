@@ -145,6 +145,8 @@ const Editor = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const isGlobalLecturesAdmin =
+    user?.email?.toLowerCase() === "droradi55@gmail.com";
   const isMobile = useIsMobile();
   const [lectureTitle, setLectureTitle] = useState("Untitled Lecture");
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -698,7 +700,7 @@ const Editor = () => {
   // Apply lecture data (shared logic for preloaded and fetched)
   const applyLectureData = useCallback((lecture: { id: string; title?: string; lecture_code?: string; slides?: unknown; settings?: unknown }) => {
     const lectureUserId = (lecture as { user_id?: string }).user_id;
-    if (user && lectureUserId && lectureUserId !== user.id) {
+    if (!isGlobalLecturesAdmin && user && lectureUserId && lectureUserId !== user.id) {
       toast.error("You don't have access to this lecture");
       navigate("/dashboard");
       return;
@@ -715,7 +717,7 @@ const Editor = () => {
     const settings = lecture.settings as Record<string, unknown> | null;
     if (settings?.themeId) setSelectedThemeId(settings.themeId as ThemeId);
     if (settings?.designStyleId) setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
-  }, [user?.id, navigate]);
+  }, [user?.id, navigate, isGlobalLecturesAdmin]);
 
   // Load lecture from database if it exists (only own lectures)
   // Use preloaded data when navigating after create to avoid race/fetch failure
