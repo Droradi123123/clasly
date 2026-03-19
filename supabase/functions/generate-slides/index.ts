@@ -997,6 +997,7 @@ function mapSlideToFrontendFormat(
         baseDesign.overlayImagePosition = "background";
       }
       break;
+    }
 
     case "wordcloud": {
       const wcQ = rawSlide.content.question;
