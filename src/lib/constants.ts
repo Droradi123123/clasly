@@ -1,6 +1,9 @@
 /** Single source of truth for contact/support email shown to users */
 export const CONTACT_EMAIL = "claslyapp@gmail.com";
 
+/** Set to true temporarily to log broadcast/DB sync for debugging out-of-order issues */
+export const DEBUG_REALTIME_SYNC = import.meta.env.VITE_DEBUG_REALTIME_SYNC === "true";
+
 /**
  * Base URL for QR codes and share links so students open a reachable app URL.
  * - Set VITE_PUBLIC_APP_URL=https://www.clasly.app on Vercel if needed.

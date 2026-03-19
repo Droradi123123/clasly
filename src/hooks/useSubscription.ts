@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "./useAuth";
+import { withTimeout } from "@/lib/supabaseFunctions";
 import type {
   SubscriptionState,
   SubscriptionHelpers,
@@ -24,6 +25,9 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
   // Fetch subscription data with retry and ensureUserCredits for PGRST116
   const FETCH_RETRY_MAX = 2;
   const FETCH_RETRY_DELAY_MS = 800;
+  /** Never block Dashboard / AI forever on a hung PostgREST or Edge call */
+  const SUBSCRIPTION_FETCH_TIMEOUT_MS = 14_000;
+  const ENSURE_CREDITS_TIMEOUT_MS = 22_000;
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +45,7 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
         return;
       }
 
-      try {
+      const loadSubscriptionAndCredits = async () => {
         const [subRes, creditsRes] = await Promise.all([
           supabase
             .from("user_subscriptions")
@@ -65,9 +69,14 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
         if (creditsError?.code === "PGRST116") {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.access_token) {
-            const { error: ensureErr } = await supabase.functions.invoke("ensure-user-credits", {
-              headers: { Authorization: `Bearer ${session.access_token}` },
-            });
+            const invokeResult = await withTimeout(
+              supabase.functions.invoke("ensure-user-credits", {
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              }),
+              ENSURE_CREDITS_TIMEOUT_MS,
+              "ensure-user-credits timed out"
+            );
+            const { error: ensureErr } = invokeResult;
             if (!ensureErr) {
               const { data: newCredits } = await supabase
                 .from("user_credits")
@@ -96,8 +105,31 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
           isLoading: false,
           error: null,
         });
+      };
+
+      try {
+        await Promise.race([
+          loadSubscriptionAndCredits(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("__SUBSCRIPTION_FETCH_TIMEOUT__")),
+              SUBSCRIPTION_FETCH_TIMEOUT_MS
+            )
+          ),
+        ]);
       } catch (error) {
         if (cancelled) return;
+        if (error instanceof Error && error.message === "__SUBSCRIPTION_FETCH_TIMEOUT__") {
+          console.warn("[useSubscription] Subscription/credits fetch timed out — releasing UI (data may still arrive)");
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error:
+              prev.error ??
+              new Error("Could not load plan right away. Your lectures still work; try refreshing if credits look wrong."),
+          }));
+          return;
+        }
         const shouldRetry = attempt < FETCH_RETRY_MAX;
         if (shouldRetry) {
           await new Promise((r) => setTimeout(r, FETCH_RETRY_DELAY_MS));
@@ -159,8 +191,12 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
   }, [planName]);
 
   const hasAITokens = useCallback((amount: number = 1): boolean => {
+    // No row yet after client load (e.g. timeout) — allow attempt; Edge Function returns 402 if no credits
+    if (!state.isLoading && state.credits == null) {
+      return true;
+    }
     return (state.credits?.ai_tokens_balance ?? 0) >= amount;
-  }, [state.credits?.ai_tokens_balance]);
+  }, [state.credits, state.isLoading]);
 
   return {
     ...state,

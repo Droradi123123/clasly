@@ -77,7 +77,22 @@ export const useConversationalBuilder = create<ConversationalBuilderState>((set,
       set({ sessionLectureId: lectureId });
       return;
     }
+    // When switching to a different lecture, or loading a real lecture with no session, clear sandbox
     if (sessionLectureId !== null && sessionLectureId !== lectureId) {
+      set({
+        sessionLectureId: lectureId,
+        sandboxSlides: [],
+        messages: [],
+        isGenerating: false,
+        currentPreviewIndex: 0,
+        originalPrompt: '',
+        targetAudience: 'general',
+        generatedTheme: null,
+      });
+      return;
+    }
+    // When sessionLectureId is null and loading a real lecture, clear stale sandbox
+    if (sessionLectureId === null && lectureId !== 'new') {
       set({
         sessionLectureId: lectureId,
         sandboxSlides: [],

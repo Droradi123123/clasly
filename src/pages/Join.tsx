@@ -8,6 +8,30 @@ import { getLectureByCode, joinLecture } from "@/lib/lectureService";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
 
+const JOIN_RETRY_MAX = 3;
+const JOIN_RETRY_BASE_DELAY_MS = 800;
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = JOIN_RETRY_MAX,
+  onRetry?: () => void
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts - 1) {
+        onRetry?.();
+        const delay = JOIN_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
 const Join = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -19,8 +43,10 @@ const Join = () => {
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   /** Code that passed validation — used for /student/:code navigation (state can lag behind URL/QR flow). */
   const [sessionJoinCode, setSessionJoinCode] = useState("");
+  /** Only set on success; reset on failure so user/effect can retry. */
   const processedUrlCodeRef = useRef<string | null>(null);
 
   const normalizeCode = (raw: string) => raw.replace(/\D/g, "").slice(0, 6);
@@ -34,26 +60,34 @@ const Join = () => {
 
     setIsLoading(true);
     setError("");
+    setIsRetrying(false);
 
     try {
-      const lecture = await getLectureByCode(code);
+      const lecture = await withRetry(
+        async () => {
+          const result = await getLectureByCode(code);
+          if (!result) throw new Error("Lecture not found");
+          return result;
+        },
+        JOIN_RETRY_MAX,
+        () => setIsRetrying(true)
+      );
       
-      if (!lecture) {
-        setError("Lecture not found. Please check the code and try again.");
-        return;
-      }
-
       if (lecture.status === 'ended') {
         setError("This lecture has ended.");
+        processedUrlCodeRef.current = null;
         return;
       }
 
+      processedUrlCodeRef.current = code;
       setSessionJoinCode(String(lecture.lecture_code ?? code).replace(/\D/g, "").slice(0, 6));
       setLectureId(lecture.id);
       setLectureName(lecture.title);
       setStep("profile");
     } catch (err) {
       setError("Something went wrong. Please try again.");
+      setIsRetrying(true);
+      processedUrlCodeRef.current = null;
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -66,7 +100,6 @@ const Join = () => {
     if (codeFromUrl.length === 6) {
       setLectureCode(codeFromUrl);
       if (processedUrlCodeRef.current !== codeFromUrl) {
-        processedUrlCodeRef.current = codeFromUrl;
         void handleCodeSubmit(codeFromUrl);
       }
     } else {
@@ -86,9 +119,14 @@ const Join = () => {
 
     setIsLoading(true);
     setError("");
+    setIsRetrying(false);
 
     try {
-      const student = await joinLecture(lectureId, name.trim(), selectedEmoji);
+      const student = await withRetry(
+        () => joinLecture(lectureId, name.trim(), selectedEmoji),
+        JOIN_RETRY_MAX,
+        () => setIsRetrying(true)
+      );
       
       if (student) {
         navigate(`/student/${codeForStudent}?studentId=${student.id}`, { replace: true });
@@ -169,7 +207,10 @@ const Join = () => {
                   disabled={lectureCode.length !== 6 || isLoading}
                 >
                   {isLoading ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      {isRetrying ? "Reconnecting…" : "Connecting…"}
+                    </span>
                   ) : (
                     <>
                       Continue
@@ -269,7 +310,10 @@ const Join = () => {
                     disabled={!name.trim() || isLoading}
                   >
                     {isLoading ? (
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span className="flex items-center justify-center gap-2">
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        {isRetrying ? "Reconnecting…" : "Joining…"}
+                      </span>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />

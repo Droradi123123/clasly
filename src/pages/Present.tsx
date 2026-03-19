@@ -50,6 +50,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
 import { toast } from "sonner";
+import { DEBUG_REALTIME_SYNC } from "@/lib/constants";
 
 // Types for questions
 interface Question {
@@ -204,7 +205,8 @@ const Present = () => {
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const slideSyncReadyRef = useRef(false);
-  const pendingBroadcastRef = useRef<{ lectureId: string; currentSlideIndex: number; ts: number } | null>(null);
+  const slideBroadcastSeqRef = useRef(0);
+  const pendingBroadcastRef = useRef<{ lectureId: string; currentSlideIndex: number; ts: number; seq: number } | null>(null);
   const slideContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -224,7 +226,7 @@ const Present = () => {
         channel.send({
           type: 'broadcast',
           event: 'slide_changed',
-          payload: { lectureId: pending.lectureId, currentSlideIndex: pending.currentSlideIndex, ts: pending.ts },
+          payload: { lectureId: pending.lectureId, currentSlideIndex: pending.currentSlideIndex, ts: pending.ts, seq: pending.seq },
         });
       }
     });
@@ -242,19 +244,24 @@ const Present = () => {
   }, [lectureId]);
 
   const sendSlideBroadcast = useCallback((lectureId: string, newIndex: number) => {
-    const payload = { lectureId, currentSlideIndex: newIndex, ts: Date.now() };
+    slideBroadcastSeqRef.current += 1;
+    const seq = slideBroadcastSeqRef.current;
+    const ts = Date.now();
+    const payload = { lectureId, currentSlideIndex: newIndex, ts, seq };
+    if (DEBUG_REALTIME_SYNC) console.log('[Present] sendSlideBroadcast', { seq, ts, index: newIndex });
     if (slideSyncReadyRef.current && slideSyncChannelRef.current) {
       slideSyncChannelRef.current.send({
         type: 'broadcast',
         event: 'slide_changed',
         payload,
       });
+      // Retry same payload after 180ms for reliability (student ignores duplicate by seq)
       setTimeout(() => {
         if (slideSyncChannelRef.current) {
           slideSyncChannelRef.current.send({
             type: 'broadcast',
             event: 'slide_changed',
-            payload: { ...payload, ts: Date.now() },
+            payload,
           });
         }
       }, 180);
@@ -333,9 +340,9 @@ const Present = () => {
     };
   }, [lectureId, loading]);
 
-  // Load and subscribe to responses for current slide
+  // Load and subscribe to responses for current slide (depends only on index, not currentSlide, for stable subscription)
   useEffect(() => {
-    if (!lectureId || !currentSlide) return;
+    if (!lectureId) return;
 
     const loadResponses = async () => {
       try {
@@ -356,7 +363,7 @@ const Present = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [lectureId, currentSlideIndex, currentSlide]);
+  }, [lectureId, currentSlideIndex]);
 
   // Subscribe to emoji reactions via broadcast
   useEffect(() => {

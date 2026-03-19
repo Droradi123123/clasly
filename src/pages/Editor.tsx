@@ -201,6 +201,7 @@ const Editor = () => {
   // AI Panel (useConversationalBuilder) - sync with Editor slides
   const {
     sandboxSlides,
+    sessionLectureId,
     setSandboxSlides,
     setCurrentPreviewIndex,
     addMessage,
@@ -217,9 +218,21 @@ const Editor = () => {
   } = useConversationalBuilder();
 
   // Must run after useConversationalBuilder — sandboxSlides is defined there (was previously above → TDZ crash).
-  const displaySlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
+  // Use sandbox only when in AI mode for THIS lecture; otherwise show slides (loaded from DB or initial)
+  const effectiveLectureId = String(lectureDbId || lectureId);
+  const useSandbox = sandboxSlides.length > 0
+    && isAIPanelOpen
+    && effectiveLectureId === String(sessionLectureId);
+  const displaySlides = useSandbox ? sandboxSlides : slides;
   const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
   const currentSlide = displaySlides[safeIndex];
+
+  // Call ensureSessionForLecture on every lecture navigation to clear sandbox when switching lectures
+  useEffect(() => {
+    if (!lectureId) return;
+    const effectiveId = lectureDbId || lectureId;
+    ensureSessionForLecture(effectiveId);
+  }, [lectureId, lectureDbId, ensureSessionForLecture]);
 
   // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
   useEffect(() => {
@@ -228,6 +241,18 @@ const Editor = () => {
     if (lectureId !== 'new' || !prompt || ai !== '1') return;
     resetConversationalBuilder();
     hasTriggeredInitialGen.current = false;
+    setLectureDbId(null);
+    setLectureCode('');
+    setSlides([createNewSlide('title', 0)]);
+    setLectureTitle('Untitled Lecture');
+    setCurrentSlideIndex(0);
+    setHasChanges(false);
+  }, [lectureId, searchParams, resetConversationalBuilder]);
+
+  // When entering /editor/new (manual or direct, no AI) - reset sandbox so we show empty slides
+  useEffect(() => {
+    if (lectureId !== 'new' || searchParams.get('prompt')) return;
+    resetConversationalBuilder();
     setLectureDbId(null);
     setLectureCode('');
     setSlides([createNewSlide('title', 0)]);
@@ -306,30 +331,39 @@ const Editor = () => {
     addMessage({ role: 'assistant', content: `I'm building a presentation now:\n\n"${prompt}"`, isLoading: true });
     // Do not set 7 empty placeholders – slides will appear one by one (Pro) or all at once when ready
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+      const sessionResult = await withTimeout(
+        supabase.auth.refreshSession(),
+        25_000,
+        "Sign-in check timed out. Refresh the page and try again."
+      );
+      const { data: { session }, error: sessionError } = sessionResult;
       if (sessionError || !session) throw new Error("Please sign in to generate presentations");
+
+      const invokeGs = (body: Record<string, unknown>) =>
+        withTimeout(
+          supabase.functions.invoke("generate-slides", {
+            body,
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+          150_000,
+          "AI generation timed out — check your connection and try again."
+        );
 
       let planData: { interpretation?: string; plan?: string; slideTypes?: string[] } | null = null;
       if (isPro) {
-        let planRes = await supabase.functions.invoke('generate-slides', {
-          body: {
-            description: prompt,
-            targetAudience: audience,
-            slideCount,
-            phase: 'plan',
-          },
-          headers: { Authorization: `Bearer ${session.access_token}` },
+        let planRes = await invokeGs({
+          description: prompt,
+          targetAudience: audience,
+          slideCount,
+          phase: "plan",
         });
         if (planRes.error && getEdgeFunctionStatus(planRes.error) === 503) {
           await new Promise((r) => setTimeout(r, 2500));
-          planRes = await supabase.functions.invoke('generate-slides', {
-            body: {
-              description: prompt,
-              targetAudience: audience,
-              slideCount,
-              phase: 'plan',
-            },
-            headers: { Authorization: `Bearer ${session.access_token}` },
+          planRes = await invokeGs({
+            description: prompt,
+            targetAudience: audience,
+            slideCount,
+            phase: "plan",
           });
         }
         if (planRes.error) {
@@ -361,8 +395,18 @@ const Editor = () => {
         const accumulated: Slide[] = [];
         let generatedTheme: unknown = null;
         for (let i = 0; i < planData.slideTypes.length; i++) {
-          let progRes = await supabase.functions.invoke('generate-slides', {
-            body: {
+          let progRes = await invokeGs({
+            progressiveSlide: {
+              index: i,
+              slideType: planData.slideTypes[i],
+              description: prompt,
+              plan: planData.plan,
+              interpretation: planData.interpretation,
+            },
+          });
+          if (progRes.error && getEdgeFunctionStatus(progRes.error) === 503) {
+            await new Promise((r) => setTimeout(r, 2500));
+            progRes = await invokeGs({
               progressiveSlide: {
                 index: i,
                 slideType: planData.slideTypes[i],
@@ -370,22 +414,6 @@ const Editor = () => {
                 plan: planData.plan,
                 interpretation: planData.interpretation,
               },
-            },
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-          if (progRes.error && getEdgeFunctionStatus(progRes.error) === 503) {
-            await new Promise((r) => setTimeout(r, 2500));
-            progRes = await supabase.functions.invoke('generate-slides', {
-              body: {
-                progressiveSlide: {
-                  index: i,
-                  slideType: planData.slideTypes[i],
-                  description: prompt,
-                  plan: planData.plan,
-                  interpretation: planData.interpretation,
-                },
-              },
-              headers: { Authorization: `Bearer ${session.access_token}` },
             });
           }
           if (progRes.error) {
@@ -409,15 +437,32 @@ const Editor = () => {
             );
           }
         }
+        if (accumulated.length === 0) {
+          throw new Error("AI did not return any slides. Please try again.");
+        }
         processedSlides = accumulated;
         resData = { slides: accumulated, theme: generatedTheme, plan: planData.plan, interpretation: planData.interpretation };
       } else {
-        let invokeResult = await supabase.functions.invoke('generate-slides', {
-          body: {
+        let invokeResult = await invokeGs({
+          description: prompt,
+          contentType: "interactive",
+          targetAudience: audience,
+          difficulty: "intermediate",
+          slideCount,
+          maxImages: isPro ? 6 : 3,
+          ...(planData && planData.slideTypes?.length && {
+            plan: planData.plan,
+            interpretation: planData.interpretation,
+            slideTypes: planData.slideTypes,
+          }),
+        });
+        if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
+          await new Promise((r) => setTimeout(r, 2500));
+          invokeResult = await invokeGs({
             description: prompt,
-            contentType: 'interactive',
+            contentType: "interactive",
             targetAudience: audience,
-            difficulty: 'intermediate',
+            difficulty: "intermediate",
             slideCount,
             maxImages: isPro ? 6 : 3,
             ...(planData && planData.slideTypes?.length && {
@@ -425,26 +470,6 @@ const Editor = () => {
               interpretation: planData.interpretation,
               slideTypes: planData.slideTypes,
             }),
-          },
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-        if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
-          await new Promise((r) => setTimeout(r, 2500));
-          invokeResult = await supabase.functions.invoke('generate-slides', {
-            body: {
-              description: prompt,
-              contentType: 'interactive',
-              targetAudience: audience,
-              difficulty: 'intermediate',
-              slideCount,
-              maxImages: isPro ? 6 : 3,
-              ...(planData && planData.slideTypes?.length && {
-                plan: planData.plan,
-                interpretation: planData.interpretation,
-                slideTypes: planData.slideTypes,
-              }),
-            },
-            headers: { Authorization: `Bearer ${session.access_token}` },
           });
         }
         const { data, error: fnError } = invokeResult;
@@ -587,7 +612,12 @@ const Editor = () => {
     }, 3000);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+      const sessionRes = await withTimeout(
+        supabase.auth.refreshSession(),
+        25_000,
+        "Sign-in check timed out. Refresh and try again."
+      );
+      const { data: { session }, error: sessionError } = sessionRes;
       if (sessionError || !session) throw new Error("Please sign in to use AI editing");
 
       const currentSlides = sandboxSlides.length > 0 ? sandboxSlides : slides;

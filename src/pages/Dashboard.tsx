@@ -109,25 +109,37 @@ const Dashboard = () => {
   const [targetAudience, setTargetAudience] = useState("general");
 
   const queryClient = useQueryClient();
+  const isGlobalLecturesAdmin =
+    user?.email?.toLowerCase() === "droradi55@gmail.com";
+
   const {
     data,
-    isLoading,
+    isPending: lecturesPending,
+    isError: lecturesError,
+    error: lecturesQueryError,
+    refetch: refetchLectures,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['lectures', user?.id],
+    queryKey: ["lectures", user?.id, isGlobalLecturesAdmin ? "all" : "own"],
     queryFn: async ({ pageParam = 0 }) => {
-      if (!user) return [];
+      if (!user?.id) return [];
       const from = pageParam * LECTURES_PAGE_SIZE;
       const to = from + LECTURES_PAGE_SIZE - 1;
-      const { data: pageData, error } = await supabase
-        .from('lectures')
-        .select('id, title, status, lecture_code, created_at, updated_at, user_id')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false })
+      let query = supabase
+        .from("lectures")
+        .select("id, title, status, lecture_code, created_at, updated_at, user_id")
+        .order("updated_at", { ascending: false })
         .range(from, to);
-      if (error) throw error;
+      if (!isGlobalLecturesAdmin) {
+        query = query.eq("user_id", user.id);
+      }
+      const { data: pageData, error } = await query;
+      if (error) {
+        console.error("[Dashboard] lectures query error:", error);
+        throw error;
+      }
       return (pageData as unknown as Lecture[]) || [];
     },
     getNextPageParam: (lastPage, allPages) =>
@@ -135,8 +147,11 @@ const Dashboard = () => {
         ? allPages.length
         : undefined,
     initialPageParam: 0,
-    enabled: !!user,
-    staleTime: 2 * 60 * 1000,
+    enabled: !!user?.id,
+    staleTime: 60 * 1000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(2500, 400 * (attempt + 1)),
+    refetchOnWindowFocus: true,
   });
 
   const lectures = useMemo(
@@ -180,7 +195,7 @@ const Dashboard = () => {
     setIsCreating(true);
     try {
       const newLecture = await createLecture(newLectureTitle, [createNewSlide('title', 0)]);
-      queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["lectures"] });
       resetCreateDialog();
       setIsCreateOpen(false);
       navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
@@ -215,7 +230,7 @@ const Dashboard = () => {
     setDuplicatingId(lectureId);
     try {
       const newLecture = await duplicateLecture(lectureId);
-      queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["lectures"] });
       toast.success("Lecture duplicated. Only content was copied; analytics are not included.");
       navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
     } catch (error) {
@@ -239,7 +254,7 @@ const Dashboard = () => {
         .eq('user_id', user!.id);
 
       if (error) throw error;
-      queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ["lectures"] });
       toast.success('Lecture deleted');
     } catch (error) {
       console.error('Error deleting lecture:', error);
@@ -567,7 +582,7 @@ const Dashboard = () => {
           </div>
 
           {/* Lectures Grid */}
-          {user && isLoading ? (
+          {user && lecturesPending ? (
             <div className="grid gap-4">
               {Array.from({ length: 6 }).map((_, i) => (
                 <LectureCardSkeleton key={i} />
@@ -580,6 +595,19 @@ const Dashboard = () => {
               <p className="text-muted-foreground mb-4">Your presentations will appear here once you sign in.</p>
               <Button variant="hero" onClick={() => navigate("/")}>
                 Get Started
+              </Button>
+            </div>
+          ) : lecturesError ? (
+            <div className="text-center py-12 rounded-xl border border-destructive/30 bg-destructive/5">
+              <Presentation className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">Couldn&apos;t load lectures</h3>
+              <p className="text-muted-foreground mb-4 max-w-md mx-auto">
+                {lecturesQueryError instanceof Error
+                  ? lecturesQueryError.message
+                  : "Network or permission error. Check your connection or sign out and sign in again."}
+              </p>
+              <Button variant="hero" onClick={() => refetchLectures()}>
+                Retry
               </Button>
             </div>
           ) : (

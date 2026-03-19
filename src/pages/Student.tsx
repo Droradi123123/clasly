@@ -17,6 +17,7 @@ import { Slide, SLIDE_TYPES, FinishSentenceSlideContent, SentimentMeterSlideCont
 import { Json } from "@/integrations/supabase/types";
 import { StudentGameControls } from "@/components/game";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
+import { DEBUG_REALTIME_SYNC } from "@/lib/constants";
 
 const REALTIME_RESUBSCRIBE_DELAY_MS = 2500;
 
@@ -92,6 +93,7 @@ const Student = () => {
   const previousPointsRef = React.useRef<number>(0);
   const lastBroadcastSlideIndexRef = React.useRef<number | null>(null);
   const lastBroadcastTsRef = React.useRef<number>(0);
+  const lastAppliedBroadcastTsRef = React.useRef<number>(0);
   const broadcastRefetchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const currentSlide = slides[currentSlideIndex];
@@ -134,7 +136,8 @@ const Student = () => {
   }, [lectureCode]);
 
   // Helper to apply lecture update - extracted for reuse
-  // When fromRefetch is true (scheduled refetch after broadcast), always apply newSlides so student gets latest. Otherwise during broadcast window avoid overwriting slides with stale poll/postgres data.
+  // When fromRefetch is true (scheduled refetch after broadcast), always apply newSlides so student gets latest.
+  // During broadcast window: if DB has advanced (updated_at >= lastBroadcastTs), trust DB; else avoid overwriting with stale poll/postgres.
   const applyLectureUpdate = React.useCallback((updatedLecture: any, fromRefetch?: boolean) => {
     const newSlideIndex = updatedLecture.current_slide_index;
     const newSlides = (updatedLecture.slides as unknown as Slide[]) || [];
@@ -143,9 +146,23 @@ const Student = () => {
       lastBroadcastTsRef.current > 0 &&
       now - lastBroadcastTsRef.current < 3000 &&
       lastBroadcastSlideIndexRef.current !== null;
-    const indexToApply = recentlyFromBroadcast
-      ? (newSlideIndex === lastBroadcastSlideIndexRef.current ? newSlideIndex : lastBroadcastSlideIndexRef.current!)
-      : newSlideIndex;
+
+    let indexToApply: number;
+    if (recentlyFromBroadcast) {
+      const dbUpdatedAt = updatedLecture.updated_at;
+      const dbTs = dbUpdatedAt ? new Date(dbUpdatedAt).getTime() : 0;
+      // If DB has advanced (presenter moved again or DB caught up), trust it
+      if (dbTs >= lastBroadcastTsRef.current - 500) {
+        indexToApply = newSlideIndex;
+        if (DEBUG_REALTIME_SYNC) console.log('[Student] applyLectureUpdate: trust DB', { newSlideIndex, dbTs, lastBroadcastTs: lastBroadcastTsRef.current });
+      } else {
+        // DB is behind, keep broadcast index to avoid stale poll overwriting
+        indexToApply = lastBroadcastSlideIndexRef.current ?? newSlideIndex;
+        if (DEBUG_REALTIME_SYNC) console.log('[Student] applyLectureUpdate: use broadcast (DB behind)', { indexToApply, newSlideIndex, dbTs });
+      }
+    } else {
+      indexToApply = newSlideIndex;
+    }
 
     // Reset answer state when slide changes
     setCurrentSlideIndex((prevIndex: number) => {
@@ -163,8 +180,13 @@ const Student = () => {
       return indexToApply;
     });
 
-    // Always apply slides when this update is from our scheduled refetch (after broadcast); otherwise during broadcast window skip to avoid stale poll/postgres overwriting
-    if (newSlides.length > 0 && (fromRefetch || !recentlyFromBroadcast)) {
+    // Always apply slides when fromRefetch; otherwise during broadcast window skip if DB is behind
+    const shouldApplySlides = newSlides.length > 0 && (
+      fromRefetch ||
+      !recentlyFromBroadcast ||
+      indexToApply === newSlideIndex
+    );
+    if (shouldApplySlides) {
       setSlides(newSlides);
     }
     setLecture(updatedLecture);
@@ -300,30 +322,38 @@ const Student = () => {
 
     channel
       .on('broadcast', { event: 'slide_changed' }, ({ payload }) => {
-        const p = payload as { currentSlideIndex?: number; lectureId?: string; ts?: number };
+        const p = payload as { currentSlideIndex?: number; lectureId?: string; ts?: number; seq?: number };
         const newIndex = p.currentSlideIndex;
-        if (typeof newIndex === 'number') {
-          lastBroadcastSlideIndexRef.current = newIndex;
-          lastBroadcastTsRef.current = Date.now();
-          // Apply immediately so student sees the right slide without waiting for refetch
-          setCurrentSlideIndex(newIndex);
-          setHasAnswered(false);
-          setSelectedOption(null);
-          setWordInput('');
-          setNumberInput('');
-          setScaleValue([3]);
-          setRankingOrder([]);
-          setSentimentValue([50]);
-          setAgreeValue([50]);
-          setSentenceInput('');
-          // Debounced refetch: cancel any pending, schedule after 800ms so DB write has completed (avoids stale data flicker)
-          if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
-          const lid = lecture.id;
-          broadcastRefetchTimeoutRef.current = setTimeout(() => {
-            broadcastRefetchTimeoutRef.current = null;
-            refetchLectureState(lid, true);
-          }, 800);
+        const payloadTs = p.ts ?? p.seq ?? Date.now();
+        // Ignore stale/out-of-order broadcasts
+        if (payloadTs <= lastAppliedBroadcastTsRef.current) {
+          if (DEBUG_REALTIME_SYNC) console.log('[Student] Broadcast ignored (stale)', { payloadTs, lastApplied: lastAppliedBroadcastTsRef.current, index: newIndex });
+          return;
         }
+        if (typeof newIndex !== 'number') return;
+
+        if (DEBUG_REALTIME_SYNC) console.log('[Student] Broadcast applied', { seq: p.seq, ts: payloadTs, index: newIndex });
+        lastAppliedBroadcastTsRef.current = payloadTs;
+        lastBroadcastSlideIndexRef.current = newIndex;
+        lastBroadcastTsRef.current = Date.now();
+        // Apply immediately so student sees the right slide without waiting for refetch
+        setCurrentSlideIndex(newIndex);
+        setHasAnswered(false);
+        setSelectedOption(null);
+        setWordInput('');
+        setNumberInput('');
+        setScaleValue([3]);
+        setRankingOrder([]);
+        setSentimentValue([50]);
+        setAgreeValue([50]);
+        setSentenceInput('');
+        // Debounced refetch: cancel any pending, schedule after 800ms so DB write has completed (avoids stale data flicker)
+        if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
+        const lid = lecture.id;
+        broadcastRefetchTimeoutRef.current = setTimeout(() => {
+          broadcastRefetchTimeoutRef.current = null;
+          refetchLectureState(lid, true);
+        }, 800);
       })
       .subscribe((status) => {
         console.log('[Student] Slide sync channel status:', status);
