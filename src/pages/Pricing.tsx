@@ -7,19 +7,19 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { SubscriptionPlan } from "@/types/subscription";
 import { CONTACT_EMAIL } from "@/lib/constants";
-import { AuthModal } from "@/components/auth/AuthModal";
 
 const Pricing = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const { planName } = useSubscriptionContext();
+  const { planName, isPro } = useSubscriptionContext();
   const { user } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchPlans();
@@ -44,7 +44,7 @@ const Pricing = () => {
 
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     if (!user) {
-      setShowAuthModal(true);
+      toast.error("Please sign in to subscribe");
       return;
     }
 
@@ -157,6 +157,14 @@ const Pricing = () => {
     return savings > 0 ? savings : null;
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-hero">
       <Header />
@@ -206,23 +214,7 @@ const Pricing = () => {
 
           {/* Pricing Cards */}
           <div className="grid md:grid-cols-3 gap-6">
-            {isLoading ? (
-              Array.from({ length: 3 }).map((_, i) => (
-                <Card key={i} className="border-border/50 h-[420px] animate-pulse">
-                  <CardHeader>
-                    <div className="h-10 w-10 rounded-xl bg-muted" />
-                    <div className="h-6 w-24 bg-muted rounded mt-3" />
-                    <div className="h-10 w-20 bg-muted rounded mt-4" />
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {Array.from({ length: 5 }).map((__, j) => (
-                      <div key={j} className="h-4 bg-muted rounded" />
-                    ))}
-                    <div className="h-10 w-full bg-muted rounded mt-6" />
-                  </CardContent>
-                </Card>
-              ))
-            ) : plans.map((plan, index) => {
+            {plans.map((plan, index) => {
               const Icon = getPlanIcon(plan.name);
               const isPopular = plan.name === "Standard";
               const isCurrent = plan.name === planName;
@@ -325,12 +317,6 @@ const Pricing = () => {
               );
             })}
           </div>
-
-          <AuthModal
-            isOpen={showAuthModal}
-            onClose={() => setShowAuthModal(false)}
-            redirectTo="pricing"
-          />
 
           {/* FAQ Section */}
           <motion.div

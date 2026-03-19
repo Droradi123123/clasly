@@ -4,8 +4,16 @@ import { useNavigate } from "react-router-dom";
 import { Sparkles, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import AuthModal from "@/components/auth/AuthModal";
+import { webinarCTAContent } from "@/content/webinarLandingContent";
 
-export default function CTASection() {
+interface CTASectionProps {
+  variant?: "default" | "webinar";
+}
+
+export default function CTASection({ variant = "default" }: CTASectionProps) {
+  const content = variant === "webinar" ? webinarCTAContent : null;
+  const title = content?.title ?? "Ready to Create Something Amazing?";
+  const description = content?.description ?? "Your first AI-generated presentation is just one prompt away. No signup required to try.";
   const navigate = useNavigate();
   const [showAuthModal, setShowAuthModal] = useState(false);
 
@@ -36,11 +44,10 @@ export default function CTASection() {
             </motion.div>
 
             <h2 className="text-2xl md:text-4xl font-display font-bold text-primary-foreground mb-4">
-              Ready to Create Something Amazing?
+              {title}
             </h2>
             <p className="text-primary-foreground/80 mb-8 max-w-xl mx-auto">
-              Your first AI-generated presentation is just one prompt away. 
-              No signup required to try.
+              {description}
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">

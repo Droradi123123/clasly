@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { PenLine, QrCode, Presentation } from "lucide-react";
+import { webinarHowItWorksContent } from "@/content/webinarLandingContent";
 
 const STEPS = [
   {
@@ -22,7 +23,22 @@ const STEPS = [
   },
 ];
 
-export default function HowItWorks() {
+interface HowItWorksProps {
+  variant?: "default" | "webinar";
+}
+
+export default function HowItWorks({ variant = "default" }: HowItWorksProps) {
+  const isWebinar = variant === "webinar";
+  const content = isWebinar ? webinarHowItWorksContent : null;
+  const title = content?.title ?? "How it works";
+  const subtitle = content?.subtitle ?? "Write words → Get QR → Amazing interactive lecture with analytics.";
+  const steps = content?.steps ? content.steps.map((s, i) => ({
+    number: s.number,
+    icon: [PenLine, QrCode, Presentation][i],
+    title: s.title,
+    description: s.description,
+  })) : STEPS;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -32,13 +48,13 @@ export default function HowItWorks() {
       className="w-full max-w-4xl mx-auto"
     >
       <h2 className="text-xl sm:text-2xl font-display font-bold text-foreground mb-2 sm:mb-3 text-center">
-        How it works
+        {title}
       </h2>
       <p className="text-muted-foreground text-sm sm:text-base text-center mb-6 sm:mb-8 max-w-2xl mx-auto">
-        Write words → Get QR → Amazing interactive lecture with analytics.
+        {subtitle}
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-        {STEPS.map((step, i) => {
+        {steps.map((step, i) => {
           const Icon = step.icon;
           return (
             <motion.div

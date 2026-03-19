@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Users } from "lucide-react";
+import { Plus, Trash2, Users, Check } from "lucide-react";
 import { SlideWrapper, ActivityFooter, CleanBarResults } from "./index";
 import { Slide, PollSlideContent } from "@/types/slides";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,9 @@ interface PollSlideProps {
   themeId?: ThemeId;
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
+  /** For poll_quiz: show which option is correct */
+  showCorrectAnswer?: boolean;
+  correctAnswerIndex?: number;
 }
 
 export function PollSlide({
@@ -38,8 +41,10 @@ export function PollSlide({
   themeId = 'neon-cyber',
   designStyleId = 'dynamic',
   hideFooter = false,
+  showCorrectAnswer = false,
+  correctAnswerIndex,
 }: PollSlideProps) {
-  const content = slide.content as PollSlideContent;
+  const content = slide.content as PollSlideContent & { correctAnswer?: number };
   const theme = getTheme(themeId);
   const designStyle = getDesignStyle(designStyleId);
   const styleConfig = designStyle.config;
@@ -70,6 +75,12 @@ export function PollSlide({
     onUpdate?.({ ...content, options: newOptions });
   };
 
+  const handleSetCorrectAnswer = (index: number) => {
+    if (slide.type === 'poll_quiz' && onUpdate) {
+      onUpdate?.({ ...content, correctAnswer: index });
+    }
+  };
+
   const addOption = () => {
     if (content.options.length < 6) {
       onUpdate?.({ ...content, options: [...content.options, `Option ${content.options.length + 1}`] });
@@ -85,6 +96,8 @@ export function PollSlide({
 
   const isCompact = designStyleId === 'compact';
   const isRankedBars = slide.design?.pollVariant === 'rankedBars';
+  const correctIdx = correctAnswerIndex ?? content.correctAnswer;
+  const showCorrect = showCorrectAnswer && typeof correctIdx === 'number' && correctIdx >= 0;
 
   // Get text color from slide design
   const textColor = slide.design?.textColor || "#ffffff";
@@ -125,6 +138,7 @@ export function PollSlide({
               results={results}
               totalResponses={totalResponses}
               textColor={textColor}
+              correctIndex={showCorrect ? correctIdx : undefined}
             />
           </div>
         ) : !isEditing && showResults && isRankedBars ? (
@@ -196,6 +210,21 @@ export function PollSlide({
                 <div className="flex items-center justify-between gap-2 mb-1 min-w-0 overflow-hidden">
                   {isEditing ? (
                     <div className="flex items-start gap-2 flex-1 min-w-0 overflow-hidden">
+                      {slide.type === 'poll_quiz' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetCorrectAnswer(index)}
+                          className={cn(
+                            "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
+                            correctIdx === index
+                              ? "bg-green-500/40 text-green-300 ring-1 ring-green-400/50"
+                              : "bg-white/10 text-white/50 hover:bg-white/20 hover:text-white/70"
+                          )}
+                          title={correctIdx === index ? "Correct answer" : "Set as correct answer"}
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                      )}
                       <AutoResizeTextarea
                         value={option}
                         onChange={(e) => handleOptionChange(index, e.target.value)}
@@ -220,19 +249,26 @@ export function PollSlide({
                     </span>
                   )}
                   
-                  {/* Count + Percentage - only in presentation mode */}
+                  {/* Count + Percentage + Correct badge - only in presentation mode */}
                   {!isEditing && (
-                    <AnimatePresence mode="wait">
-                      <motion.span
-                        key={`${count}-${percentage}`}
-                        initial={{ opacity: 0, scale: 0.8 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="text-sm md:text-base font-bold shrink-0"
-                        style={{ color: textColor, marginInlineStart: '1rem' }}
-                      >
-                        {hasResults ? `${count} (${percentage}%)` : '0%'}
-                      </motion.span>
-                    </AnimatePresence>
+                    <div className="flex items-center gap-2 shrink-0" style={{ marginInlineStart: '1rem' }}>
+                      {showCorrect && index === correctIdx && (
+                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/30 text-green-300 text-xs font-semibold">
+                          <Check className="w-3 h-3" /> Correct
+                        </span>
+                      )}
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={`${count}-${percentage}`}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="text-sm md:text-base font-bold"
+                          style={{ color: textColor }}
+                        >
+                          {hasResults ? `${count} (${percentage}%)` : '0%'}
+                        </motion.span>
+                      </AnimatePresence>
+                    </div>
                   )}
                 </div>
                 

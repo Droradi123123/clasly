@@ -109,8 +109,6 @@ const Dashboard = () => {
   const [targetAudience, setTargetAudience] = useState("general");
 
   const queryClient = useQueryClient();
-  const isGlobalLecturesAdmin =
-    user?.email?.toLowerCase() === "droradi55@gmail.com";
   const {
     data,
     isLoading,
@@ -118,20 +116,15 @@ const Dashboard = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["lectures", user?.id, isGlobalLecturesAdmin ? "all" : "own"],
+    queryKey: ['lectures', user?.id],
     queryFn: async ({ pageParam = 0 }) => {
       if (!user) return [];
       const from = pageParam * LECTURES_PAGE_SIZE;
       const to = from + LECTURES_PAGE_SIZE - 1;
-      let query = supabase
-        .from("lectures")
-        .select("id, title, status, lecture_code, created_at, updated_at, user_id");
-
-      if (!isGlobalLecturesAdmin) {
-        query = query.eq("user_id", user.id);
-      }
-
-      const { data: pageData, error } = await query
+      const { data: pageData, error } = await supabase
+        .from('lectures')
+        .select('id, title, status, lecture_code, created_at, updated_at, user_id')
+        .eq('user_id', user.id)
         .order('updated_at', { ascending: false })
         .range(from, to);
       if (error) throw error;

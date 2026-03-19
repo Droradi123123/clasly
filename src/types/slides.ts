@@ -12,7 +12,8 @@ export type SlideType =
   | 'bar_chart'
   // Interactive slides
   | 'quiz' 
-  | 'poll' 
+  | 'poll'
+  | 'poll_quiz'  // Poll design with correct answer (quiz category)
   | 'wordcloud' 
   | 'yesno' 
   | 'ranking' 
@@ -177,10 +178,11 @@ export interface QuizSlideContent extends BaseSlideContent {
   correctAnswer: number; // index of correct option
 }
 
-// Poll slide content
+// Poll slide content (also used by poll_quiz; correctAnswer only applies to poll_quiz)
 export interface PollSlideContent extends BaseSlideContent {
   question: string;
   options: string[];
+  correctAnswer?: number; // index of correct option (poll_quiz only)
 }
 
 // Word Cloud slide content
@@ -344,6 +346,8 @@ export const SLIDE_TYPES: SlideTypeInfo[] = [
   
   // Interactive slides - engagement focused, no correct answers
   { type: 'poll', label: 'Poll', labelHe: 'סקר', icon: 'BarChart3', category: 'interactive', description: 'Opinion poll without correct answer' },
+  // Quiz slides - with correct answers (poll_quiz = poll design + correct answer)
+  { type: 'poll_quiz', label: 'Poll (Quiz)', labelHe: 'סקר (מבחן)', icon: 'BarChart3', category: 'quiz', description: 'Poll-style bar chart with one correct answer', supportsCorrectAnswer: true },
   { type: 'wordcloud', label: 'Word Cloud', labelHe: 'ענן מילים', icon: 'Cloud', category: 'interactive', description: 'Collect words and visualize' },
   { type: 'scale', label: 'Scale', labelHe: 'סולם', icon: 'Sliders', category: 'interactive', description: 'Rate on a scale' },
   { type: 'sentiment_meter', label: 'Sentiment', labelHe: 'סנטימנט', icon: 'Heart', category: 'interactive', description: 'Continuous emotional scale' },
@@ -388,6 +392,12 @@ export function createDefaultSlideContent(type: SlideType): SlideContent {
       return { 
         question: 'What do you think?', 
         options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'] 
+      };
+    case 'poll_quiz':
+      return { 
+        question: 'What is the correct answer?', 
+        options: ['Option A', 'Option B', 'Option C', 'Option D'],
+        correctAnswer: 0 
       };
     case 'wordcloud':
       return { question: 'Describe this in one word...' };
@@ -486,18 +496,22 @@ function generateUniqueId(): string {
 
 // Helper to create a new slide
 export function createNewSlide(type: SlideType, order: number): Slide {
+  const baseDesign = {
+    gradientPreset: 'purple-blue',
+    textColor: '#ffffff',
+    fontFamily: 'Inter',
+    fontSize: 'medium',
+    textAlign: 'center',
+    designStyleId: 'dynamic', // Default to dynamic style
+  };
+  const design = type === 'yesno'
+    ? { ...baseDesign, yesNoVariant: 'thumbsDynamic' as const }
+    : baseDesign;
   return {
     id: generateUniqueId(),
     type,
     content: createDefaultSlideContent(type),
-    design: {
-      gradientPreset: 'purple-blue',
-      textColor: '#ffffff',
-      fontFamily: 'Inter',
-      fontSize: 'medium',
-      textAlign: 'center',
-      designStyleId: 'dynamic', // Default to dynamic style
-    },
+    design,
     layout: 'centered',
     activitySettings: {
       duration: 60,

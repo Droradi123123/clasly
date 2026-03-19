@@ -2,32 +2,45 @@ import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   DEMO_SLIDES,
+  DEMO_SLIDES_WEBINAR,
   DEMO_STUDENTS,
+  DEMO_STUDENTS_WEBINAR,
   INITIAL_POLL_RESULTS,
+  INITIAL_POLL_RESULTS_WEBINAR,
   LaptopScreen,
   PhoneScreen,
   DemoStudent,
   PollResult,
   FloatingEmoji,
 } from "./demo";
+import { webinarDemoContent } from "@/content/webinarLandingContent";
 
-export default function InteractiveSyncDemo() {
+interface InteractiveSyncDemoProps {
+  variant?: "default" | "webinar";
+}
+
+export default function InteractiveSyncDemo({ variant = "default" }: InteractiveSyncDemoProps) {
+  const isWebinar = variant === "webinar";
+  const DEMO = isWebinar ? DEMO_SLIDES_WEBINAR : DEMO_SLIDES;
+  const INITIAL_POLL = isWebinar ? INITIAL_POLL_RESULTS_WEBINAR : INITIAL_POLL_RESULTS;
+  const INITIAL_STUDENTS = isWebinar ? DEMO_STUDENTS_WEBINAR : DEMO_STUDENTS;
+
   // Slide state
   const [currentSlide, setCurrentSlide] = useState(0);
   const [phoneSlide, setPhoneSlide] = useState(0);
   
   // Results state
-  const [pollResults, setPollResults] = useState<PollResult[]>(INITIAL_POLL_RESULTS);
+  const [pollResults, setPollResults] = useState<PollResult[]>(INITIAL_POLL);
   const [quizResults, setQuizResults] = useState<number[]>([3, 12, 2, 1]);
-  const [wordCloudWords, setWordCloudWords] = useState(DEMO_SLIDES[3].words || []);
-  const [rankingOrder, setRankingOrder] = useState<string[]>(DEMO_SLIDES[4].options || []);
+  const [wordCloudWords, setWordCloudWords] = useState(DEMO[3].words || []);
+  const [rankingOrder, setRankingOrder] = useState<string[]>(DEMO[4].options || []);
   const [scaleAverage, setScaleAverage] = useState(6.8);
   const [scaleValue, setScaleValue] = useState<number | null>(null);
   
   // User interaction state
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
-  const [students, setStudents] = useState<DemoStudent[]>(DEMO_STUDENTS);
+  const [students, setStudents] = useState<DemoStudent[]>(INITIAL_STUDENTS);
   const [userPoints, setUserPoints] = useState(320);
   const [userEmoji] = useState("🦄");
   
@@ -37,8 +50,8 @@ export default function InteractiveSyncDemo() {
   const [showMiniConfetti, setShowMiniConfetti] = useState(false);
   const [floatingEmojis, setFloatingEmojis] = useState<FloatingEmoji[]>([]);
 
-  const slide = DEMO_SLIDES[currentSlide];
-  const phoneSlideData = DEMO_SLIDES[phoneSlide];
+  const slide = DEMO[currentSlide];
+  const phoneSlideData = DEMO[phoneSlide];
 
   const handleVote = useCallback((index: number) => {
     setSelectedOption(index);
@@ -46,7 +59,7 @@ export default function InteractiveSyncDemo() {
     setShowMiniConfetti(true);
     setTimeout(() => setShowMiniConfetti(false), 1500);
 
-    const currentSlideData = DEMO_SLIDES[phoneSlide];
+    const currentSlideData = DEMO[phoneSlide];
     
     if (currentSlideData.type === "quiz") {
       const correct = index === currentSlideData.correctIndex;
@@ -82,13 +95,14 @@ export default function InteractiveSyncDemo() {
     }
 
     setTimeout(() => setSyncPulse(false), 600);
-  }, [phoneSlide]);
+  }, [phoneSlide, DEMO]);
 
   const handleNavigate = useCallback((direction: "next" | "prev") => {
+    const total = DEMO.length;
     const newSlide =
       direction === "next"
-        ? (currentSlide + 1) % DEMO_SLIDES.length
-        : (currentSlide - 1 + DEMO_SLIDES.length) % DEMO_SLIDES.length;
+        ? (currentSlide + 1) % total
+        : (currentSlide - 1 + total) % total;
 
     setCurrentSlide(newSlide);
     setSyncPulse(true);
@@ -102,7 +116,7 @@ export default function InteractiveSyncDemo() {
       setPhoneSlide(newSlide);
       setSyncPulse(false);
     }, 150);
-  }, [currentSlide]);
+  }, [currentSlide, DEMO]);
 
   const handleReaction = useCallback((emoji: string) => {
     const id = Date.now();
@@ -171,7 +185,7 @@ export default function InteractiveSyncDemo() {
             viewport={{ once: true }}
             className="text-3xl md:text-4xl lg:text-5xl font-display font-bold text-foreground mb-6"
           >
-            See it in action
+            {isWebinar ? webinarDemoContent.header : "See it in action"}
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
@@ -180,9 +194,15 @@ export default function InteractiveSyncDemo() {
             transition={{ delay: 0.1 }}
             className="text-muted-foreground max-w-xl mx-auto text-base md:text-lg leading-relaxed"
           >
-            Vote on your phone.<br />
-            Watch results update instantly on the big screen.<br />
-            <span className="text-foreground font-medium">Experience real-time interaction — live.</span>
+            {isWebinar ? (
+              webinarDemoContent.subheadline
+            ) : (
+              <>
+                Vote on your phone.<br />
+                Watch results update instantly on the big screen.<br />
+                <span className="text-foreground font-medium">Experience real-time interaction — live.</span>
+              </>
+            )}
           </motion.p>
         </div>
 
@@ -205,7 +225,7 @@ export default function InteractiveSyncDemo() {
             <LaptopScreen
               slide={slide}
               slideIndex={currentSlide}
-              totalSlides={DEMO_SLIDES.length}
+              totalSlides={DEMO.length}
               pollResults={pollResults}
               students={students}
               floatingEmojis={floatingEmojis}

@@ -128,6 +128,28 @@ export function EditorSidebar({
             </RadioGroup>
           )}
           
+          {/* Poll (Quiz) – dropdown to select correct option */}
+          {slide.type === 'poll_quiz' && content.options && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Correct answer</Label>
+              <Select
+                value={String(content.correctAnswer ?? 0)}
+                onValueChange={(v) => updateContent({ correctAnswer: parseInt(v, 10) })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {content.options.map((opt, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {opt || `Option ${i + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          
           {/* Quiz correct answer (already handled in main editor, show indicator) */}
           {slide.type === 'quiz' && (
             <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">

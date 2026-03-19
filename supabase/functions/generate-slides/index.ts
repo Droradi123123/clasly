@@ -380,7 +380,7 @@ const GRADIENT_DEFINITIONS: Record<string, { colors: string[]; angle: number }> 
   "orange-gold": { colors: ["#ea580c", "#ca8a04"], angle: 135 },
   "sunset-warm": { colors: ["#dc2626", "#f59e0b"], angle: 140 },
   "amber-rose": { colors: ["#d97706", "#e11d48"], angle: 130 },
-  "terracotta": { colors: ["#9a3412", "#b45309"], angle: 150 },
+  terracotta: { colors: ["#9a3412", "#b45309"], angle: 150 },
   "warm-peach": { colors: ["#f97316", "#fbbf24"], angle: 135 },
   // Ocean Breeze palette
   "ocean-teal": { colors: ["#0891b2", "#0d9488"], angle: 135 },
@@ -991,6 +991,19 @@ function mapSlideToFrontendFormat(
       mappedContent = {
         question: rawSlide.content.question || "What do you think?",
         options: pollOpts.length >= 2 ? pollOpts : pollDef,
+      };
+      if (imageUrl) {
+        baseDesign.overlayImageUrl = imageUrl;
+        baseDesign.overlayImagePosition = "background";
+      }
+      break;
+
+    case "wordcloud": {
+      const wcQ = rawSlide.content.question;
+      mappedContent = {
+        question: (typeof wcQ === "string" && wcQ.trim())
+          ? wcQ.trim()
+          : (topic ? `What comes to mind when you think of ${topic}?` : "Share your thoughts..."),
       };
       if (imageUrl) {
         baseDesign.overlayImageUrl = imageUrl;

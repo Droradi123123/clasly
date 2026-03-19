@@ -7,10 +7,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/auth/AuthModal";
 import HowItWorks from "@/components/landing/HowItWorks";
+import { webinarHeroContent, webinarQuizContent } from "@/content/webinarLandingContent";
 
 interface HeroSectionProps {
   onGenerate: (prompt: string) => void;
   onSeeExample: () => void;
+  variant?: "default" | "webinar";
 }
 
 // Confetti Particle Component
@@ -70,10 +72,26 @@ function FlyingEmoji({
   );
 }
 
+const DEFAULT_QUIZ_OPTIONS = [
+  { letter: "A", text: "London", color: "bg-red-500" },
+  { letter: "B", text: "Paris", color: "bg-blue-500", correct: true },
+  { letter: "C", text: "Berlin", color: "bg-yellow-500" },
+  { letter: "D", text: "Madrid", color: "bg-green-500" },
+];
+
+const DEFAULT_QUIZ_QUESTION = "What is the capital of France?";
+
+interface QuizContent {
+  question: string;
+  options: { letter: string; text: string; color: string; phoneColor?: string; correct?: boolean }[];
+}
+
 // Desktop Screen Illustration Component
-function DesktopIllustration({ showConfetti, flyingEmojis, compact }: { showConfetti: boolean; flyingEmojis: { id: number; emoji: string }[]; compact?: boolean }) {
+function DesktopIllustration({ showConfetti, flyingEmojis, compact, quizContent }: { showConfetti: boolean; flyingEmojis: { id: number; emoji: string }[]; compact?: boolean; quizContent?: QuizContent }) {
   const confettiColors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181", "#AA96DA"];
-  
+  const question = quizContent?.question ?? DEFAULT_QUIZ_QUESTION;
+  const options = quizContent?.options ?? DEFAULT_QUIZ_OPTIONS;
+
   return (
     <motion.div
       initial={{ opacity: 0, x: compact ? -20 : -60 }}
@@ -141,18 +159,13 @@ function DesktopIllustration({ showConfetti, flyingEmojis, compact }: { showConf
                 LIVE
               </div>
               <h3 className={`text-white font-bold leading-tight ${compact ? "text-[10px]" : "text-sm md:text-base"}`}>
-                What is the capital of France?
+                {question}
               </h3>
             </div>
             
             {/* Quiz Options Grid */}
             <div className={`grid grid-cols-2 relative z-10 ${compact ? "gap-1" : "gap-2"}`}>
-              {[
-                { letter: "A", text: "London", color: "bg-red-500" },
-                { letter: "B", text: "Paris", color: "bg-blue-500", correct: true },
-                { letter: "C", text: "Berlin", color: "bg-yellow-500" },
-                { letter: "D", text: "Madrid", color: "bg-green-500" },
-              ].map((option) => (
+              {options.map((option) => (
                 <motion.div
                   key={option.letter}
                   animate={showConfetti && option.correct ? { 
@@ -204,15 +217,34 @@ function PhoneIllustration({
   onParisClick, 
   onEmojiClick,
   showConfetti,
-  compact
+  compact,
+  quizContent
 }: { 
   onParisClick: () => void; 
   onEmojiClick: (emoji: string) => void;
   showConfetti: boolean;
   compact?: boolean;
+  quizContent?: QuizContent;
 }) {
   const confettiColors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181", "#AA96DA"];
-  
+  const DEFAULT_PHONE_OPTIONS = [
+    { letter: "A", text: "London", color: "from-red-500 to-red-600", correct: false },
+    { letter: "B", text: "Paris", color: "from-blue-500 to-blue-600", correct: true },
+    { letter: "C", text: "Berlin", color: "from-yellow-500 to-yellow-600", correct: false },
+    { letter: "D", text: "Madrid", color: "from-green-500 to-green-600", correct: false },
+  ];
+  const options = quizContent
+    ? quizContent.options.map((o) => {
+        const extended = o as { phoneColor?: string };
+        return {
+          letter: o.letter,
+          text: o.text,
+          color: extended.phoneColor ?? `from-${o.color.replace("bg-", "")} to-${o.color.replace("bg-", "").replace("-500", "-600")}`,
+          correct: !!o.correct,
+        };
+      })
+    : DEFAULT_PHONE_OPTIONS;
+
   return (
     <motion.div
       initial={{ opacity: 0, x: compact ? 20 : 60 }}
@@ -258,12 +290,7 @@ function PhoneIllustration({
             
             {/* Voting Buttons */}
             <div className={`relative z-10 ${compact ? "space-y-1" : "space-y-2"}`}>
-              {[
-                { letter: "A", text: "London", color: "from-red-500 to-red-600" },
-                { letter: "B", text: "Paris", color: "from-blue-500 to-blue-600", correct: true },
-                { letter: "C", text: "Berlin", color: "from-yellow-500 to-yellow-600" },
-                { letter: "D", text: "Madrid", color: "from-green-500 to-green-600" },
-              ].map((option) => (
+              {options.map((option) => (
                 <motion.button
                   key={option.letter}
                   onClick={option.correct ? onParisClick : undefined}
@@ -374,7 +401,10 @@ function SyncConnector() {
   );
 }
 
-export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionProps) {
+export default function HeroSection({ onGenerate, onSeeExample, variant = "default" }: HeroSectionProps) {
+  const isWebinar = variant === "webinar";
+  const heroContent = isWebinar ? webinarHeroContent : null;
+  const quizContent = isWebinar ? webinarQuizContent : undefined;
   const navigate = useNavigate();
   const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
@@ -447,7 +477,7 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
           
           {/* Left Illustration - Desktop only */}
           <div className="hidden lg:block flex-shrink-0 relative z-20">
-            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} />
+            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} quizContent={quizContent} />
           </div>
 
           {/* Text + Input - on mobile: headline → subheadline → input (monday vibe style) */}
@@ -459,10 +489,21 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               transition={{ duration: 0.6, ease: "easeOut" }}
               className="text-4xl sm:text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-4 sm:mb-5 leading-[1.12] tracking-tight"
             >
-              Turn your words into{" "}
-              <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
-                interactive lectures.
-              </span>
+              {heroContent ? (
+                <>
+                  {heroContent.headline}{" "}
+                  <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
+                    {heroContent.headlineHighlight}
+                  </span>
+                </>
+              ) : (
+                <>
+                  Turn your words into{" "}
+                  <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
+                    interactive lectures.
+                  </span>
+                </>
+              )}
             </motion.h1>
 
             {/* Sub-headline */}
@@ -472,9 +513,13 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               transition={{ duration: 0.6, delay: 0.1 }}
               className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-xl mx-auto leading-relaxed mb-6 sm:mb-8"
             >
-              AI builds the full experience in seconds: an interactive deck for the main screen{" "}
-              <span className="font-semibold text-foreground/80">and</span>{" "}
-              a live interface for every phone in the room.
+              {heroContent?.subheadline ?? (
+                <>
+                  AI builds the full experience in seconds: an interactive deck for the main screen{" "}
+                  <span className="font-semibold text-foreground/80">and</span>{" "}
+                  a live interface for every phone in the room.
+                </>
+              )}
             </motion.p>
           </div>
 
@@ -484,6 +529,7 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               onParisClick={handleParisClick} 
               onEmojiClick={handleEmojiClick}
               showConfetti={showConfetti}
+              quizContent={quizContent}
             />
             <AnimatePresence>
               {flyingEmojis.map(({ id, emoji }) => (
@@ -512,9 +558,7 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe your topic and we'll build your presentation…
-
-Example: Create a trivia quiz about world capitals with multiple choice and word cloud."
+                placeholder={heroContent?.placeholder ?? "Describe your topic and we'll build your presentation…\n\nExample: Create a trivia quiz about world capitals with multiple choice and word cloud."}
                 className="min-h-[140px] sm:min-h-[180px] md:min-h-[200px] w-full border-0 bg-transparent resize-none text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 leading-relaxed"
               />
             </div>
@@ -551,14 +595,14 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
           className="mt-4 sm:mt-5 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-1"
         >
           <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 shrink-0">Try:</span>
-          {[
+          {(heroContent?.suggestions ?? [
             "Lecture on photosynthesis with quiz",
             "Class feedback poll",
             "Course recap with Q&A",
-          ].map((template) => (
+          ]).map((template) => (
             <button
               key={template}
-              onClick={() => setPrompt(`Create an interactive ${template.toLowerCase()} for my students`)}
+              onClick={() => setPrompt(isWebinar ? template : `Create an interactive ${template.toLowerCase()} for my students`)}
               className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-muted/60 text-xs sm:text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
             >
               {template}
@@ -568,18 +612,19 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
 
         {/* How it works - steps flow (desktop & mobile) */}
         <div className="mt-8 sm:mt-10 lg:mt-12 w-full">
-          <HowItWorks />
+          <HowItWorks variant={variant} />
         </div>
 
         {/* Mobile-only: Desktop + Phone illustrations AFTER How it works, side by side */}
         <div className="lg:hidden flex flex-col items-center gap-6 mt-8 sm:mt-10">
           <div className="flex flex-row items-center justify-center gap-3 sm:gap-6 w-full max-w-sm sm:max-w-md mx-auto">
-            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} compact />
+            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} compact quizContent={quizContent} />
             <PhoneIllustration 
               onParisClick={handleParisClick} 
               onEmojiClick={handleEmojiClick}
               showConfetti={showConfetti}
               compact
+              quizContent={quizContent}
             />
           </div>
         </div>
@@ -593,11 +638,11 @@ Example: Create a trivia quiz about world capitals with multiple choice and word
         >
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary/60" />
-            <span>Ready in seconds</span>
+            <span>{heroContent?.hints?.[0]?.text ?? "Ready in seconds"}</span>
           </div>
           <div className="flex items-center gap-2">
             <Settings2 className="w-4 h-4 text-primary/60" />
-            <span>No setup required</span>
+            <span>{heroContent?.hints?.[1]?.text ?? "No setup required"}</span>
           </div>
         </motion.div>
       </div>

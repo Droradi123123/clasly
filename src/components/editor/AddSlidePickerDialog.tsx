@@ -38,6 +38,7 @@ const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
   bar_chart: BarChart,
   quiz: HelpCircle,
   poll: BarChart3,
+  poll_quiz: BarChart3,
   wordcloud: Cloud,
   yesno: CheckCircle,
   ranking: ListOrdered,
@@ -115,11 +116,20 @@ export function AddSlidePickerDialog({
             </div>
           )}
 
-          {/* Quiz + Interactive – first after AI so user sees them first */}
+          {/* Quiz – with correct answers */}
           <Section
-            title="Quiz + Interactive"
-            subtitle="Quizzes, polls, scales, and audience response slides"
-            types={[...quizTypes, ...interactiveTypes]}
+            title="Quiz"
+            subtitle="One correct answer—students earn points for the right choice"
+            types={quizTypes}
+            onSelect={handleSelect}
+            iconBg="bg-amber-500/20"
+            iconColor="text-amber-600 dark:text-amber-400"
+          />
+          {/* Interactive – no correct answer */}
+          <Section
+            title="Interactive"
+            subtitle="Polls, scales, and audience response—no correct answer"
+            types={interactiveTypes}
             onSelect={handleSelect}
             iconBg="bg-emerald-500/20"
             iconColor="text-emerald-600 dark:text-emerald-400"

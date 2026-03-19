@@ -7,8 +7,9 @@ import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-r
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
+import WebinarLanding from "./pages/WebinarLanding";
 import Join from "./pages/Join";
-const Pricing = lazy(() => import("./pages/Pricing"));
+import Pricing from "./pages/Pricing";
 import Billing from "./pages/Billing";
 import ContinueOnDesktop from "./pages/ContinueOnDesktop";
 import TermsOfService from "./pages/TermsOfService";
@@ -69,15 +70,14 @@ const App = () => {
             <PostLoginRedirect />
             <Routes>
               <Route path="/" element={<Index />} />
+              <Route path="/webinar" element={<WebinarLanding />} />
               <Route path="/dashboard" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
-              {/* Friendly redirect so /editor or /editor/ always open a new lecture */}
-              <Route path="/editor" element={<Navigate to="/editor/new" replace />} />
               <Route path="/editor/:lectureId" element={<Suspense fallback={<PageLoader />}><Editor /></Suspense>} />
               <Route path="/present/:lectureId" element={<Suspense fallback={<PageLoader />}><Present /></Suspense>} />
               <Route path="/lecture/:lectureId/analytics" element={<Suspense fallback={<PageLoader />}><LectureAnalytics /></Suspense>} />
               <Route path="/join" element={<Join />} />
               <Route path="/student/:lectureCode" element={<Suspense fallback={<PageLoader />}><Student /></Suspense>} />
-              <Route path="/pricing" element={<Suspense fallback={<PageLoader />}><Pricing /></Suspense>} />
+              <Route path="/pricing" element={<Pricing />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/builder" element={<BuilderRedirect />} />
               <Route path="/continue-on-desktop" element={<ContinueOnDesktop />} />

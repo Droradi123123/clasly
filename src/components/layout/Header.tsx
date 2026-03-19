@@ -27,6 +27,7 @@ import { Progress } from "@/components/ui/progress";
 const Header = () => {
   const location = useLocation();
   const isHome = location.pathname === "/";
+  const isWebinar = location.pathname === "/webinar";
   const { user, isLoading, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -80,6 +81,12 @@ const Header = () => {
               className={`text-sm font-medium transition-colors hover:text-primary ${isHome ? 'text-primary' : 'text-muted-foreground'}`}
             >
               Home
+            </Link>
+            <Link 
+              to="/webinar" 
+              className={`text-sm font-medium transition-colors hover:text-primary ${isWebinar ? 'text-primary' : 'text-muted-foreground'}`}
+            >
+              Clasly for Webinars
             </Link>
             <Link 
               to="/pricing" 
@@ -275,7 +282,7 @@ const Header = () => {
             ) : (
               <Button variant="hero" size="sm" onClick={() => setShowAuthModal(true)}>
                 <Sparkles className="w-4 h-4" />
-                Get Started
+                Start for free
               </Button>
             )}
           </div>

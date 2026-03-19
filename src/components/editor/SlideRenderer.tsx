@@ -110,6 +110,23 @@ export function SlideRenderer({
         />
       );
 
+    case "poll_quiz":
+      return (
+        <PollSlide
+          slide={slide}
+          isEditing={isEditing}
+          showResults={showResults}
+          onUpdate={(content) => onUpdateContent?.(content)}
+          liveResults={liveResults?.results}
+          totalResponses={totalResponses}
+          themeId={themeId}
+          designStyleId={effectiveDesignStyleId}
+          hideFooter={hideFooter}
+          showCorrectAnswer={showCorrectAnswer}
+          correctAnswerIndex={(slide.content as { correctAnswer?: number })?.correctAnswer}
+        />
+      );
+
     case "wordcloud":
       return (
         <WordCloudSlide

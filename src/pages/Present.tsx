@@ -570,10 +570,9 @@ const Present = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
-  
-  // Get join URL for QR code + host label (always matches current origin)
+
+  // Get join URL for QR code
   const joinUrl = `${window.location.origin}/join?code=${lectureCode}`;
-  const joinHost = window.location.host;
 
   // Calculate aggregated results for display
   const getAggregatedResults = () => {
@@ -864,7 +863,7 @@ const Present = () => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="w-full h-full max-w-[min(95vw,1200px)] max-h-[85vh] aspect-video mx-4 md:mx-8 lg:mx-16"
+            className="w-full h-full max-w-[min(98vw,1600px)] max-h-[92vh] aspect-video mx-2 md:mx-4 lg:mx-6"
           >
             {currentSlide && (
               <SlideFrame>
@@ -1024,7 +1023,7 @@ const Present = () => {
                 <div className="text-center space-y-4">
                   <div>
                     <p className="text-base text-muted-foreground mb-1">Go to</p>
-                    <p className="font-bold text-2xl text-card-foreground">{joinHost}/join</p>
+                    <p className="font-bold text-2xl text-card-foreground">clasly.app/join</p>
                   </div>
                   
                   <button
