@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -19,10 +19,14 @@ const Join = () => {
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  /** Code that passed validation — used for /student/:code navigation (state can lag behind URL/QR flow). */
+  const [sessionJoinCode, setSessionJoinCode] = useState("");
   const processedUrlCodeRef = useRef<string | null>(null);
 
-  const handleCodeSubmit = async (codeToCheck?: string) => {
-    const code = codeToCheck || lectureCode;
+  const normalizeCode = (raw: string) => raw.replace(/\D/g, "").slice(0, 6);
+
+  const handleCodeSubmit = useCallback(async (codeToCheck?: string) => {
+    const code = normalizeCode(codeToCheck ?? lectureCode);
     if (code.length !== 6) {
       setError("Please enter a valid 6-digit code");
       return;
@@ -44,6 +48,7 @@ const Join = () => {
         return;
       }
 
+      setSessionJoinCode(String(lecture.lecture_code ?? code).replace(/\D/g, "").slice(0, 6));
       setLectureId(lecture.id);
       setLectureName(lecture.title);
       setStep("profile");
@@ -53,24 +58,31 @@ const Join = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [lectureCode]);
 
-  // Check for code in URL params - fill field and auto-submit when length is 6
+  // Check for code in URL params - fill field and auto-submit when length is 6 (QR scan)
   useEffect(() => {
-    const codeFromUrl = searchParams.get("code")?.trim() || "";
-    if (codeFromUrl) {
+    const codeFromUrl = normalizeCode(searchParams.get("code")?.trim() || "");
+    if (codeFromUrl.length === 6) {
       setLectureCode(codeFromUrl);
-      if (codeFromUrl.length === 6 && processedUrlCodeRef.current !== codeFromUrl) {
+      if (processedUrlCodeRef.current !== codeFromUrl) {
         processedUrlCodeRef.current = codeFromUrl;
-        handleCodeSubmit(codeFromUrl);
+        void handleCodeSubmit(codeFromUrl);
       }
     } else {
       processedUrlCodeRef.current = null;
     }
-  }, [searchParams]);
+  }, [searchParams, handleCodeSubmit]);
 
   const handleJoin = async () => {
     if (!name.trim()) return;
+
+    const codeForStudent = sessionJoinCode || normalizeCode(lectureCode);
+    if (codeForStudent.length !== 6 || !lectureId) {
+      setError("Session expired. Go back and enter the lecture code again.");
+      setStep("code");
+      return;
+    }
 
     setIsLoading(true);
     setError("");
@@ -79,8 +91,9 @@ const Join = () => {
       const student = await joinLecture(lectureId, name.trim(), selectedEmoji);
       
       if (student) {
-        // Navigate to student view with student ID
-        navigate(`/student/${lectureCode}?studentId=${student.id}`);
+        navigate(`/student/${codeForStudent}?studentId=${student.id}`, { replace: true });
+      } else {
+        setError("Failed to join lecture. Please try again.");
       }
     } catch (err) {
       setError("Failed to join lecture. Please try again.");
@@ -242,6 +255,7 @@ const Join = () => {
                     className="flex-1"
                     onClick={() => {
                       setStep("code");
+                      setSessionJoinCode("");
                       setError("");
                     }}
                   >

@@ -33,6 +33,7 @@ import { Confetti } from "@/components/effects/Confetti";
 import { FloatingParticles } from "@/components/effects/FloatingParticles";
 import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
+import { getPublicAppOrigin } from "@/lib/constants";
 import { Leaderboard } from "@/components/present/Leaderboard";
 import { MiniLeaderboard } from "@/components/present/MiniLeaderboard";
 import { FruitCatchGame } from "@/components/game";
@@ -571,8 +572,8 @@ const Present = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Get join URL for QR code
-  const joinUrl = `${window.location.origin}/join?code=${lectureCode}`;
+  // QR must point to a URL the student's phone can open (not localhost / preview unless overridden)
+  const joinUrl = `${getPublicAppOrigin()}/join?code=${lectureCode}`;
 
   // Calculate aggregated results for display
   const getAggregatedResults = () => {

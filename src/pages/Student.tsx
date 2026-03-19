@@ -105,11 +105,19 @@ const Student = () => {
 
   // Load lecture and subscribe to updates
   useEffect(() => {
-    if (!lectureCode) return;
+    if (!lectureCode) {
+      setLoading(false);
+      return;
+    }
+    const code = lectureCode.replace(/\D/g, "").slice(0, 6);
+    if (code.length !== 6) {
+      setLoading(false);
+      return;
+    }
 
     const loadLecture = async () => {
       try {
-        const data = await getLectureByCode(lectureCode);
+        const data = await getLectureByCode(code);
         if (data) {
           setLecture(data);
           setSlides((data.slides as unknown as Slide[]) || []);
@@ -185,7 +193,6 @@ const Student = () => {
     if (!lecture?.id) return;
 
     console.log('[Student] Subscribing to lecture updates:', lecture.id);
-    setIsConnected(false);
 
     let pollIntervalMs = 1000; // Layer 3: start 1s, exponential backoff on success up to 3s
     let pollTimeoutId: NodeJS.Timeout | null = null;
@@ -198,6 +205,7 @@ const Student = () => {
       if (data) {
         lastUpdatedAt = data.updated_at;
         lastSlideIndex = data.current_slide_index;
+        setIsConnected(true);
       }
     });
 
@@ -214,6 +222,7 @@ const Student = () => {
           console.error('[Student] Poll error:', error);
           pollIntervalMs = Math.min(pollIntervalMs * 1.2, 5000); // Max 5s on error
         } else if (data) {
+          setIsConnected(true);
           // Check for ANY changes - slide index is most critical
           if (data.current_slide_index !== lastSlideIndex || data.updated_at !== lastUpdatedAt) {
             console.log('[Student] Poll detected change - slide:', data.current_slide_index);
