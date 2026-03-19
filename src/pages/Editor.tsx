@@ -145,6 +145,8 @@ const Editor = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
+  const isGlobalLecturesAdmin =
+    user?.email?.toLowerCase() === "droradi55@gmail.com";
   const isMobile = useIsMobile();
   const [lectureTitle, setLectureTitle] = useState("Untitled Lecture");
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -189,10 +191,6 @@ const Editor = () => {
     })
   );
 
-  // Single source of truth for display and Present: prefer sandbox when AI has returned slides (so we show images before sync); else slides. User edits clear sandbox so we show slides.
-  const displaySlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
-  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
-  const currentSlide = displaySlides[safeIndex];
   const slidePreviewRef = useRef<HTMLDivElement>(null);
   const isConstrainedViewport = useConstrainedViewport();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -217,6 +215,11 @@ const Editor = () => {
     reset: resetConversationalBuilder,
     ensureSessionForLecture,
   } = useConversationalBuilder();
+
+  // Must run after useConversationalBuilder — sandboxSlides is defined there (was previously above → TDZ crash).
+  const displaySlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
+  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
+  const currentSlide = displaySlides[safeIndex];
 
   // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
   useEffect(() => {
@@ -697,7 +700,7 @@ const Editor = () => {
   // Apply lecture data (shared logic for preloaded and fetched)
   const applyLectureData = useCallback((lecture: { id: string; title?: string; lecture_code?: string; slides?: unknown; settings?: unknown }) => {
     const lectureUserId = (lecture as { user_id?: string }).user_id;
-    if (user && lectureUserId && lectureUserId !== user.id) {
+    if (!isGlobalLecturesAdmin && user && lectureUserId && lectureUserId !== user.id) {
       toast.error("You don't have access to this lecture");
       navigate("/dashboard");
       return;
@@ -714,7 +717,7 @@ const Editor = () => {
     const settings = lecture.settings as Record<string, unknown> | null;
     if (settings?.themeId) setSelectedThemeId(settings.themeId as ThemeId);
     if (settings?.designStyleId) setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
-  }, [user?.id, navigate]);
+  }, [user?.id, navigate, isGlobalLecturesAdmin]);
 
   // Load lecture from database if it exists (only own lectures)
   // Use preloaded data when navigating after create to avoid race/fetch failure
