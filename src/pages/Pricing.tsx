@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Header from "@/components/layout/Header";
+import { DocumentHead } from "@/components/seo/DocumentHead";
 import { Check, Sparkles, Users, Zap, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { SubscriptionPlan } from "@/types/subscription";
+import { CONTACT_EMAIL } from "@/lib/constants";
 
 const Pricing = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -102,28 +104,33 @@ const Pricing = () => {
     const features = plan.features as Record<string, boolean> | null;
     const baseFeatures: string[] = [];
 
-    // Add slide limit
-    if (plan.max_slides) {
+    // Value prop: slide limit (e.g. "15 slides free" for Free)
+    if (plan.name === "Free") {
+      baseFeatures.push("15 slides free");
+    } else if (plan.max_slides) {
       baseFeatures.push(`Up to ${plan.max_slides} slides per presentation`);
     } else {
       baseFeatures.push("Unlimited slides");
     }
 
-    // Add AI tokens
-    baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI tokens/month`);
-
-    // Add vibe credits
-    baseFeatures.push(`${plan.monthly_vibe_credits.toLocaleString()} Vibe credits/month`);
-
+    // Add AI credits – Free gets one-time 15, paid get monthly refill
+    if (plan.name === "Free") {
+      baseFeatures.push("15 AI credits to start (one-time)");
+    } else {
+      baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
+    }
     // Plan-specific features
     if (plan.name === "Free") {
       baseFeatures.push("Basic slide types (Poll, WordCloud)");
       baseFeatures.push("7-day analytics retention");
     } else if (plan.name === "Standard") {
+      baseFeatures.push("Advanced AI model");
+      baseFeatures.push("Import PowerPoint & PDF");
       baseFeatures.push("All basic slide types + Scale, Sentiment");
       baseFeatures.push("30-day analytics retention");
       baseFeatures.push("Buy additional credits");
     } else if (plan.name === "Pro") {
+      baseFeatures.push("Advanced AI model");
       baseFeatures.push("All slide types (Quiz, Timeline, etc.)");
       baseFeatures.push("Import PowerPoint & PDF");
       baseFeatures.push("Premium themes");
@@ -161,6 +168,11 @@ const Pricing = () => {
 
   return (
     <div className="min-h-screen bg-gradient-hero">
+      <DocumentHead
+        title="Pricing – Clasly"
+        description="Plans and pricing. Free trial, Pro, and enterprise options."
+        path="/pricing"
+      />
       <Header />
 
       <main className="pt-32 pb-20 px-4">
@@ -325,10 +337,10 @@ const Pricing = () => {
             <p className="text-muted-foreground mb-6">
               We're here to help. Contact us at{" "}
               <a
-                href="mailto:hello@clasly.app"
+                href={`mailto:${CONTACT_EMAIL}`}
                 className="text-primary hover:underline"
               >
-                hello@clasly.app
+                {CONTACT_EMAIL}
               </a>
             </p>
           </motion.div>

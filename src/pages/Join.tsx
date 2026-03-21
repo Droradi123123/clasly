@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Presentation, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
+import { DocumentHead } from "@/components/seo/DocumentHead";
 import { getLectureByCode, joinLecture } from "@/lib/lectureService";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
@@ -19,15 +20,7 @@ const Join = () => {
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  // Check for code in URL params
-  useEffect(() => {
-    const codeFromUrl = searchParams.get("code");
-    if (codeFromUrl && codeFromUrl.length === 6) {
-      setLectureCode(codeFromUrl);
-      handleCodeSubmit(codeFromUrl);
-    }
-  }, [searchParams]);
+  const processedUrlCodeRef = useRef<string | null>(null);
 
   const handleCodeSubmit = async (codeToCheck?: string) => {
     const code = codeToCheck || lectureCode;
@@ -63,6 +56,20 @@ const Join = () => {
     }
   };
 
+  // Check for code in URL params - fill field and auto-submit when length is 6
+  useEffect(() => {
+    const codeFromUrl = searchParams.get("code")?.trim() || "";
+    if (codeFromUrl) {
+      setLectureCode(codeFromUrl);
+      if (codeFromUrl.length === 6 && processedUrlCodeRef.current !== codeFromUrl) {
+        processedUrlCodeRef.current = codeFromUrl;
+        handleCodeSubmit(codeFromUrl);
+      }
+    } else {
+      processedUrlCodeRef.current = null;
+    }
+  }, [searchParams]);
+
   const handleJoin = async () => {
     if (!name.trim()) return;
 
@@ -86,6 +93,11 @@ const Join = () => {
 
   return (
     <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-4">
+      <DocumentHead
+        title="Join a Lecture – Clasly"
+        description="Enter the code to join a live session."
+        path="/join"
+      />
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}

@@ -12,24 +12,21 @@ const PAYPAL_API_BASE =
     ? "https://api-m.paypal.com"
     : "https://api-m.sandbox.paypal.com";
 
-// Credit packs configuration
+// Credit packs configuration – AI credits only (single credit type)
 const CREDIT_PACKS = {
   small: {
     name: "Small Pack",
     ai_tokens: 100,
-    vibe_credits: 50,
     price_usd: 3,
   },
   medium: {
     name: "Medium Pack",
     ai_tokens: 500,
-    vibe_credits: 250,
     price_usd: 12,
   },
   large: {
     name: "Large Pack",
     ai_tokens: 2000,
-    vibe_credits: 1000,
     price_usd: 40,
   },
 };
@@ -120,12 +117,11 @@ serve(async (req) => {
             currency_code: "USD",
             value: pack.price_usd.toFixed(2),
           },
-          description: `Clasly ${pack.name} - ${pack.ai_tokens} AI Tokens + ${pack.vibe_credits} Vibe Credits`,
+          description: `Clasly ${pack.name} - ${pack.ai_tokens} AI Credits`,
           custom_id: JSON.stringify({
             user_id: user.id,
             pack_id: pack_id,
             ai_tokens: pack.ai_tokens,
-            vibe_credits: pack.vibe_credits,
             type: "credits_topup",
           }),
         },

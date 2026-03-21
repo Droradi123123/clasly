@@ -56,13 +56,24 @@ export function SentimentMeterSlide({
   
   const hasResults = totalResponses > 0;
   const isMinimal = designStyleId === 'minimal';
+  const isCompact = designStyleId === 'compact';
+  const isEmojiRow = slide.design?.sentimentMeterVariant === 'emojiRow';
   const textColor = slide.design?.textColor || '#ffffff';
 
   const leftEmoji = content.leftEmoji || '😡';
   const rightEmoji = content.rightEmoji || '😍';
+  const emojiRow = [leftEmoji, '😕', '😐', '🙂', rightEmoji];
   const average = liveResults?.average ?? 50;
   const distribution = liveResults?.distribution || Array(10).fill(0);
   const maxCount = Math.max(...distribution, 1);
+  const bucketCount = distribution.length;
+  const bucketsPerEmoji = Math.max(1, Math.floor(bucketCount / emojiRow.length));
+  const emojiCounts = emojiRow.map((_, i) => {
+    const start = i * bucketsPerEmoji;
+    const end = i === emojiRow.length - 1 ? bucketCount : start + bucketsPerEmoji;
+    return distribution.slice(start, end).reduce((a, b) => a + b, 0);
+  });
+  const maxEmojiCount = Math.max(...emojiCounts, 1);
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
@@ -71,19 +82,54 @@ export function SentimentMeterSlide({
           question={content.question}
           onEdit={(q) => onUpdate?.({ ...content, question: q })}
           editable={isEditing}
-          subtitle={
-            isEditing
-              ? "Continuous emotional scale"
-              : hasResults
-                ? `${totalResponses} response${totalResponses === 1 ? "" : "s"} · average ${Math.round(average)}/100`
-                : undefined
-          }
+          subtitle={isEditing ? "Continuous emotional scale" : undefined}
           textColor={textColor}
         />
 
         {/* Content area */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 overflow-hidden min-h-0">
           <div className="w-full max-w-2xl">
+            {isEmojiRow ? (
+            /* emojiRow: row of 5 emojis, tap to select; results show distribution */
+            <div className="space-y-6">
+              <div className="flex justify-between items-end gap-2">
+                {emojiRow.map((emoji, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="flex flex-col items-center gap-2 flex-1"
+                  >
+                    <span className="text-4xl md:text-5xl cursor-default select-none">{emoji}</span>
+                    {hasResults && (
+                      <motion.div
+                        className="w-full bg-white/30 rounded-t max-h-16 min-h-[4px]"
+                        initial={{ height: 0 }}
+                        animate={{ height: `${(emojiCounts[i] / maxEmojiCount) * 100}%` }}
+                        transition={{ type: 'spring', stiffness: 150 }}
+                      />
+                    )}
+                    {hasResults && <span className="text-white/70 text-xs">{emojiCounts[i]}</span>}
+                  </motion.div>
+                ))}
+              </div>
+              {hasResults && (
+                <div className="text-center">
+                  <span className="text-white/80 text-sm">Average: {(average / 100 * (emojiRow.length - 1) + 1).toFixed(1)} / {emojiRow.length}</span>
+                </div>
+              )}
+              {!hasResults && (
+                <div className="text-center">
+                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
+                    <Users className="w-4 h-4" />
+                    <span>Tap an emoji – waiting for responses...</span>
+                  </div>
+                </div>
+              )}
+            </div>
+            ) : (
+            <>
             {/* Emoji labels - editable */}
             <motion.div
               className="flex items-center justify-between mb-6"
@@ -146,7 +192,7 @@ export function SentimentMeterSlide({
               className="relative mb-6"
             >
               {/* Track */}
-              <div className="h-14 md:h-16 rounded-2xl bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 relative overflow-hidden shadow-lg">
+              <div className={`rounded-2xl bg-gradient-to-r from-red-500 via-yellow-500 to-green-500 relative overflow-hidden shadow-lg ${isCompact ? 'h-10 md:h-12' : 'h-14 md:h-16'}`}>
                 <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent" />
                 
                 {/* Distribution overlay */}
@@ -185,7 +231,7 @@ export function SentimentMeterSlide({
                 
                 {/* Top indicator with emoji */}
                 <motion.div
-                  className="absolute -top-14 left-1/2 -translate-x-1/2 flex flex-col items-center"
+                  className={`absolute left-1/2 -translate-x-1/2 flex flex-col items-center ${isCompact ? '-top-10' : '-top-14'}`}
                   initial={{ y: 10, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
                 >
@@ -194,7 +240,7 @@ export function SentimentMeterSlide({
                   </span>
                   {hasResults && (
                     <div className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-sm">
-                      <span className="text-white font-bold text-sm tabular-nums">{Math.round(average)} / 100</span>
+                      <span className="text-white font-bold text-sm">{Math.round(average)}%</span>
                     </div>
                   )}
                 </motion.div>
@@ -215,7 +261,7 @@ export function SentimentMeterSlide({
               </motion.div>
             ) : !isEditing ? (
               <motion.div
-                animate={!isMinimal ? { opacity: [0.5, 1, 0.5] } : undefined}
+                animate={!isMinimal ? { opacity: isCompact ? [0.6, 0.9, 0.6] : [0.5, 1, 0.5] } : undefined}
                 transition={{ duration: 2, repeat: Infinity }}
                 className="text-center"
               >
@@ -226,8 +272,8 @@ export function SentimentMeterSlide({
               </motion.div>
             ) : null}
 
-            {/* Editor hint */}
-            {isEditing && (
+            {/* Editor hint - only when not emojiRow */}
+            {isEditing && !isEmojiRow && (
               <motion.p
                 className="text-center text-white/50 mt-6 text-xs md:text-sm"
                 animate={{ opacity: [0.4, 0.7, 0.4] }}
@@ -235,6 +281,8 @@ export function SentimentMeterSlide({
               >
                 Participants will slide to express their sentiment
               </motion.p>
+            )}
+            </>
             )}
           </div>
         </div>

@@ -1,16 +1,22 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useIsMobile } from "@/hooks/useIsMobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { lovable } from "@/integrations/lovable";
 import { supabase } from "@/integrations/supabase/client";
+import { getOAuthAllowedHosts } from "@/lib/authUtils";
 import { toast } from "sonner";
 import { Sparkles, Mail, ArrowRight, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useRef } from "react";
+
+function getRedirectUrl(): string {
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -22,6 +28,7 @@ interface AuthModalProps {
 
 export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo = 'dashboard' }: AuthModalProps) => {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [isLoading, setIsLoading] = useState(false);
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true);
@@ -44,9 +51,16 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
         // Close modal and navigate
         onClose();
         
+        // Always save prompt before redirect so user never loses it (mobile: for when they continue on desktop)
         if (promptText && redirectTo === 'builder') {
-          // Store prompt for builder page
           localStorage.setItem('clasly_pending_prompt', promptText);
+          localStorage.setItem('clasly_pending_prompt_ts', String(Date.now()));
+        }
+        
+        // Mobile: go to Continue on Desktop (prompt saved for when they open on desktop)
+        if (isMobile) {
+          navigate('/continue-on-desktop', { replace: true });
+        } else if (promptText && redirectTo === 'builder') {
           navigate(`/builder?prompt=${encodeURIComponent(promptText)}&audience=general`);
         } else {
           navigate('/dashboard');
@@ -59,71 +73,44 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
     return () => {
       subscription.unsubscribe();
     };
-  }, [isOpen, onClose, onSuccess, promptText, redirectTo, navigate]);
+  }, [isOpen, onClose, onSuccess, promptText, redirectTo, navigate, isMobile]);
   
-  const getRedirectUrl = () => {
-    return window.location.origin;
-  };
-
-  const isCustomDomain = () => {
-    return !window.location.hostname.includes("lovable.app") &&
-           !window.location.hostname.includes("lovableproject.com") &&
-           window.location.hostname !== "localhost";
-  };
-
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
       // Store prompt for after redirect (only if going to builder)
       if (promptText && redirectTo === 'builder') {
         localStorage.setItem("clasly_pending_prompt", promptText);
+        localStorage.setItem("clasly_pending_prompt_ts", String(Date.now()));
       }
-      
-      if (isCustomDomain()) {
-        // Bypass Lovable auth-bridge for custom domains
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: getRedirectUrl(),
-            skipBrowserRedirect: true,
-          },
-        });
-        
-        if (error) {
-          toast.error("Failed to sign in with Google");
-          console.error("Google sign-in error:", error);
-          setIsLoading(false);
-          return;
-        }
 
-        if (data?.url) {
-          const oauthUrl = new URL(data.url);
-          const h = oauthUrl.hostname;
-          const isAllowed =
-            h === "accounts.google.com" ||
-            h.endsWith(".supabase.co") ||
-            h.endsWith(".supabase.in");
-          if (!isAllowed) {
-            console.error("Blocked OAuth URL host:", h);
-            throw new Error("Invalid OAuth redirect URL");
-          }
-          window.location.href = data.url;
-        } else {
-          toast.error("Could not start Google sign-in. Check Supabase URL and Google provider settings.");
-          console.error("signInWithOAuth returned no URL", { data });
-          setIsLoading(false);
+      if (isMobile) {
+        sessionStorage.setItem("clasly_mobile_oauth_pending", "1");
+      }
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (error) {
+        toast.error("Failed to sign in with Google");
+        console.error("Google sign-in error:", error);
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.url) {
+        const oauthUrl = new URL(data.url);
+        const allowedHosts = getOAuthAllowedHosts();
+        if (!allowedHosts.some((host) => oauthUrl.hostname === host || oauthUrl.hostname.endsWith("." + host))) {
+          throw new Error("Invalid OAuth redirect URL");
         }
+        window.location.href = data.url;
       } else {
-        // For Lovable domains, use the managed flow
-        const { error } = await lovable.auth.signInWithOAuth("google", {
-          redirect_uri: getRedirectUrl(),
-        });
-        
-        if (error) {
-          toast.error("Failed to sign in with Google");
-          console.error("Google sign-in error:", error);
-          setIsLoading(false);
-        }
+        setIsLoading(false);
       }
     } catch (err) {
       toast.error("An unexpected error occurred");
@@ -179,9 +166,9 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden border-border/50 bg-background">
-        {/* Decorative header */}
-        <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-6 pt-8 pb-6">
+      <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-md w-[calc(100vw-2rem)] sm:w-full p-0 overflow-hidden border-border/50 bg-background max-h-[90vh] overflow-y-auto">
+        {/* Decorative header - compact on mobile */}
+        <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-4 sm:px-6 pt-5 sm:pt-8 pb-4 sm:pb-6">
           <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl" />
           <div className="absolute bottom-0 left-0 w-24 h-24 bg-primary/10 rounded-full blur-2xl" />
           
@@ -191,10 +178,10 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
             transition={{ duration: 0.3 }}
             className="relative"
           >
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
-              <Sparkles className="w-7 h-7 text-primary-foreground" />
+            <div className={`rounded-2xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20 ${isMobile ? "w-11 h-11 mb-3" : "w-14 h-14 mb-4"}`}>
+              <Sparkles className={`text-primary-foreground ${isMobile ? "w-6 h-6" : "w-7 h-7"}`} />
             </div>
-            <DialogTitle className="text-2xl font-display font-bold text-foreground mb-2">
+            <DialogTitle className={`font-display font-bold text-foreground mb-2 ${isMobile ? "text-xl" : "text-2xl"}`}>
               {promptText ? "Let's build your presentation!" : "Welcome to Clasly"}
             </DialogTitle>
             <p className="text-muted-foreground text-sm">
@@ -206,7 +193,7 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
           </motion.div>
         </div>
 
-        <div className="px-6 pb-6">
+        <div className="px-4 sm:px-6 pb-4 sm:pb-6">
           <AnimatePresence mode="wait">
             {!showEmailForm ? (
               <motion.div
@@ -222,7 +209,7 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
                   size="lg"
                   onClick={handleGoogleSignIn}
                   disabled={isLoading}
-                  className="w-full h-12 text-base font-medium border-2 hover:border-primary/50 hover:bg-primary/5 transition-all"
+                  className="w-full h-11 sm:h-12 text-sm sm:text-base font-medium border-2 hover:border-primary/50 hover:bg-primary/5 transition-all"
                 >
                   {isLoading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -340,9 +327,12 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
           </AnimatePresence>
 
           {/* Trust indicators */}
-          <div className="mt-6 pt-4 border-t border-border/50">
+          <div className="mt-4 sm:mt-6 pt-3 sm:pt-4 border-t border-border/50">
             <p className="text-xs text-center text-muted-foreground">
-              By continuing, you agree to our Terms of Service and Privacy Policy
+              By continuing, you agree to our{" "}
+              <a href="/terms" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              {" "}and{" "}
+              <a href="/privacy" className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">Privacy Policy</a>
             </p>
           </div>
         </div>

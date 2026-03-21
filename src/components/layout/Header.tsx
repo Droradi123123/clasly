@@ -1,7 +1,14 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle } from "lucide-react";
+import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare, Gift, Copy } from "lucide-react";
 import { useState } from "react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { useReferralCode } from "@/hooks/useReferralCode";
+import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/auth/AuthModal";
 import {
@@ -13,14 +20,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 
 const Header = () => {
   const location = useLocation();
   const isHome = location.pathname === "/";
+  const isWebinar = location.pathname === "/webinar";
   const { user, isLoading, signOut } = useAuth();
+  const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const { code: referralCode, isLoading: isReferralLoading } = useReferralCode();
   
   // Subscription data
   const { 
@@ -31,9 +42,11 @@ const Header = () => {
     plan
   } = useSubscriptionContext();
   
-  const monthlyTokens = plan?.monthly_ai_tokens ?? 50;
-  const tokenPercentage = monthlyTokens > 0 ? Math.min(100, (aiTokensRemaining / monthlyTokens) * 100) : 0;
-  const isLowCredits = tokenPercentage < 20;
+  // Free plan has 0 monthly refill; show balance vs initial 15-credit grant for progress
+  const monthlyTokens = plan?.monthly_ai_tokens ?? 0;
+  const displayCap = isFree ? 15 : (monthlyTokens || 1);
+  const tokenPercentage = displayCap > 0 ? Math.min(100, (aiTokensRemaining / displayCap) * 100) : 0;
+  const isLowCredits = isFree ? aiTokensRemaining <= 2 : (monthlyTokens > 0 && (aiTokensRemaining / monthlyTokens) < 0.2);
 
   const getInitials = (name: string | undefined, email: string | undefined) => {
     if (name) {
@@ -54,8 +67,8 @@ const Header = () => {
   return (
     <>
       <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/50">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2">
+        <div className="container mx-auto px-4 sm:px-6 min-h-16 h-16 flex items-center justify-between gap-2 overflow-hidden">
+          <Link to="/" className="flex items-center gap-2 shrink-0 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-gradient-primary flex items-center justify-center shadow-md">
               <Presentation className="w-5 h-5 text-primary-foreground" />
             </div>
@@ -70,6 +83,12 @@ const Header = () => {
               Home
             </Link>
             <Link 
+              to="/webinar" 
+              className={`text-sm font-medium transition-colors hover:text-primary ${isWebinar ? 'text-primary' : 'text-muted-foreground'}`}
+            >
+              Clasly for Webinars
+            </Link>
+            <Link 
               to="/pricing" 
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
             >
@@ -77,7 +96,7 @@ const Header = () => {
             </Link>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Button variant="ghost" size="sm" asChild>
               <Link to="/join">
                 Join Session
@@ -88,6 +107,43 @@ const Header = () => {
               <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
             ) : user ? (
               <>
+                {/* Referral: share link, get 20 credits per signup */}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" title="Share & earn 20 credits">
+                      <Gift className="h-5 w-5 text-primary" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80" align="end">
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Gift className="h-5 w-5 text-primary shrink-0" />
+                        <h4 className="font-semibold text-sm">Share & earn credits</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Share your link. When someone signs up with it, you get <strong>20 AI credits</strong>.
+                      </p>
+                      {isReferralLoading ? (
+                        <div className="h-9 rounded-md bg-muted animate-pulse" />
+                      ) : referralCode ? (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          className="w-full justify-start gap-2 font-mono text-xs"
+                          onClick={() => {
+                            const url = `${typeof window !== "undefined" ? window.location.origin : ""}/?ref=${referralCode}`;
+                            navigator.clipboard.writeText(url).then(() => toast.success("Link copied!"));
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Copy my link
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Loading your link…</p>
+                      )}
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="relative h-9 w-9 rounded-full">
@@ -133,10 +189,10 @@ const Header = () => {
                       <div className="flex items-center justify-between text-xs">
                         <span className="flex items-center gap-1.5 text-muted-foreground">
                           <Zap className="w-3.5 h-3.5" />
-                          AI Tokens
+                          AI credits
                         </span>
                         <span className={`font-medium ${isLowCredits ? 'text-destructive' : ''}`}>
-                          {aiTokensRemaining} remaining
+                          {isSubLoading ? "..." : `${aiTokensRemaining} remaining`}
                         </span>
                       </div>
                       <Progress 
@@ -194,6 +250,14 @@ const Header = () => {
                     )}
                     
                     <DropdownMenuSeparator />
+                    {isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin/conversations" className="cursor-pointer">
+                          <MessageSquare className="w-4 h-4 mr-2" />
+                          View User Conversations
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem asChild>
                       <Link to="/dashboard" className="cursor-pointer">
                         <LayoutDashboard className="w-4 h-4 mr-2" />
@@ -218,7 +282,7 @@ const Header = () => {
             ) : (
               <Button variant="hero" size="sm" onClick={() => setShowAuthModal(true)}>
                 <Sparkles className="w-4 h-4" />
-                Get Started
+                Start for free
               </Button>
             )}
           </div>

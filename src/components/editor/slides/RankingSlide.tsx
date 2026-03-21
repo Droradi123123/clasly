@@ -44,25 +44,13 @@ export function RankingSlide({
   const styleConfig = designStyle.config;
 
   const hasResults = totalResponses > 0;
+  const isCompact = designStyleId === 'compact';
+  const isPodium = slide.design?.rankingVariant === 'podium';
 
-  const sortedRankings =
-    hasResults && liveResults?.rankings?.length
-      ? [...liveResults.rankings].sort((a, b) => a.avgRank - b.avgRank)
-      : null;
-
-  const displayItems = sortedRankings
-    ? sortedRankings.map((r) => r.item)
+  // Sort items by average rank if we have results
+  const displayItems = hasResults && liveResults?.rankings
+    ? liveResults.rankings.sort((a, b) => a.avgRank - b.avgRank).map(r => r.item)
     : content.items;
-
-  const answerKey =
-    content.correctOrder && content.correctOrder.length === content.items.length
-      ? content.correctOrder
-      : content.items;
-
-  const canCompare =
-    !!showCorrectAnswer &&
-    answerKey.length === displayItems.length &&
-    answerKey.every((item) => content.items.includes(item));
 
   const handleQuestionChange = (q: string) => {
     onUpdate?.({ ...content, question: q });
@@ -97,23 +85,52 @@ export function RankingSlide({
           question={content.question} 
           onEdit={handleQuestionChange} 
           editable={isEditing} 
-          subtitle={
-            isEditing
-              ? "Ranking: Order items by importance"
-              : hasResults
-                ? `${totalResponses} ranking${totalResponses === 1 ? "" : "s"} · audience consensus below`
-                : undefined
-          }
+          subtitle={isEditing ? "Ranking: Order items by importance" : undefined}
           textColor={textColor}
         />
         
         <div className="flex-1 flex items-center justify-center px-4 md:px-6 pb-4 min-h-0 overflow-y-auto">
-          <div className="w-full max-w-lg max-h-full space-y-2 md:space-y-3">
+          <div className={`w-full max-h-full ${isCompact ? 'flex flex-row flex-wrap justify-center gap-2 md:gap-3 max-w-2xl' : 'max-w-lg space-y-2 md:space-y-3'}`}>
+            {isPodium && hasResults && liveResults?.rankings ? (
+            /* Podium: 1st, 2nd, 3rd with visual bars / medals */
+            <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
+              {liveResults.rankings.sort((a, b) => a.avgRank - b.avgRank).map((r, index) => {
+                const place = index + 1;
+                const heightPercent = 100 - (index / Math.max(liveResults.rankings.length - 1, 1)) * 45;
+                return (
+                  <motion.div
+                    key={r.item}
+                    layout
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.08 }}
+                    className="flex items-center gap-3"
+                  >
+                    <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-white ${
+                      place === 1 ? 'bg-amber-500' : place === 2 ? 'bg-gray-400' : place === 3 ? 'bg-amber-700' : 'bg-white/20'
+                    }`}>
+                      {place}
+                    </div>
+                    <div className="flex-1 min-w-0 rounded-xl overflow-hidden bg-white/10 border border-white/20" style={{ minHeight: 48 }}>
+                      <motion.div
+                        className={`h-full flex items-center px-4 bg-gradient-to-r ${ITEM_COLORS[index % ITEM_COLORS.length]}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${heightPercent}%` }}
+                        transition={{ type: 'spring', stiffness: 150, damping: 25 }}
+                      >
+                        <span className="text-white font-semibold text-sm md:text-base truncate">{r.item}</span>
+                      </motion.div>
+                    </div>
+                    <span className="text-white/80 text-sm font-medium flex-shrink-0">avg {r.avgRank.toFixed(1)}</span>
+                  </motion.div>
+                );
+              })}
+            </div>
+            ) : (
+            <>
             {displayItems.map((item, index) => {
               const originalIndex = content.items.indexOf(item);
               const colorIndex = isEditing ? index : originalIndex;
-              const avgRank = sortedRankings?.find((r) => r.item === item)?.avgRank;
-              const wrongSlot = canCompare && answerKey[index] !== item;
               
               return (
                 <motion.div 
@@ -129,20 +146,20 @@ export function RankingSlide({
                 >
                   <motion.div
                     className={`
-                      flex items-center gap-3 p-3 md:p-4 rounded-2xl 
+                      flex items-center gap-3 rounded-2xl 
                       bg-gradient-to-r ${ITEM_COLORS[colorIndex % ITEM_COLORS.length]} 
-                      shadow-lg border-2
-                      ${wrongSlot ? "border-amber-400 ring-2 ring-amber-400/40" : "border-white/20"}
+                      shadow-lg border border-white/20
+                      ${isCompact ? 'p-2 md:p-3 min-w-[160px] flex-1 max-w-[200px] gap-2' : 'p-3 md:p-4 gap-3'}
                     `}
-                    whileHover={!isEditing ? { scale: 1.01, x: 5 } : undefined}
+                    whileHover={!isEditing ? { scale: isCompact ? 1.02 : 1.01, x: isCompact ? 2 : 5 } : undefined}
                     style={{ fontFamily: theme.tokens.fontFamily }}
                   >
                     {/* Rank number */}
-                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-white/20 flex items-center justify-center font-bold text-base md:text-lg text-white flex-shrink-0">
+                    <div className={`rounded-xl bg-white/20 flex items-center justify-center font-bold text-white flex-shrink-0 ${isCompact ? 'w-6 h-6 md:w-8 md:h-8 text-sm md:text-base' : 'w-8 h-8 md:w-10 md:h-10 text-base md:text-lg'}`}>
                       {index + 1}
                     </div>
                     
-                    {/* Drag handle — editor only (students rank on phone) */}
+                    {/* Drag handle - editor only */}
                     {isEditing && (
                       <GripVertical className="w-4 h-4 md:w-5 md:h-5 text-white/60 flex-shrink-0" />
                     )}
@@ -156,18 +173,15 @@ export function RankingSlide({
                         placeholder={`Item ${index + 1}`}
                       />
                     ) : (
-                      <span className="flex-1 text-white font-semibold text-sm md:text-base truncate">
+                      <span className="flex-1 min-w-0 text-white font-semibold text-sm md:text-base break-words">
                         {item}
                       </span>
                     )}
 
                     {/* Live rank indicator */}
-                    {!isEditing && hasResults && avgRank != null && (
-                      <div className="flex flex-col items-end gap-0.5 text-white/85 text-xs md:text-sm flex-shrink-0 tabular-nums">
-                        <span>Avg rank {avgRank.toFixed(1)}</span>
-                        {wrongSlot && (
-                          <span className="text-amber-200 font-semibold">Not in answer position</span>
-                        )}
+                    {!isEditing && hasResults && liveResults?.rankings && (
+                      <div className="flex items-center gap-1 text-white/80 text-xs md:text-sm flex-shrink-0">
+                        <span>דירוג ממוצע: {liveResults.rankings.find(r => r.item === item)?.avgRank.toFixed(1)}</span>
                       </div>
                     )}
                   </motion.div>
@@ -189,6 +203,7 @@ export function RankingSlide({
             })}
 
             {/* Add item button - editor only */}
+
             {isEditing && content.items.length < 6 && (
               <motion.div
                 initial={{ opacity: 0 }}
@@ -204,29 +219,6 @@ export function RankingSlide({
                   <Plus className="w-4 h-4 mr-2" />
                   Add Item
                 </Button>
-              </motion.div>
-            )}
-
-            {!isEditing && showCorrectAnswer && answerKey.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-4 rounded-xl border border-emerald-500/35 bg-emerald-500/10 p-4"
-              >
-                <p className="text-emerald-200 text-sm font-semibold mb-2">Correct order</p>
-                <ol className="space-y-2">
-                  {answerKey.map((line, i) => (
-                    <li
-                      key={`${line}-${i}`}
-                      className="flex items-center gap-2 text-white/95 text-sm md:text-base"
-                    >
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white/15 font-bold tabular-nums">
-                        {i + 1}
-                      </span>
-                      <span>{line}</span>
-                    </li>
-                  ))}
-                </ol>
               </motion.div>
             )}
 
@@ -275,6 +267,8 @@ export function RankingSlide({
                   Students will rank these items on their phones
                 </p>
               </motion.div>
+            )}
+            </>
             )}
           </div>
         </div>

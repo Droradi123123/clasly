@@ -35,14 +35,14 @@ const PARTICLE_CONFIGS: Record<ThemeId, {
   },
   'soft-pop': {
     shape: 'bubble',
-    colors: ['#FF6B6B', '#FFE66D', '#4ECDC4', '#FF9FF3', '#A8E6CF'],
+    colors: ['#F97316', '#FBBF24', '#FCD34D', '#FDE68A', '#FEF3C7'],
     sizeRange: [8, 24],
     blur: true,
     glow: false,
   },
   'academic-pro': {
     shape: 'circle',
-    colors: ['#1E3A8A', '#3B82F6', '#60A5FA', '#93C5FD'],
+    colors: ['#EAB308', '#FACC15', '#1e3a5f', '#3b82f6'],
     sizeRange: [3, 8],
     blur: false,
     glow: false,
@@ -75,7 +75,7 @@ export function ThemedParticles({
   count = 25,
 }: ThemedParticlesProps) {
   const [particles, setParticles] = useState<Particle[]>([]);
-  const config = PARTICLE_CONFIGS[themeId] || PARTICLE_CONFIGS['neon-cyber'];
+  const config = PARTICLE_CONFIGS[themeId] || PARTICLE_CONFIGS['academic-pro'];
 
   useEffect(() => {
     const newParticles: Particle[] = Array.from({ length: count }, (_, i) => ({

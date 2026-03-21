@@ -1,26 +1,63 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical } from "lucide-react";
+import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
 import {
   getLectureByCode,
+  subscribeLecture,
   submitResponse,
 } from "@/lib/lectureService";
 import { supabase } from "@/integrations/supabase/client";
 import { Slide, SLIDE_TYPES, FinishSentenceSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent } from "@/types/slides";
 import { Json } from "@/integrations/supabase/types";
 import { StudentGameControls } from "@/components/game";
-import { ThemeId, getTheme, THEMES } from "@/types/themes";
+import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
+
+const REALTIME_RESUBSCRIBE_DELAY_MS = 2500;
+
+// Error boundary so one render error does not crash the whole student view
+class StudentErrorBoundary extends React.Component<
+  { children: React.ReactNode; onBackToJoin?: () => void },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[Student] Error boundary caught:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main className="flex-1 p-4 overflow-auto flex flex-col items-center justify-center min-h-[50vh] text-center">
+          <p className="text-muted-foreground mb-4">
+            Something went wrong. Try refreshing or re-joining the lecture.
+          </p>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              Refresh
+            </Button>
+            {this.props.onBackToJoin && (
+              <Button onClick={this.props.onBackToJoin}>Back to Join</Button>
+            )}
+          </div>
+        </main>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const emojis = ["👍", "❤️", "🎉", "🤔", "💡", "👏"];
-
-// Default option colors matching presenter theme
-const DEFAULT_OPTION_COLORS = THEMES['neon-cyber'].optionColors;
 
 const Student = () => {
   const { lectureCode } = useParams();
@@ -40,11 +77,7 @@ const Student = () => {
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [questionText, setQuestionText] = useState("");
   const [lastReaction, setLastReaction] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [lectureRealtimeConnected, setLectureRealtimeConnected] = useState(false);
-  const [slideSyncConnected, setSlideSyncConnected] = useState(false);
-  const lectureSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const lastAppliedUpdatedAtRef = useRef<string | null>(null);
+  const [isConnected, setIsConnected] = useState(true);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -54,22 +87,23 @@ const Student = () => {
   const [sentimentValue, setSentimentValue] = useState([50]);
   const [agreeValue, setAgreeValue] = useState([50]);
   const [sentenceInput, setSentenceInput] = useState("");
-
-  useEffect(() => {
-    setIsConnected(lectureRealtimeConnected || slideSyncConnected);
-  }, [lectureRealtimeConnected, slideSyncConnected]);
+  const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
+  const [realtimeReconnectKey, setRealtimeReconnectKey] = useState(0);
+  const previousPointsRef = React.useRef<number>(0);
+  const lastBroadcastSlideIndexRef = React.useRef<number | null>(null);
+  const lastBroadcastTsRef = React.useRef<number>(0);
+  const broadcastRefetchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lectureSyncChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const lastAppliedUpdatedAtRef = React.useRef<string | null>(null);
 
   const currentSlide = slides[currentSlideIndex];
   const slideTypeInfo = currentSlide ? SLIDE_TYPES.find(t => t.type === currentSlide.type) : null;
   const isInteractiveSlide = slideTypeInfo?.category === 'interactive' || slideTypeInfo?.category === 'quiz';
 
-  // Get theme colors - use lecture settings or default
-  const themeId: ThemeId = (lecture?.settings?.themeId as ThemeId) || 'neon-cyber';
+  // Theme from current slide design first, then lecture settings, so option colors match presenter
+  const themeId: ThemeId = (currentSlide?.design?.themeId as ThemeId) ?? (lecture?.settings?.themeId as ThemeId) ?? 'academic-pro';
   const theme = getTheme(themeId);
-  const optionColors = theme.optionColors || DEFAULT_OPTION_COLORS;
-
-  // Helper to get color class for option index
-  const getOptionColor = (index: number) => optionColors[index % optionColors.length];
+  const getOptionColor = (index: number) => getSafeOptionColor(theme, index);
 
   // Load lecture and subscribe to updates
   useEffect(() => {
@@ -79,7 +113,6 @@ const Student = () => {
       try {
         const data = await getLectureByCode(lectureCode);
         if (data) {
-          lastAppliedUpdatedAtRef.current = data.updated_at;
           setLecture(data);
           setSlides((data.slides as unknown as Slide[]) || []);
           setCurrentSlideIndex(data.current_slide_index || 0);
@@ -95,15 +128,34 @@ const Student = () => {
   }, [lectureCode]);
 
   // Helper to apply lecture update - extracted for reuse
-  const applyLectureUpdate = React.useCallback((updatedLecture: any) => {
-    lastAppliedUpdatedAtRef.current = updatedLecture.updated_at;
+  // When fromRefetch is true (scheduled refetch after broadcast), always apply newSlides so student gets latest. Otherwise during broadcast window avoid overwriting slides with stale poll/postgres data.
+  // Versioning: skip apply from poll/postgres if updated_at is not newer than last applied (prevents stale winning).
+  const applyLectureUpdate = React.useCallback((updatedLecture: any, fromRefetch?: boolean) => {
+    const incomingUpdatedAt = updatedLecture?.updated_at ?? null;
+    if (!fromRefetch && incomingUpdatedAt) {
+      const last = lastAppliedUpdatedAtRef.current;
+      if (last != null) {
+        const incomingMs = new Date(incomingUpdatedAt).getTime();
+        const lastMs = new Date(last).getTime();
+        if (incomingMs <= lastMs) return; // Stale update, skip
+      }
+    }
+    if (incomingUpdatedAt) lastAppliedUpdatedAtRef.current = incomingUpdatedAt;
+
     const newSlideIndex = updatedLecture.current_slide_index;
     const newSlides = (updatedLecture.slides as unknown as Slide[]) || [];
-    
+    const now = Date.now();
+    const recentlyFromBroadcast =
+      lastBroadcastTsRef.current > 0 &&
+      now - lastBroadcastTsRef.current < 3000 &&
+      lastBroadcastSlideIndexRef.current !== null;
+    const indexToApply = recentlyFromBroadcast
+      ? (newSlideIndex === lastBroadcastSlideIndexRef.current ? newSlideIndex : lastBroadcastSlideIndexRef.current!)
+      : newSlideIndex;
+
     // Reset answer state when slide changes
     setCurrentSlideIndex((prevIndex: number) => {
-      if (newSlideIndex !== prevIndex) {
-        console.log('[Student] Slide changed from', prevIndex, 'to', newSlideIndex);
+      if (indexToApply !== prevIndex) {
         setHasAnswered(false);
         setSelectedOption(null);
         setWordInput("");
@@ -114,16 +166,18 @@ const Student = () => {
         setAgreeValue([50]);
         setSentenceInput("");
       }
-      return newSlideIndex;
+      return indexToApply;
     });
-    
-    // Update slides if they changed
-    setSlides(newSlides);
+
+    // Always apply slides when this update is from our scheduled refetch (after broadcast); otherwise during broadcast window skip to avoid stale poll/postgres overwriting
+    if (newSlides.length > 0 && (fromRefetch || !recentlyFromBroadcast)) {
+      setSlides(newSlides);
+    }
     setLecture(updatedLecture);
   }, []);
 
   // Hard refetch lecture state (used for guaranteed instant sync)
-  const refetchLectureState = React.useCallback(async (lectureId: string) => {
+  const refetchLectureState = React.useCallback(async (lectureId: string, fromRefetch = false) => {
     const { data, error } = await supabase
       .from('lectures')
       .select('*')
@@ -131,12 +185,7 @@ const Student = () => {
       .single();
 
     if (!error && data) {
-      const prev = lastAppliedUpdatedAtRef.current;
-      if (prev && new Date(data.updated_at) < new Date(prev)) {
-        console.log('[Student] Skip stale refetch (older updated_at)');
-        return data;
-      }
-      applyLectureUpdate(data);
+      applyLectureUpdate(data, fromRefetch);
       return data;
     }
     if (error) {
@@ -145,14 +194,14 @@ const Student = () => {
     return null;
   }, [applyLectureUpdate]);
 
-  // Subscribe to lecture updates - Real-time sync with presenter + aggressive polling fallback
+  // 3-layer sync: (1) Broadcast lecture-sync-${id} – fastest; (2) postgres_changes on lectures; (3) polling fallback with backoff
   useEffect(() => {
     if (!lecture?.id) return;
 
     console.log('[Student] Subscribing to lecture updates:', lecture.id);
-    setLectureRealtimeConnected(false);
+    setIsConnected(false);
 
-    let pollIntervalMs = 1000; // Start with 1s polling for faster sync
+    let pollIntervalMs = 1000; // Layer 3: start 1s, exponential backoff on success up to 3s
     let pollTimeoutId: NodeJS.Timeout | null = null;
     let lastUpdatedAt = lecture.updated_at;
     let lastSlideIndex = lecture.current_slide_index;
@@ -200,10 +249,10 @@ const Student = () => {
       pollTimeoutId = setTimeout(pollForUpdates, pollIntervalMs);
     };
 
-    // Start polling immediately
+    // Layer 3: start polling immediately
     pollTimeoutId = setTimeout(pollForUpdates, pollIntervalMs);
 
-    // Primary: Realtime subscription
+    // Layer 2: postgres_changes on lectures (updated_at + current_slide_index)
     const channel = supabase
       .channel(`lecture-live-${lecture.id}`)
       .on(
@@ -230,11 +279,12 @@ const Student = () => {
       .subscribe((status, err) => {
         console.log('[Student] Subscription status:', status, err);
         isRealtimeActive = status === 'SUBSCRIBED';
-        setLectureRealtimeConnected(status === 'SUBSCRIBED');
-        
+        setIsConnected(status === 'SUBSCRIBED');
+
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[Student] Realtime channel error, relying on polling');
+          console.warn('[Student] Realtime channel error, relying on polling; will re-subscribe after delay');
           pollIntervalMs = 1000; // Speed up polling if realtime fails
+          setTimeout(() => setRealtimeReconnectKey((k) => k + 1), REALTIME_RESUBSCRIBE_DELAY_MS);
         }
       });
 
@@ -243,31 +293,51 @@ const Student = () => {
       if (pollTimeoutId) clearTimeout(pollTimeoutId);
       supabase.removeChannel(channel);
     };
-  }, [lecture?.id, applyLectureUpdate, refetchLectureState]);
+  }, [lecture?.id, applyLectureUpdate, refetchLectureState, realtimeReconnectKey]);
 
-  // Ultra-fast slide sync: presenter broadcasts on every navigation; also used to notify presenter of responses
+  // Layer 1: broadcast – presenter sends slide_changed on lecture-sync-${id}; apply immediately, then delayed debounced refetch. Channel ref used to send response_changed after submit.
   useEffect(() => {
     if (!lecture?.id) return;
 
     const channel = supabase.channel(`lecture-sync-${lecture.id}`, {
-      config: { broadcast: { self: true } },
+      config: { broadcast: { self: false } },
     });
-
     lectureSyncChannelRef.current = channel;
 
     channel
-      .on('broadcast', { event: 'slide_changed' }, async () => {
-        console.log('[Student] Broadcast slide_changed');
-        await refetchLectureState(lecture.id);
+      .on('broadcast', { event: 'slide_changed' }, ({ payload }) => {
+        const p = payload as { currentSlideIndex?: number; lectureId?: string; ts?: number };
+        const newIndex = p.currentSlideIndex;
+        if (typeof newIndex === 'number') {
+          lastBroadcastSlideIndexRef.current = newIndex;
+          lastBroadcastTsRef.current = Date.now();
+          // Apply immediately so student sees the right slide without waiting for refetch
+          setCurrentSlideIndex(newIndex);
+          setHasAnswered(false);
+          setSelectedOption(null);
+          setWordInput('');
+          setNumberInput('');
+          setScaleValue([3]);
+          setRankingOrder([]);
+          setSentimentValue([50]);
+          setAgreeValue([50]);
+          setSentenceInput('');
+          // Debounced refetch: cancel any pending, schedule after 800ms so DB write has completed (avoids stale data flicker)
+          if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
+          const lid = lecture.id;
+          broadcastRefetchTimeoutRef.current = setTimeout(() => {
+            broadcastRefetchTimeoutRef.current = null;
+            refetchLectureState(lid, true);
+          }, 800);
+        }
       })
       .subscribe((status) => {
         console.log('[Student] Slide sync channel status:', status);
-        setSlideSyncConnected(status === 'SUBSCRIBED');
       });
 
     return () => {
       lectureSyncChannelRef.current = null;
-      setSlideSyncConnected(false);
+      if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
       supabase.removeChannel(channel);
     };
   }, [lecture?.id, refetchLectureState]);
@@ -307,12 +377,13 @@ const Student = () => {
       
       if (data) {
         setStudent(data);
+        previousPointsRef.current = (data as any).points ?? 0;
       }
     };
 
     loadStudent();
 
-    // Subscribe to student updates (for points)
+    // Subscribe to student updates (for points) and show +N animation when points increase
     const channel = supabase
       .channel(`student-${studentId}`)
       .on(
@@ -324,7 +395,15 @@ const Student = () => {
           filter: `id=eq.${studentId}`,
         },
         (payload) => {
-          setStudent(payload.new);
+          const newData = payload.new as any;
+          const newPoints = newData?.points ?? 0;
+          const prev = previousPointsRef.current;
+          setStudent(newData);
+          previousPointsRef.current = newPoints;
+          if (newPoints > prev && prev >= 0) {
+            setPointsEarnedAnimation(newPoints - prev);
+            setTimeout(() => setPointsEarnedAnimation(null), 2200);
+          }
         }
       )
       .subscribe();
@@ -382,15 +461,19 @@ const Student = () => {
         isCorrect,
         points
       );
-      lectureSyncChannelRef.current?.send({
-        type: 'broadcast',
-        event: 'response_changed',
-        payload: { lectureId: lecture.id, slideIndex: currentSlideIndex, ts: Date.now() },
-      });
       setHasAnswered(true);
       if (isCorrect) {
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 3000);
+      }
+      // Broadcast so presenter gets instant update (fallback if postgres_changes delays)
+      const ch = lectureSyncChannelRef.current;
+      if (ch) {
+        ch.send({
+          type: 'broadcast',
+          event: 'response_changed',
+          payload: { lectureId: lecture.id, slideIndex: currentSlideIndex },
+        });
       }
     } catch (error) {
       console.error('Error submitting response:', error);
@@ -399,30 +482,31 @@ const Student = () => {
     }
   };
 
+  // Points: 5 for any answer, 10 for correct
   const handleQuizAnswer = (index: number) => {
     if (hasAnswered) return;
     setSelectedOption(index);
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctAnswer === index;
-    const points = isCorrect ? 100 : 0;
+    const points = isCorrect ? 10 : 5;
     handleSubmitResponse({ answer: index }, isCorrect, points);
   };
 
   const handlePollAnswer = (index: number) => {
     if (hasAnswered) return;
     setSelectedOption(index);
-    handleSubmitResponse({ answer: index });
+    handleSubmitResponse({ answer: index }, undefined, 5);
   };
 
   const handleYesNo = (answer: boolean) => {
     if (hasAnswered) return;
-    setSelectedOption(answer ? 0 : 1); // 0 = Yes, 1 = No for tracking
-    handleSubmitResponse({ answer });
+    setSelectedOption(answer ? 0 : 1);
+    handleSubmitResponse({ answer }, undefined, 5);
   };
 
   const handleWordSubmit = () => {
     if (!wordInput.trim() || hasAnswered) return;
-    handleSubmitResponse({ word: wordInput.trim() });
+    handleSubmitResponse({ word: wordInput.trim() }, undefined, 5);
     setWordInput("");
   };
 
@@ -431,35 +515,35 @@ const Student = () => {
     if (isNaN(num) || hasAnswered) return;
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctNumber === num;
-    const points = isCorrect ? 100 : 0;
+    const points = isCorrect ? 10 : 5;
     handleSubmitResponse({ guess: num }, isCorrect, points);
   };
 
   const handleScaleSubmit = () => {
     if (hasAnswered) return;
-    handleSubmitResponse({ value: scaleValue[0] });
+    handleSubmitResponse({ value: scaleValue[0] }, undefined, 5);
   };
 
   const handleSentimentSubmit = () => {
     if (hasAnswered) return;
-    handleSubmitResponse({ value: sentimentValue[0] });
+    handleSubmitResponse({ value: sentimentValue[0] }, undefined, 5);
   };
 
   const handleAgreeSubmit = () => {
     if (hasAnswered) return;
-    handleSubmitResponse({ value: agreeValue[0] });
+    handleSubmitResponse({ value: agreeValue[0] }, undefined, 5);
   };
 
   const handleSentenceSubmit = () => {
     if (!sentenceInput.trim() || hasAnswered) return;
-    handleSubmitResponse({ text: sentenceInput.trim() });
+    handleSubmitResponse({ text: sentenceInput.trim() }, undefined, 5);
     setSentenceInput("");
   };
 
   const handleRankingSubmit = () => {
     if (hasAnswered) return;
     const items = rankingOrder.length > 0 ? rankingOrder : ((currentSlide?.content as any).items || []);
-    handleSubmitResponse({ ranking: items });
+    handleSubmitResponse({ ranking: items }, undefined, 5);
   };
 
   // Ref for the persistent emoji reaction channel
@@ -553,6 +637,12 @@ const Student = () => {
     );
   }
 
+  // Redirect to join if studentId is missing (e.g. direct link without joining)
+  if (lecture && !studentId && lectureCode) {
+    navigate(`/join?code=${lectureCode}`, { replace: true });
+    return null;
+  }
+
   // Show game controls when game is active
   if (isGameActive && lecture?.id && studentId && student) {
     return (
@@ -570,21 +660,44 @@ const Student = () => {
       <Confetti isActive={showConfetti} />
 
       {/* Header */}
-      <header className="bg-gradient-primary text-primary-foreground p-4">
+      <header className="bg-gradient-primary text-primary-foreground p-4 relative">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-primary-foreground/20 flex items-center justify-center text-xl">
               {student?.emoji || "😊"}
             </div>
-            <div>
+            <div className="relative">
               <p className="font-medium">{student?.name || "Student"}</p>
               <div className="flex items-center gap-1 text-sm text-primary-foreground/80">
                 <Trophy className="w-3 h-3" />
-                <span>{student?.points || 0} points</span>
+                <span>{student?.points ?? 0} points</span>
               </div>
+              <AnimatePresence>
+                {pointsEarnedAnimation != null && (
+                  <motion.div
+                    key={pointsEarnedAnimation}
+                    initial={{ opacity: 0, y: 0, scale: 0.5 }}
+                    animate={{ opacity: 1, y: -12, scale: 1.2 }}
+                    exit={{ opacity: 0, y: -24, scale: 1.5 }}
+                    transition={{ duration: 0.4 }}
+                    className="absolute -top-1 -right-2 px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 font-bold text-sm shadow-lg"
+                  >
+                    +{pointsEarnedAnimation}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/20"
+              onClick={() => lecture?.id && refetchLectureState(lecture.id)}
+              title="Refresh to see latest"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </Button>
             <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-400" : "bg-red-400"}`} />
             <span className="text-sm text-primary-foreground/80">
               {isConnected ? "Connected" : "Reconnecting..."}
@@ -593,8 +706,9 @@ const Student = () => {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 p-4 overflow-auto">
+      {/* Main Content - wrapped in Error Boundary so one render error does not crash the view */}
+      <StudentErrorBoundary onBackToJoin={() => navigate('/join')}>
+        <main className="flex-1 p-4 overflow-auto">
         {lecture.status === 'draft' ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -627,13 +741,16 @@ const Student = () => {
               {(currentSlide.content as any).question || (currentSlide.content as any).statement || (currentSlide.content as any).sentenceStart || (currentSlide.content as any).title}
             </h2>
 
-            {/* Quiz/Poll Options - Using theme colors */}
-            {(currentSlide.type === 'quiz' || currentSlide.type === 'poll') && (
-              <div className="space-y-3">
+            {/* Quiz/Poll/Poll_quiz Options - 2x2 grid for 4 options */}
+            {(currentSlide.type === 'quiz' || currentSlide.type === 'poll' || currentSlide.type === 'poll_quiz') && (
+              <div className={((currentSlide.content as any).options || []).length === 4
+                ? "grid grid-cols-2 gap-4"
+                : "space-y-3"
+              }>
                 {((currentSlide.content as any).options || []).map((option: string, index: number) => (
                   <motion.button
                     key={index}
-                    onClick={() => currentSlide.type === 'quiz' ? handleQuizAnswer(index) : handlePollAnswer(index)}
+                    onClick={() => (currentSlide.type === 'quiz' || currentSlide.type === 'poll_quiz') ? handleQuizAnswer(index) : handlePollAnswer(index)}
                     disabled={hasAnswered || isSubmitting}
                     whileHover={{ scale: hasAnswered ? 1 : 1.02 }}
                     whileTap={{ scale: hasAnswered ? 1 : 0.98 }}
@@ -932,6 +1049,7 @@ const Student = () => {
           </div>
         )}
       </main>
+      </StudentErrorBoundary>
 
       {/* Reaction Bar */}
       <div className="p-4 border-t border-border/50 bg-card/50">

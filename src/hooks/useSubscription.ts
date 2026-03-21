@@ -21,15 +21,15 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
     error: null,
   });
 
-  // Fetch subscription data
+  // Fetch subscription data with retry and ensureUserCredits for PGRST116
+  const FETCH_RETRY_MAX = 2;
+  const FETCH_RETRY_DELAY_MS = 800;
+
   useEffect(() => {
     let cancelled = false;
 
-    const fetchData = async () => {
-      // Wait for auth to finish loading
+    const fetchData = async (attempt = 0): Promise<void> => {
       if (authLoading) return;
-
-      // No user = no subscription
       if (!user) {
         setState({
           subscription: null,
@@ -42,56 +42,79 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
       }
 
       try {
-        // Fetch subscription with plan details
-        const { data: subscriptionData, error: subError } = await supabase
-          .from("user_subscriptions")
-          .select(`*, subscription_plans (*)`)
-          .eq("user_id", user.id)
-          .single();
+        const [subRes, creditsRes] = await Promise.all([
+          supabase
+            .from("user_subscriptions")
+            .select(`*, subscription_plans (*)`)
+            .eq("user_id", user.id)
+            .single(),
+          supabase
+            .from("user_credits")
+            .select("*")
+            .eq("user_id", user.id)
+            .single(),
+        ]);
 
-        if (subError && subError.code !== "PGRST116") {
-          throw subError;
-        }
+        const { data: subscriptionData, error: subError } = subRes;
+        const { data: creditsData, error: creditsError } = creditsRes;
 
-        // Fetch user credits
-        const { data: creditsData, error: creditsError } = await supabase
-          .from("user_credits")
-          .select("*")
-          .eq("user_id", user.id)
-          .single();
+        if (subError && subError.code !== "PGRST116") throw subError;
 
-        if (creditsError && creditsError.code !== "PGRST116") {
-          throw creditsError;
+        if (creditsError && creditsError.code !== "PGRST116") throw creditsError;
+
+        if (creditsError?.code === "PGRST116") {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            const { error: ensureErr } = await supabase.functions.invoke("ensure-user-credits", {
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+            if (!ensureErr) {
+              const { data: newCredits } = await supabase
+                .from("user_credits")
+                .select("*")
+                .eq("user_id", user.id)
+                .single();
+              if (cancelled) return;
+              setState({
+                subscription: subscriptionData as SubscriptionWithPlan | null,
+                credits: newCredits as UserCredits | null,
+                plan: (subscriptionData as SubscriptionWithPlan | null)?.subscription_plans as SubscriptionPlan | null,
+                isLoading: false,
+                error: null,
+              });
+              return;
+            }
+          }
         }
 
         if (cancelled) return;
 
-        const subscription = subscriptionData as SubscriptionWithPlan | null;
-        const plan = subscription?.subscription_plans as SubscriptionPlan | null;
-
         setState({
-          subscription,
+          subscription: subscriptionData as SubscriptionWithPlan | null,
           credits: creditsData as UserCredits | null,
-          plan,
+          plan: (subscriptionData as SubscriptionWithPlan | null)?.subscription_plans as SubscriptionPlan | null,
           isLoading: false,
           error: null,
         });
       } catch (error) {
         if (cancelled) return;
-        console.error("Error fetching subscription:", error);
-        setState((prev) => ({
-          ...prev,
-          isLoading: false,
-          error: error instanceof Error ? error : new Error("Failed to fetch subscription"),
-        }));
+        const shouldRetry = attempt < FETCH_RETRY_MAX;
+        if (shouldRetry) {
+          await new Promise((r) => setTimeout(r, FETCH_RETRY_DELAY_MS));
+          fetchData(attempt + 1);
+        } else {
+          console.error("Error fetching subscription:", error);
+          setState((prev) => ({
+            ...prev,
+            isLoading: false,
+            error: error instanceof Error ? error : new Error("Failed to fetch subscription"),
+          }));
+        }
       }
     };
 
     fetchData();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [authLoading, user?.id]);
 
   // Subscribe to realtime updates on user_credits
@@ -139,10 +162,6 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
     return (state.credits?.ai_tokens_balance ?? 0) >= amount;
   }, [state.credits?.ai_tokens_balance]);
 
-  const hasVibeCredits = useCallback((amount: number = 1): boolean => {
-    return (state.credits?.vibe_credits_balance ?? 0) >= amount;
-  }, [state.credits?.vibe_credits_balance]);
-
   return {
     ...state,
     isFree,
@@ -150,10 +169,9 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
     isPro,
     canUse,
     hasAITokens,
-    hasVibeCredits,
     maxSlides: state.plan?.max_slides ?? 5,
     aiTokensRemaining: state.credits?.ai_tokens_balance ?? 0,
-    vibeCreditsRemaining: state.credits?.vibe_credits_balance ?? 0,
     planName,
+    isSubLoading: state.isLoading,
   };
 }

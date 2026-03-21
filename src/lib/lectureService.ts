@@ -46,8 +46,12 @@ export async function createLecture(title: string, slides: Slide[], userId?: str
   return data;
 }
 
-// Get lecture by ID
-export async function getLecture(lectureId: string) {
+// Get lecture by ID (with 10s timeout and retry for transient failures)
+const LECTURE_FETCH_TIMEOUT_MS = 10000;
+const LECTURE_FETCH_RETRY_DELAY_MS = 1500;
+const LECTURE_FETCH_MAX_RETRIES = 2;
+
+async function fetchLectureOnce(lectureId: string) {
   const { data, error } = await supabase
     .from('lectures')
     .select('*')
@@ -56,6 +60,30 @@ export async function getLecture(lectureId: string) {
 
   if (error) throw error;
   return data;
+}
+
+export async function getLecture(lectureId: string) {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= LECTURE_FETCH_MAX_RETRIES; attempt++) {
+    try {
+      const fetchPromise = fetchLectureOnce(lectureId);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error('Lecture load timed out. Please try again.')),
+          LECTURE_FETCH_TIMEOUT_MS
+        );
+      });
+      return await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < LECTURE_FETCH_MAX_RETRIES) {
+        await new Promise((r) => setTimeout(r, LECTURE_FETCH_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  throw lastError ?? new Error('Failed to load lecture');
 }
 
 // Get lecture by code (for students joining)
@@ -70,16 +98,30 @@ export async function getLectureByCode(code: string) {
   return data;
 }
 
-// Update lecture status and current slide
+const UPDATE_LECTURE_MAX_RETRIES = 2;
+const UPDATE_LECTURE_BASE_DELAY_MS = 500;
+
+function isRetryableError(error: { message?: string; code?: string }): boolean {
+  const msg = (error.message || '').toLowerCase();
+  const code = (error.code || '').toString();
+  // 5xx, network/fetch errors, timeout, connection refused
+  return (
+    /^5\d{2}$/.test(code) ||
+    /network|fetch|timeout|econnrefused|econnreset|socket|unhealthy/i.test(msg)
+  );
+}
+
+// Update lecture status and current slide. updated_at is set on every call so postgres_changes and polling (sync layers 2 & 3) detect changes.
+// Retries 1–2 times on 5xx/network errors with exponential backoff.
 export async function updateLecture(lectureId: string, updates: {
   status?: string;
   current_slide_index?: number;
   slides?: Slide[];
   settings?: Record<string, unknown>;
 }) {
-  const updateData: Record<string, unknown> = { 
+  const updateData: Record<string, unknown> = {
     ...updates,
-    updated_at: new Date().toISOString(), // Always update timestamp for realtime sync
+    updated_at: new Date().toISOString(),
   };
   if (updates.slides) {
     updateData.slides = JSON.parse(JSON.stringify(updates.slides)) as Json;
@@ -87,16 +129,31 @@ export async function updateLecture(lectureId: string, updates: {
   if (updates.settings) {
     updateData.settings = JSON.parse(JSON.stringify(updates.settings)) as Json;
   }
-  
-  const { data, error } = await supabase
-    .from('lectures')
-    .update(updateData)
-    .eq('id', lectureId)
-    .select()
-    .single();
 
-  if (error) throw error;
-  return data;
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt <= UPDATE_LECTURE_MAX_RETRIES; attempt++) {
+    try {
+      const { data, error } = await supabase
+        .from('lectures')
+        .update(updateData)
+        .eq('id', lectureId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      const errObj = err as { message?: string; code?: string };
+      if (attempt < UPDATE_LECTURE_MAX_RETRIES && isRetryableError(errObj)) {
+        const delay = UPDATE_LECTURE_BASE_DELAY_MS * Math.pow(2, attempt);
+        await new Promise((r) => setTimeout(r, delay));
+      } else {
+        throw lastError;
+      }
+    }
+  }
+  throw lastError ?? new Error('Failed to update lecture');
 }
 
 // Start a lecture (set to active)
@@ -214,6 +271,28 @@ export async function getResponses(lectureId: string, slideIndex: number) {
   return data || [];
 }
 
+// Get all responses for a lecture (all slides) – for analytics
+export async function getAllResponsesForLecture(lectureId: string) {
+  const { data, error } = await supabase
+    .from('responses')
+    .select('*')
+    .eq('lecture_id', lectureId)
+    .order('slide_index', { ascending: true })
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Duplicate a lecture: same title + " (Copy)", same slides, new code, status draft. No students/responses/questions.
+export async function duplicateLecture(lectureId: string) {
+  const lecture = await getLecture(lectureId);
+  if (!lecture) throw new Error('Lecture not found');
+  const slides = (lecture.slides as unknown as Slide[]) || [];
+  const newTitle = `${lecture.title} (Copy)`;
+  return createLecture(newTitle, slides.length ? [...slides] : []);
+}
+
 // Subscribe to lecture updates (for students)
 export function subscribeLecture(lectureId: string, callback: (lecture: unknown) => void) {
   return supabase
@@ -253,13 +332,25 @@ export function subscribeStudents(lectureId: string, callback: (students: unknow
     .subscribe();
 }
 
-// Subscribe to response updates (for presenter)
+const RESPONSES_DEBOUNCE_MS = 250;
+
+// Subscribe to response updates (for presenter). Uses payload.new for instant display, then debounced getResponses to reconcile.
 export function subscribeResponses(
-  lectureId: string, 
+  lectureId: string,
   slideIndex: number,
   callback: (responses: unknown[]) => void
 ) {
-  return supabase
+  let lastResponses: unknown[] = [];
+  let debounceId: ReturnType<typeof setTimeout> | null = null;
+
+  const runGetResponses = () => {
+    getResponses(lectureId, slideIndex).then((responses) => {
+      lastResponses = responses;
+      callback(responses);
+    });
+  };
+
+  const channel = supabase
     .channel(`responses-${lectureId}-${slideIndex}`)
     .on(
       'postgres_changes',
@@ -269,10 +360,25 @@ export function subscribeResponses(
         table: 'responses',
         filter: `lecture_id=eq.${lectureId}`,
       },
-      async () => {
-        const responses = await getResponses(lectureId, slideIndex);
-        callback(responses);
+      (payload) => {
+        const newRow = payload.new as Record<string, unknown> | undefined;
+        const rowSlideIndex = newRow && typeof newRow.slide_index === 'number' ? newRow.slide_index : null;
+        if (rowSlideIndex === slideIndex && newRow) {
+          lastResponses = [...lastResponses, newRow];
+          callback(lastResponses);
+        }
+        if (debounceId) clearTimeout(debounceId);
+        debounceId = setTimeout(() => {
+          debounceId = null;
+          runGetResponses();
+        }, RESPONSES_DEBOUNCE_MS);
       }
     )
-    .subscribe();
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        runGetResponses();
+      }
+    });
+
+  return channel;
 }

@@ -2,7 +2,7 @@
 // Design styles are a LAYER on top of visual themes
 // They change HOW content is displayed, not the color palette
 
-export type DesignStyleId = 'minimal' | 'dynamic';
+export type DesignStyleId = 'minimal' | 'dynamic' | 'compact';
 
 export interface DesignStyleConfig {
   // Animation behavior
@@ -132,6 +132,43 @@ export const DESIGN_STYLES: Record<DesignStyleId, DesignStyle> = {
       // Grid layout for visual impact
       optionLayout: 'grid',
       footerStyle: 'full',
+    },
+  },
+
+  'compact': {
+    id: 'compact',
+    name: 'Compact',
+    nameHe: 'קומפקטי',
+    description: 'Horizontal layout, balanced & modern',
+    descriptionHe: 'פריסה אופקית, מאוזנת ומודרנית',
+    icon: '▫️',
+    preview: {
+      thumbnail: '/styles/compact.png',
+      accentColor: '#14b8a6',
+    },
+    config: {
+      // Moderate animations
+      animationIntensity: 'moderate',
+      entranceAnimation: 'slide',
+      resultAnimation: 'pulse',
+      // Balanced spacing
+      spacing: 'comfortable',
+      cardShadow: 'medium',
+      // Medium typography
+      titleSize: 'medium',
+      optionTextSize: 'medium',
+      // Balanced UI elements
+      showProgressBars: true,
+      showPercentages: true,
+      showCounts: true,
+      showAnimatedNumbers: false,
+      // Subtle effects
+      pulseOnNewVote: false,
+      celebrationOnResults: true,
+      particleEffects: false,
+      // Horizontal layout
+      optionLayout: 'horizontal',
+      footerStyle: 'minimal',
     },
   },
 };

@@ -14,36 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      builder_conversation: {
-        Row: {
-          content: string
-          created_at: string
-          id: string
-          metadata: Json | null
-          role: string
-          session_id: string
-          user_id: string
-        }
-        Insert: {
-          content?: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          role: string
-          session_id: string
-          user_id: string
-        }
-        Update: {
-          content?: string
-          created_at?: string
-          id?: string
-          metadata?: Json | null
-          role?: string
-          session_id?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       credit_transactions: {
         Row: {
           amount: number
@@ -71,6 +41,39 @@ export type Database = {
           id?: string
           transaction_type?: string
           user_id?: string | null
+        }
+        Relationships: []
+      }
+      builder_conversations: {
+        Row: {
+          id: string
+          user_id: string
+          lecture_id: string | null
+          messages: Json
+          original_prompt: string | null
+          target_audience: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          lecture_id?: string | null
+          messages: Json
+          original_prompt?: string | null
+          target_audience?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          lecture_id?: string | null
+          messages?: Json
+          original_prompt?: string | null
+          target_audience?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -237,7 +240,6 @@ export type Database = {
           max_lectures: number | null
           max_slides: number | null
           monthly_ai_tokens: number
-          monthly_vibe_credits: number
           name: string
           price_monthly_usd: number
           price_yearly_usd: number
@@ -249,7 +251,6 @@ export type Database = {
           max_lectures?: number | null
           max_slides?: number | null
           monthly_ai_tokens?: number
-          monthly_vibe_credits?: number
           name: string
           price_monthly_usd?: number
           price_yearly_usd?: number
@@ -261,10 +262,36 @@ export type Database = {
           max_lectures?: number | null
           max_slides?: number | null
           monthly_ai_tokens?: number
-          monthly_vibe_credits?: number
           name?: string
           price_monthly_usd?: number
           price_yearly_usd?: number
+        }
+        Relationships: []
+      }
+      user_ai_settings: {
+        Row: {
+          user_id: string
+          who_am_i: string | null
+          what_i_lecture: string | null
+          teaching_style: string | null
+          additional_context: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          user_id: string
+          who_am_i?: string | null
+          what_i_lecture?: string | null
+          teaching_style?: string | null
+          additional_context?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          who_am_i?: string | null
+          what_i_lecture?: string | null
+          teaching_style?: string | null
+          additional_context?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -277,7 +304,6 @@ export type Database = {
           slides_created: number
           updated_at: string | null
           user_id: string
-          vibe_credits_balance: number
         }
         Insert: {
           ai_tokens_balance?: number
@@ -287,7 +313,6 @@ export type Database = {
           slides_created?: number
           updated_at?: string | null
           user_id: string
-          vibe_credits_balance?: number
         }
         Update: {
           ai_tokens_balance?: number
@@ -297,7 +322,45 @@ export type Database = {
           slides_created?: number
           updated_at?: string | null
           user_id?: string
-          vibe_credits_balance?: number
+        }
+        Relationships: []
+      }
+      user_referral_codes: {
+        Row: {
+          user_id: string
+          code: string
+          created_at: string | null
+        }
+        Insert: {
+          user_id: string
+          code: string
+          created_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          code?: string
+          created_at?: string | null
+        }
+        Relationships: []
+      }
+      referrals: {
+        Row: {
+          id: string
+          referrer_user_id: string
+          referred_user_id: string
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          referrer_user_id: string
+          referred_user_id: string
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          referrer_user_id?: string
+          referred_user_id?: string
+          created_at?: string | null
         }
         Relationships: []
       }
@@ -374,6 +437,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      record_referral: {
+        Args: { referral_code: string }
+        Returns: Json
       }
     }
     Enums: {

@@ -1,7 +1,10 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
 import Header from "@/components/layout/Header";
+import { DocumentHead } from "@/components/seo/DocumentHead";
+import { StructuredData } from "@/components/seo/StructuredData";
 import HeroSection from "@/components/landing/HeroSection";
 import AIGenerationPreview from "@/components/landing/AIGenerationPreview";
 import InteractiveSyncDemo from "@/components/landing/InteractiveSyncDemo";
@@ -12,7 +15,19 @@ import Footer from "@/components/landing/Footer";
 
 const Index = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [isGenerating, setIsGenerating] = useState(false);
+
+  // Show auth error when user returns from failed signup (e.g. Database error saving new user)
+  useEffect(() => {
+    const error = searchParams.get("error");
+    const desc = searchParams.get("error_description");
+    if (error || desc) {
+      const msg = desc ? decodeURIComponent(desc.replace(/\+/g, " ")) : "ההרשמה נכשלה. נסה שוב מאוחר יותר.";
+      toast.error(msg);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
   const [generationPrompt, setGenerationPrompt] = useState("");
 
   const handleGenerate = (prompt: string) => {
@@ -44,7 +59,13 @@ const Index = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background overflow-x-hidden">
+      <DocumentHead
+        title="Clasly – AI Interactive Presentations & Live Lectures"
+        description="AI builds interactive presentations in seconds. Create live lectures, quizzes, polls—students join from their phones."
+        path="/"
+      />
+      <StructuredData />
       <Header />
       
       {/* Hero Section with AI Input */}
@@ -65,8 +86,8 @@ const Index = () => {
         )}
       </AnimatePresence>
 
-      {/* Interactive Sync Demo */}
-      <div data-section="interactive-demo">
+      {/* Interactive Sync Demo - hidden on mobile per design */}
+      <div data-section="interactive-demo" className="hidden lg:block">
         <InteractiveSyncDemo />
       </div>
 

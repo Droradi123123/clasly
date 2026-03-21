@@ -14,25 +14,149 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "Missing authorization header" };
 
+  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!token) return { user: null, error: "Missing token" };
+
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) return { user: null, error: "Server configuration error" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: authHeader } },
-  });
+  const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser();
-  if (error || !user) return { user: null, error: "Invalid or expired authentication token" };
+  } = await supabase.auth.getUser(token);
+  if (error || !user) {
+    const msg = error?.message || "Invalid or expired authentication token";
+    return { user: null, error: msg };
+  }
   return { user, error: null };
 }
 
 // =============================================================================
 // CREDIT CONSUMPTION
 // =============================================================================
+
+const INITIAL_FREE_CREDITS = 15;
+
+/** Ensure user has a user_credits row (creates one with initial credits if missing). */
+async function ensureUserCredits(userId: string): Promise<{ ok: boolean; error?: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return { ok: false, error: "Server configuration error" };
+  }
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: existing } = await supabase
+    .from("user_credits")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (existing) return { ok: true };
+  const { error } = await supabase.from("user_credits").insert({
+    user_id: userId,
+    ai_tokens_balance: INITIAL_FREE_CREDITS,
+  });
+  if (error) {
+    console.error("[generate-slides] Failed to create user_credits:", error);
+    return { ok: false, error: "Could not create credits" };
+  }
+  console.log(`💳 Created user_credits for ${userId} with ${INITIAL_FREE_CREDITS} AI tokens`);
+  return { ok: true };
+}
+
+/** Get user's subscription plan name (Free, Standard, Pro). */
+async function getUserPlan(userId: string): Promise<{ planName: string; isPro: boolean }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) return { planName: "Free", isPro: false };
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: sub } = await supabase
+    .from("user_subscriptions")
+    .select("plan_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!sub?.plan_id) return { planName: "Free", isPro: false };
+
+  const { data: plan } = await supabase
+    .from("subscription_plans")
+    .select("name")
+    .eq("id", sub.plan_id)
+    .single();
+  const planName = plan?.name || "Free";
+  const isPro = planName === "Pro" || planName === "Standard";
+  return { planName, isPro };
+}
+
+/** Get user's max slides for their plan (Free=5, Standard/Pro=higher). */
+async function getUserMaxSlides(userId: string): Promise<number> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) return 5;
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: sub } = await supabase
+    .from("user_subscriptions")
+    .select("plan_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!sub?.plan_id) return 5;
+
+  const { data: plan } = await supabase
+    .from("subscription_plans")
+    .select("max_slides")
+    .eq("id", sub.plan_id)
+    .single();
+  const max = plan?.max_slides;
+  return typeof max === "number" ? max : 5;
+}
+
+/** Get user AI settings for personalization (Pro/Standard). */
+async function getUserAiSettings(userId: string): Promise<{
+  who_am_i?: string;
+  what_i_lecture?: string;
+  teaching_style?: string;
+  additional_context?: string;
+} | null> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) return null;
+
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data } = await supabase
+    .from("user_ai_settings")
+    .select("who_am_i, what_i_lecture, teaching_style, additional_context")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return data;
+}
+
+/** Check if user has enough credits (does not deduct). */
+async function checkCreditsBalance(
+  userId: string,
+  amount: number
+): Promise<{ allowed: boolean; error?: string }> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return { allowed: false, error: "Server configuration error" };
+  }
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data: credits, error: fetchError } = await supabase
+    .from("user_credits")
+    .select("ai_tokens_balance")
+    .eq("user_id", userId)
+    .single();
+  if (fetchError || !credits) {
+    return { allowed: false, error: "Could not fetch credits" };
+  }
+  if (credits.ai_tokens_balance < amount) {
+    return { allowed: false, error: "Insufficient credits" };
+  }
+  return { allowed: true };
+}
 
 async function consumeCredits(
   userId: string,
@@ -122,34 +246,6 @@ async function updateUsageStats(
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId);
-}
-
-// =============================================================================
-// BUILDER CONVERSATION LOG (Supabase: public.builder_conversation)
-// =============================================================================
-
-async function appendBuilderConversation(
-  userId: string,
-  sessionId: string,
-  rows: { role: string; content: string; metadata?: Record<string, unknown> }[],
-): Promise<void> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey || !sessionId || rows.length === 0) return;
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { error } = await supabase.from("builder_conversation").insert(
-    rows.map((r) => ({
-      user_id: userId,
-      session_id: sessionId,
-      role: r.role,
-      content: r.content,
-      metadata: r.metadata ?? {},
-    })),
-  );
-  if (error) {
-    console.error("builder_conversation insert failed:", error);
-  }
 }
 
 // =============================================================================
@@ -325,24 +421,25 @@ function selectGradientForSlide(slideType: string, slideIndex: number, theme: Ge
 // 3. DESIGN STYLE SYSTEM - Varied visual styles per slide
 // =============================================================================
 
-const DESIGN_STYLES = ["dynamic", "elegant", "bold", "minimal", "cinematic"];
+// WYSIWYG: Frontend only supports "minimal" | "dynamic" - must match exactly for Editor === Present
+const DESIGN_STYLES = ["dynamic", "minimal"] as const;
 
-function selectDesignStyle(slideType: string, slideIndex: number): string {
-  const typeStyles: Record<string, string[]> = {
-    title: ["cinematic", "bold", "elegant"],
-    split_content: ["dynamic", "elegant", "minimal"],
-    content: ["minimal", "elegant", "dynamic"],
-    quiz: ["bold", "dynamic", "cinematic"],
-    timeline: ["elegant", "minimal", "dynamic"],
-    scale: ["dynamic", "bold", "minimal"],
-    yesno: ["bold", "dynamic", "cinematic"],
-    poll: ["dynamic", "bold", "elegant"],
-    wordcloud: ["cinematic", "dynamic", "elegant"],
-    bullet_points: ["minimal", "elegant", "dynamic"],
-    bar_chart: ["minimal", "dynamic", "elegant"],
-    ranking: ["bold", "dynamic", "cinematic"],
-    guess_number: ["bold", "dynamic", "cinematic"],
-    sentiment_meter: ["dynamic", "elegant", "cinematic"],
+function selectDesignStyle(slideType: string, slideIndex: number): "dynamic" | "minimal" {
+  const typeStyles: Record<string, ("dynamic" | "minimal")[]> = {
+    title: ["dynamic", "minimal"],
+    split_content: ["dynamic", "minimal"],
+    content: ["minimal", "dynamic"],
+    quiz: ["dynamic", "minimal"],
+    timeline: ["minimal", "dynamic"],
+    scale: ["dynamic", "minimal"],
+    yesno: ["dynamic", "minimal"],
+    poll: ["dynamic", "minimal"],
+    wordcloud: ["dynamic", "minimal"],
+    bullet_points: ["minimal", "dynamic"],
+    bar_chart: ["minimal", "dynamic"],
+    ranking: ["dynamic", "minimal"],
+    guess_number: ["dynamic", "minimal"],
+    sentiment_meter: ["dynamic", "minimal"],
   };
   const styles = typeStyles[slideType] || DESIGN_STYLES;
   return styles[slideIndex % styles.length];
@@ -444,50 +541,83 @@ function getImageCacheKey(prompt: string): string {
 // =============================================================================
 
 function cleanAndParseJSON(rawContent: string): any {
-  let text = rawContent;
+  let text = (rawContent || "").trim();
+  if (!text) return null;
 
+  // Extract from markdown code blocks
   const jsonBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (jsonBlockMatch) {
-    text = jsonBlockMatch[1];
+    text = jsonBlockMatch[1].trim();
   }
 
+  // Some models add preamble before the JSON - find start of array or object
+  const arrayStart = text.indexOf("[");
+  const objectStart = text.indexOf("{");
+  const firstJson = arrayStart >= 0 && (objectStart < 0 || arrayStart <= objectStart)
+    ? arrayStart
+    : objectStart;
+  if (firstJson > 0 && firstJson < 300) {
+    text = text.slice(firstJson);
+  }
+
+  // Clean common JSON issues
   text = text
     .trim()
     .replace(/\/\/.*$/gm, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/,(\s*[}\]])/g, "$1")
-    .replace(/(\{|\,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, '$1"$2":');
+    .replace(/([\{\,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g, (_, prefix, key) => `${prefix}"${key}":`);
 
+  // Balance braces (helps with truncated responses)
   const openBraces = (text.match(/{/g) || []).length;
   const closeBraces = (text.match(/}/g) || []).length;
   const openBrackets = (text.match(/\[/g) || []).length;
   const closeBrackets = (text.match(/]/g) || []).length;
-
   if (openBraces > closeBraces) text += "}".repeat(openBraces - closeBraces);
   if (openBrackets > closeBrackets) text += "]".repeat(openBrackets - closeBrackets);
 
   try {
     return JSON.parse(text);
-  } catch (firstError) {
-    console.error("First parse attempt failed:", firstError);
-
+  } catch {
+    // Fallback: extract outermost array
     const arrayMatch = text.match(/\[[\s\S]*\]/);
     if (arrayMatch) {
       try {
         return JSON.parse(arrayMatch[0]);
       } catch {}
     }
-
+    // Fallback: extract outermost object
     const objectMatch = text.match(/\{[\s\S]*\}/);
     if (objectMatch) {
       try {
         return JSON.parse(objectMatch[0]);
       } catch {}
     }
-
-    console.error("JSON content preview:", text.substring(0, 500));
+    console.error("[generate-slides] JSON parse failed. Preview:", text.substring(0, 400));
     return null;
   }
+}
+
+/** Recursively search for slides array in nested objects. */
+function findSlidesArray(obj: any, depth = 0): any[] | null {
+  if (depth > 3) return null;
+  if (Array.isArray(obj) && obj.length > 0) return obj;
+  if (obj && typeof obj === "object") {
+    for (const key of ["slides", "data", "content", "result", "presentation", "output"]) {
+      const found = findSlidesArray(obj[key], depth + 1);
+      if (found) return found;
+    }
+    // Single slide: { type, content }
+    if (obj.type && obj.content && typeof obj.content === "object") return [obj];
+  }
+  return null;
+}
+
+/** If AI returned { "slides": [...] } or similar, extract the array. Handles single-slide object. */
+function normalizeToSlidesArray(parsed: any): any[] | null {
+  const found = findSlidesArray(parsed);
+  if (found) return found;
+  return null;
 }
 
 // =============================================================================
@@ -502,14 +632,6 @@ interface RawSlide {
 
 function validateAndFixSlide(slide: RawSlide, index: number, topic: string): RawSlide {
   const fixedSlide = { ...slide, content: { ...slide.content } };
-
-  const typeNorm: Record<string, string> = {
-    agreeSpectrum: "agree_spectrum",
-    sentiment: "sentiment_meter",
-  };
-  if (fixedSlide.type && typeNorm[fixedSlide.type]) {
-    fixedSlide.type = typeNorm[fixedSlide.type];
-  }
 
   if (!fixedSlide.type) {
     fixedSlide.type = index === 0 ? "title" : "content";
@@ -528,11 +650,66 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
       }
       break;
 
-    case "quiz":
-      if (!fixedSlide.content.question) fixedSlide.content.question = "Question?";
-      if (!fixedSlide.content.options || fixedSlide.content.options.length < 2) {
-        fixedSlide.content.options = ["Option A", "Option B", "Option C", "Option D"];
+    case "content":
+      if (!fixedSlide.content.title) fixedSlide.content.title = "Content";
+      if (!fixedSlide.content.text || !String(fixedSlide.content.text).trim()) {
+        fixedSlide.content.text = topic ? `Key insight about ${topic}` : "Add your content here.";
       }
+      break;
+
+    case "bullet_points": {
+      if (!fixedSlide.content.title) fixedSlide.content.title = "Key Points";
+      const pts = fixedSlide.content.points || fixedSlide.content.items || [];
+      const defPts = [
+        { title: "Point 1", description: "Detail" },
+        { title: "Point 2", description: "Detail" },
+        { title: "Point 3", description: "Detail" },
+      ];
+      const hasEmpty = pts.length < 3 || pts.some((p: any) => !String((p?.title ?? p) || "").trim());
+      fixedSlide.content.points = hasEmpty ? defPts : pts.slice(0, 6).map((p: any, i: number) => {
+        const t = p?.title ?? p;
+        const d = p?.description ?? "";
+        return {
+          title: (typeof t === "string" && t.trim()) ? t.trim() : defPts[Math.min(i, 2)].title,
+          description: (typeof d === "string" && d.trim()) ? d.trim() : "",
+        };
+      });
+      break;
+    }
+
+    case "bar_chart": {
+      if (!fixedSlide.content.title) fixedSlide.content.title = "Data";
+      const bars = fixedSlide.content.bars || fixedSlide.content.data || [];
+      const defBars = [
+        { label: "Item 1", value: 25 },
+        { label: "Item 2", value: 50 },
+        { label: "Item 3", value: 75 },
+        { label: "Item 4", value: 100 },
+      ];
+      const barsHasEmpty = bars.length < 4 || bars.some((b: any) => !String(b?.label ?? b?.name ?? "").trim());
+      fixedSlide.content.bars = barsHasEmpty ? defBars : bars.slice(0, 6).map((b: any, i: number) => ({
+        label: (typeof (b?.label ?? b?.name) === "string" && String(b?.label ?? b?.name).trim())
+          ? String(b?.label ?? b?.name).trim()
+          : defBars[Math.min(i, 3)].label,
+        value: typeof b?.value === "number" ? b.value : 50,
+      }));
+      break;
+    }
+
+    case "wordcloud":
+      if (!fixedSlide.content.question || !String(fixedSlide.content.question).trim()) {
+        fixedSlide.content.question = topic ? `What comes to mind when you think of ${topic}?` : "Share your thoughts...";
+      }
+      break;
+
+    case "quiz": {
+      if (!fixedSlide.content.question) fixedSlide.content.question = "Question?";
+      const defOpts = ["Option A", "Option B", "Option C", "Option D"];
+      const opts = fixedSlide.content.options || [];
+      const hasEmpty = opts.length < 2 || opts.some((o: any) => !String(o || "").trim());
+      fixedSlide.content.options = hasEmpty ? defOpts : opts.slice(0, 6).map((o: any, i: number) =>
+        (typeof o === "string" && o.trim()) ? o.trim() : defOpts[Math.min(i, 3)],
+      );
       if (typeof fixedSlide.content.correctAnswer !== "number") {
         fixedSlide.content.correctAnswer = 0;
       }
@@ -540,6 +717,19 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
         0,
         Math.min(fixedSlide.content.correctAnswer, fixedSlide.content.options.length - 1),
       );
+      break;
+    }
+
+    case "finish_sentence":
+      if (!fixedSlide.content.sentenceStart || !String(fixedSlide.content.sentenceStart).trim()) {
+        fixedSlide.content.sentenceStart = "The best part of today was...";
+      }
+      if (!Array.isArray(fixedSlide.content.wordBankOptions)) {
+        fixedSlide.content.wordBankOptions = [];
+      }
+      if (typeof fixedSlide.content.maxCharacters !== "number") {
+        fixedSlide.content.maxCharacters = 100;
+      }
       break;
 
     case "timeline":
@@ -563,45 +753,72 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
       if (!fixedSlide.content.maxLabel) fixedSlide.content.maxLabel = "High";
       break;
 
-    case "poll":
+    case "poll": {
       if (!fixedSlide.content.question) fixedSlide.content.question = "What do you think?";
-      if (!fixedSlide.content.options || fixedSlide.content.options.length < 2) {
-        fixedSlide.content.options = ["Option 1", "Option 2", "Option 3"];
-      }
+      const pollDefOpts = ["Option 1", "Option 2", "Option 3", "Option 4"];
+      const pollOpts = fixedSlide.content.options || [];
+      const pollHasEmpty = pollOpts.length < 2 || pollOpts.some((o: any) => !String(o || "").trim());
+      fixedSlide.content.options = pollHasEmpty ? pollDefOpts : pollOpts.slice(0, 6).map((o: any, i: number) =>
+        (typeof o === "string" && o.trim()) ? o.trim() : pollDefOpts[Math.min(i, 3)],
+      );
       break;
+    }
+
+    case "poll_quiz": {
+      if (!fixedSlide.content.question) fixedSlide.content.question = "What do you think?";
+      const pqDefOpts = ["Option 1", "Option 2", "Option 3", "Option 4"];
+      const pqOpts = fixedSlide.content.options || [];
+      const pqHasEmpty = pqOpts.length < 2 || pqOpts.some((o: any) => !String(o || "").trim());
+      fixedSlide.content.options = pqHasEmpty ? pqDefOpts : pqOpts.slice(0, 6).map((o: any, i: number) =>
+        (typeof o === "string" && o.trim()) ? o.trim() : pqDefOpts[Math.min(i, 3)],
+      );
+      if (typeof fixedSlide.content.correctAnswer !== "number") {
+        fixedSlide.content.correctAnswer = 0;
+      }
+      fixedSlide.content.correctAnswer = Math.max(
+        0,
+        Math.min(fixedSlide.content.correctAnswer, fixedSlide.content.options.length - 1),
+      );
+      break;
+    }
 
     case "yesno":
       if (!fixedSlide.content.question) fixedSlide.content.question = "Yes or No?";
+      if (typeof fixedSlide.content.correctIsYes !== "boolean") {
+        fixedSlide.content.correctIsYes = true;
+      }
+      break;
+
+    case "ranking": {
+      const defItems = ["Item 1", "Item 2", "Item 3", "Item 4"];
+      const items = fixedSlide.content.items || [];
+      const itemsHasEmpty = items.length < 2 || items.some((i: any) => !String(i || "").trim());
+      fixedSlide.content.items = itemsHasEmpty ? defItems : items.slice(0, 6).map((i: any, idx: number) =>
+        (typeof i === "string" && i.trim()) ? i.trim() : defItems[Math.min(idx, 3)],
+      );
+      if (!fixedSlide.content.question) fixedSlide.content.question = "Rank these items:";
+      break;
+    }
+
+    case "guess_number":
+      if (!fixedSlide.content.question) fixedSlide.content.question = "Guess the number!";
+      if (typeof fixedSlide.content.correctNumber !== "number") fixedSlide.content.correctNumber = 50;
+      if (typeof fixedSlide.content.min !== "number") fixedSlide.content.min = 0;
+      if (typeof fixedSlide.content.max !== "number") fixedSlide.content.max = 100;
       break;
 
     case "sentiment_meter":
-      if (!fixedSlide.content.question) fixedSlide.content.question = "How do you feel about this?";
+      if (!fixedSlide.content.question || !String(fixedSlide.content.question).trim()) {
+        fixedSlide.content.question = "How do you feel about this?";
+      }
       if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = "Not great";
       if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = "Amazing";
       break;
 
     case "agree_spectrum":
-      if (!fixedSlide.content.statement) {
-        fixedSlide.content.statement =
-          (typeof fixedSlide.content.question === "string" && fixedSlide.content.question) ||
-          topic ||
-          "State your position on this topic.";
-      }
-      if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = "Strongly Disagree";
-      if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = "Strongly Agree";
-      break;
-
-    case "wordcloud":
-      if (!fixedSlide.content.question) fixedSlide.content.question = "Share your response in one word:";
-      break;
-
-    case "finish_sentence":
-      if (!fixedSlide.content.sentenceStart) {
-        fixedSlide.content.sentenceStart = "The key insight from this topic is...";
-      }
-      if (typeof fixedSlide.content.maxCharacters !== "number" || fixedSlide.content.maxCharacters < 1) {
-        fixedSlide.content.maxCharacters = 120;
-      }
+      if (!fixedSlide.content.statement) fixedSlide.content.statement = "I agree with this statement.";
+      if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = "Disagree";
+      if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = "Agree";
       break;
   }
 
@@ -635,17 +852,23 @@ function mapSlideToFrontendFormat(
   topic?: string,
 ): MappedSlide {
   const textAlign: "left" | "center" | "right" = detectedLanguage === "hebrew" ? "right" : "left";
+  const direction: "ltr" | "rtl" = detectedLanguage === "hebrew" ? "rtl" : "ltr";
 
   // *** KEY CHANGE: Dynamic gradient per slide ***
   const gradientPreset = selectGradientForSlide(rawSlide.type, index, theme);
   const designStyle = selectDesignStyle(rawSlide.type, index);
 
+  // WYSIWYG: textColor must suit theme - light themes (soft-pop) need dark text for visibility
+  const isLightTheme = theme.id === "soft-pop";
+  const textColor = isLightTheme ? "#1f2937" : "#ffffff";
+
   const baseDesign: Record<string, any> = {
     gradientPreset,
-    textColor: "#ffffff",
+    textColor,
     fontFamily: theme.font,
     fontSize: "medium",
     textAlign,
+    direction,
     themeId: theme.id,
     designStyleId: designStyle,
   };
@@ -665,12 +888,15 @@ function mapSlideToFrontendFormat(
     yesno: "yesno",
     sentiment: "sentiment_meter",
     sentiment_meter: "sentiment_meter",
+    agreeSpectrum: "agree_spectrum",
+    agree_spectrum: "agree_spectrum",
+    finishSentence: "finish_sentence",
+    finish_sentence: "finish_sentence",
+    poll_quiz: "poll_quiz",
     bullets: "bullet_points",
     bullet_points: "bullet_points",
     bar_chart: "bar_chart",
     barChart: "bar_chart",
-    agreeSpectrum: "agree_spectrum",
-    agree_spectrum: "agree_spectrum",
   };
 
   const normalizedType = typeMap[rawSlide.type] || rawSlide.type;
@@ -684,6 +910,7 @@ function mapSlideToFrontendFormat(
       mappedContent = {
         title: rawSlide.content.title || "Welcome",
         subtitle: rawSlide.content.subtitle || "",
+        imagePrompt: rawSlide.imagePrompt || "",
       };
       if (imageUrl) {
         baseDesign.overlayImageUrl = imageUrl;
@@ -697,17 +924,23 @@ function mapSlideToFrontendFormat(
         bulletPoints: rawSlide.content.text
           ? rawSlide.content.text.split("\n").filter((t: string) => t.trim())
           : rawSlide.content.bulletPoints || ["Key point 1", "Key point 2"],
-        imageUrl: imageUrl || "",
+        ...(imageUrl ? { imageUrl } : {}),
         imagePosition: detectedLanguage === "hebrew" ? "left" : "right",
+        imagePrompt: rawSlide.imagePrompt || "",
       };
       break;
 
-    case "content":
+    case "content": {
+      const contentText = rawSlide.content.text;
+      const textVal = (typeof contentText === "string" && contentText.trim())
+        ? contentText.trim()
+        : (topic ? `Key insight about ${topic}.` : "Add your content here.");
       mappedContent = {
         title: rawSlide.content.title || "Content",
-        text: rawSlide.content.text || "",
+        text: textVal,
       };
       break;
+    }
 
     case "timeline":
       mappedContent = {
@@ -720,42 +953,71 @@ function mapSlideToFrontendFormat(
       };
       break;
 
-    case "bullet_points":
+    case "bullet_points": {
+      const defPtsMap = [
+        { title: "Point 1", description: "Detail" },
+        { title: "Point 2", description: "Detail" },
+        { title: "Point 3", description: "Detail" },
+      ];
+      const rawPts = (rawSlide.content.points || rawSlide.content.items || []).slice(0, 6);
+      const pts = rawPts.length >= 3 ? rawPts : defPtsMap;
       mappedContent = {
         title: rawSlide.content.title || "Key Points",
-        points: (rawSlide.content.points || rawSlide.content.items || [])
-          .slice(0, 6)
-          .map((p: any) =>
-            typeof p === "string"
-              ? { title: p, description: "" }
-              : { title: p.title || p, description: p.description || "" },
-          ),
+        points: pts.map((p: any, i: number) => {
+          const t = typeof p === "string" ? p : (p?.title ?? p);
+          const d = typeof p === "object" && p?.description != null ? p.description : "";
+          return {
+            title: (typeof t === "string" && t.trim()) ? t.trim() : defPtsMap[Math.min(i, 2)].title,
+            description: (typeof d === "string" && d.trim()) ? d.trim() : "",
+          };
+        }),
       };
       break;
+    }
 
-    case "bar_chart":
+    case "bar_chart": {
+      const defBarsMap = [
+        { label: "Item 1", value: 25 },
+        { label: "Item 2", value: 50 },
+        { label: "Item 3", value: 75 },
+        { label: "Item 4", value: 100 },
+      ];
+      const rawBars = (rawSlide.content.bars || rawSlide.content.data || []).slice(0, 6);
+      const bars = rawBars.length >= 4 ? rawBars : defBarsMap;
       mappedContent = {
         title: rawSlide.content.title || "Data",
         subtitle: rawSlide.content.subtitle || "",
-        bars: (rawSlide.content.bars || rawSlide.content.data || []).slice(0, 6).map((b: any) => ({
-          label: b.label || b.name || "Item",
-          value: b.value || 50,
+        bars: bars.map((b: any, i: number) => ({
+          label: (typeof (b?.label ?? b?.name) === "string" && String(b?.label ?? b?.name).trim())
+            ? String(b?.label ?? b?.name).trim()
+            : defBarsMap[Math.min(i, 3)].label,
+          value: typeof b?.value === "number" ? b.value : 50,
         })),
       };
       break;
+    }
 
-    case "quiz":
+    case "quiz": {
+      const quizDef = ["Option A", "Option B", "Option C", "Option D"];
+      const quizOpts = (rawSlide.content.options || quizDef).slice(0, 6).map((o: any, i: number) =>
+        (typeof o === "string" && String(o).trim()) ? String(o).trim() : quizDef[Math.min(i, 3)],
+      );
       mappedContent = {
         question: rawSlide.content.question || "Question?",
-        options: (rawSlide.content.options || ["A", "B", "C", "D"]).slice(0, 4),
+        options: quizOpts.length >= 2 ? quizOpts : quizDef,
         correctAnswer: typeof rawSlide.content.correctAnswer === "number" ? rawSlide.content.correctAnswer : 0,
       };
       break;
+    }
 
-    case "poll":
+    case "poll": {
+      const pollDef = ["Option 1", "Option 2", "Option 3", "Option 4"];
+      const pollOpts = (rawSlide.content.options || pollDef).slice(0, 6).map((o: any, i: number) =>
+        (typeof o === "string" && String(o).trim()) ? String(o).trim() : pollDef[Math.min(i, 3)],
+      );
       mappedContent = {
         question: rawSlide.content.question || "What do you think?",
-        options: (rawSlide.content.options || ["Option 1", "Option 2", "Option 3"]).slice(0, 4),
+        options: pollOpts.length >= 2 ? pollOpts : pollDef,
       };
       if (imageUrl) {
         baseDesign.overlayImageUrl = imageUrl;
@@ -763,15 +1025,19 @@ function mapSlideToFrontendFormat(
       }
       break;
 
-    case "wordcloud":
+    case "wordcloud": {
+      const wcQ = rawSlide.content.question;
       mappedContent = {
-        question: rawSlide.content.question || "Share your thoughts...",
+        question: (typeof wcQ === "string" && wcQ.trim())
+          ? wcQ.trim()
+          : (topic ? `What comes to mind when you think of ${topic}?` : "Share your thoughts..."),
       };
       if (imageUrl) {
         baseDesign.overlayImageUrl = imageUrl;
         baseDesign.overlayImagePosition = "background";
       }
       break;
+    }
 
     case "scale":
       mappedContent = {
@@ -801,12 +1067,17 @@ function mapSlideToFrontendFormat(
       };
       break;
 
-    case "ranking":
+    case "ranking": {
+      const rankDef = ["Item 1", "Item 2", "Item 3", "Item 4"];
+      const rankItems = (rawSlide.content.items || rankDef).slice(0, 6).map((i: any, idx: number) =>
+        (typeof i === "string" && String(i).trim()) ? String(i).trim() : rankDef[Math.min(idx, 3)],
+      );
       mappedContent = {
         question: rawSlide.content.question || "Rank these items:",
-        items: (rawSlide.content.items || ["Item 1", "Item 2", "Item 3", "Item 4"]).slice(0, 4),
+        items: rankItems.length >= 2 ? rankItems : rankDef,
       };
       break;
+    }
 
     case "guess_number":
       mappedContent = {
@@ -817,23 +1088,38 @@ function mapSlideToFrontendFormat(
       };
       break;
 
+    case "finish_sentence":
+      mappedContent = {
+        sentenceStart: rawSlide.content.sentenceStart || "Complete the sentence...",
+        wordBankOptions: Array.isArray(rawSlide.content.wordBankOptions) ? rawSlide.content.wordBankOptions : [],
+        maxCharacters: typeof rawSlide.content.maxCharacters === "number" ? rawSlide.content.maxCharacters : 100,
+      };
+      break;
+
     case "agree_spectrum":
       mappedContent = {
-        statement:
-          rawSlide.content.statement ||
-          rawSlide.content.question ||
-          "Agree or disagree with this statement.",
+        statement: (rawSlide.content.statement && String(rawSlide.content.statement).trim())
+          ? String(rawSlide.content.statement).trim()
+          : "I agree with this statement.",
         leftLabel: rawSlide.content.leftLabel || "Strongly Disagree",
         rightLabel: rawSlide.content.rightLabel || "Strongly Agree",
       };
       break;
 
-    case "finish_sentence":
+    case "poll_quiz": {
+      const pqDef = ["Option 1", "Option 2", "Option 3", "Option 4"];
+      const pqOpts = (rawSlide.content.options || pqDef).slice(0, 6).map((o: any, i: number) =>
+        (typeof o === "string" && String(o).trim()) ? String(o).trim() : pqDef[Math.min(i, 3)],
+      );
       mappedContent = {
-        sentenceStart: rawSlide.content.sentenceStart || rawSlide.content.text || "Complete this thought:",
-        maxCharacters: typeof rawSlide.content.maxCharacters === "number" ? rawSlide.content.maxCharacters : 120,
+        question: rawSlide.content.question || "What do you think?",
+        options: pqOpts.length >= 2 ? pqOpts : pqDef,
+        correctAnswer: typeof rawSlide.content.correctAnswer === "number"
+          ? Math.min(rawSlide.content.correctAnswer, (pqOpts.length || pqDef.length) - 1)
+          : 0,
       };
       break;
+    }
 
     default:
       mappedContent = {
@@ -854,121 +1140,366 @@ function mapSlideToFrontendFormat(
 }
 
 // =============================================================================
-// 10. FULL-DECK PROMPTS (interactive-only vs mixed content)
+// 10. THE BRAIN: INSTRUCTIONAL DESIGN SYSTEM PROMPT (UPGRADED)
 // =============================================================================
 
-const INTERACTIVE_TYPE_CYCLE = [
-  "poll",
-  "quiz",
-  "yesno",
-  "sentiment_meter",
-  "agree_spectrum",
-  "scale",
-  "wordcloud",
-] as const;
+const SLIDE_TYPE_SCHEMA = `
+## REQUIRED CONTENT PER SLIDE TYPE (NEVER OMIT)
+- **title**: title, subtitle. Optional imagePrompt.
+- **split_content**: title, text (or bulletPoints). 3-4 bullets max.
+- **content**: title, text. Short paragraph.
+- **timeline**: title, events (4 items: year, title, description each).
+- **bullet_points**: title, points (3-5 items: {title, description} each).
+- **bar_chart**: title, bars (4-6 items: {label, value} each).
+- **quiz**: question, options (4 non-empty strings), correctAnswer (0-3).
+- **poll**: question, options (4 non-empty strings).
+- **wordcloud**: question.
+- **scale**: question, minLabel, maxLabel.
+- **yesno**: question, correctIsYes.
+- **ranking**: question, items (4 non-empty strings).
+- **guess_number**: question, correctNumber, min, max.
+- **finish_sentence**: sentenceStart (required). Optional wordBankOptions.
+- **sentiment_meter**: question.
+- **agree_spectrum**: statement, leftLabel, rightLabel.
 
-function buildInteractiveSlideSequence(slideCount: number): string[] {
-  const n = Math.min(Math.max(slideCount, 3), 15);
-  const types: string[] = ["title"];
-  for (let i = 1; i < n; i++) {
-    types.push(INTERACTIVE_TYPE_CYCLE[(i - 1) % INTERACTIVE_TYPE_CYCLE.length]);
-  }
-  return types;
-}
-
-function buildInteractiveOnlyPrompt(description: string, difficulty: string, slideCount: number): string {
-  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 15);
-  const sequence = buildInteractiveSlideSequence(effectiveSlideCount);
-  const orderLines = sequence
-    .map((t, i) => `### Slide ${i + 1}: type MUST be exactly "${t}" (fill ALL required fields for that type).`)
-    .join("\n");
-
-  return `
-You are an expert designer of LIVE interactive classroom presentations.
-
-## TASK
-Topic: "${description}"
-Difficulty / depth: ${difficulty}
-
-## LANGUAGE (CRITICAL)
-- Match the topic language (Hebrew topic → all Hebrew; English → all English). Never mix.
-
-## ABSOLUTE RULES
-- Return EXACTLY ${effectiveSlideCount} slides in the order below. Do not skip or reorder.
-- Every slide MUST include a complete "content" object with every required field for its type (no empty strings, no missing arrays).
-- Slide 1 is always "title" with title + subtitle + imagePrompt.
-
-## JSON SHAPES (use these exact keys)
-- "title": { "type":"title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "Abstract background, NO TEXT..." }
-- "poll": { "type":"poll", "content": { "question": "...", "options": ["","",""] (3-4 items) }, "imagePrompt": "optional abstract, NO TEXT" }
-- "quiz": { "type":"quiz", "content": { "question": "...", "options": [4 strings], "correctAnswer": 0-3 } }
-- "yesno": { "type":"yesno", "content": { "question": "..." } }
-- "sentiment_meter": { "type":"sentiment_meter", "content": { "question": "...", "leftLabel": "...", "rightLabel": "..." } }
-- "agree_spectrum": { "type":"agree_spectrum", "content": { "statement": "A clear claim to agree/disagree with", "leftLabel": "...", "rightLabel": "..." } }
-- "scale": { "type":"scale", "content": { "question": "...", "minLabel": "...", "maxLabel": "..." } }
-- "wordcloud": { "type":"wordcloud", "content": { "question": "Open question for one-word answers" }, "imagePrompt": "optional" }
-
-## REQUIRED ORDER (${effectiveSlideCount} slides)
-${orderLines}
-
-## OUTPUT
-Return ONLY a valid JSON array of ${effectiveSlideCount} objects. No markdown fences, no commentary.
+CRITICAL: Never return a slide with missing or empty required fields. If unsure, use sensible topic-related defaults. Never leave options[], items[], events[], points[], bars[] empty.
 `;
-}
 
-function buildMixedContentPrompt(description: string, difficulty: string, slideCount: number): string {
-  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 15);
+const CLEAN_READABLE_PRINCIPLE = `
+## DESIGN PRINCIPLE - CLEAN & READABLE
+- One main idea per slide. Avoid cramming.
+- Prefer fewer, stronger points over many weak ones (3-4 bullet points max, not 6).
+- Leave breathing room - short text that fits on screen without overflow.
+- Titles: short and punchy (under 10 words when possible).
+- Bullet points: one line each, avoid nesting or long paragraphs.
+- Clear and readable over dense and overwhelming.
+`;
 
+function buildInstructionalDesignPrompt(description: string, audience: string, slideCount: number): string {
+  // Determine the actual slide count based on plan limits
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 10);
+  
   return `
 You are a world-class Instructional Designer and Presentation Architect.
-Your goal: create a RIVETING, MEMORABLE presentation that captivates the audience from start to finish.
+Your goal: create a clear, memorable presentation that engages the audience without overwhelming them.
 
 ## YOUR TASK
-Create a ${effectiveSlideCount}-slide presentation about: "${description}"
-Depth / difficulty: ${difficulty}
+Create a ${effectiveSlideCount}-slide interactive presentation about: "${description}"
+Target Audience: ${audience}
+${CLEAN_READABLE_PRINCIPLE}
 
-## CONTENT QUALITY STANDARDS (CRITICAL)
-- Every title must be COMPELLING. Never generic.
-- Every bullet point must deliver REAL VALUE - specific facts, surprising stats, actionable insights.
-- Quiz questions must be THOUGHT-PROVOKING. Poll options must be distinct and plausible.
-- For "agree_spectrum": "statement" must be a single clear claim (NOT empty).
-- For "sentiment_meter": include meaningful leftLabel and rightLabel.
-- Timeline events: SPECIFIC years and vivid details.
+## CONTENT QUALITY STANDARDS
+- Titles: clear and compelling, short (under 10 words when possible). Never generic.
+- Bullet points: specific facts and actionable insights. 3-4 strong points per slide, not 6.
+- Quiz: thought-provoking, plausible distractors. Exactly 4 non-empty options.
+- Timeline: 4 events with specific years and clear descriptions.
+- Scale/YesNo: spark reflection. Keep labels short.
+- Write clearly: hook, build, reflect. Avoid cramming.
 
 ## LANGUAGE DETECTION (CRITICAL)
-- If the topic is in Hebrew → ALL content MUST be in Hebrew
+- If the topic is in Hebrew → ALL content MUST be in Hebrew (natural, fluent Hebrew)
 - If the topic is in English → ALL content MUST be in English
 - Never mix languages
 
-## AVAILABLE SLIDE TYPES (use a DIVERSE mix — include poll, quiz, yesno, sentiment_meter, agree_spectrum, scale, wordcloud where appropriate)
+## AVAILABLE SLIDE TYPES
 
-### CONTENT
-1. "title" — { "type": "title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "NO TEXT IN IMAGE" }
-2. "split_content" — { "type": "split_content", "content": { "title": "...", "text": "line1\\nline2\\nline3" }, "imagePrompt": "..." }
-3. "content" — { "type": "content", "content": { "title": "...", "text": "..." } }
-4. "timeline" — 4 events with year, title, description each
+### CATEGORY A: CONTENT (Teaching)
+1. "title" → Opening slide - Make it CINEMATIC. A title that makes people lean forward.
+   { "type": "title", "content": { "title": "Bold compelling title", "subtitle": "Intriguing subtitle that creates curiosity" }, "imagePrompt": "Visual description (NO TEXT IN IMAGE)..." }
 
-### INTERACTIVE & QUIZ
-5. "poll" — { "content": { "question": "...", "options": [3-4 strings] } }
-6. "wordcloud" — { "content": { "question": "..." } }
-7. "scale" — { "content": { "question": "...", "minLabel": "...", "maxLabel": "..." } }
-8. "sentiment_meter" — { "content": { "question": "...", "leftLabel": "...", "rightLabel": "..." } }
-9. "agree_spectrum" — { "content": { "statement": "...", "leftLabel": "...", "rightLabel": "..." } }
-10. "quiz" — { "content": { "question": "...", "options": [4 strings], "correctAnswer": number 0-3 } }
-11. "yesno" — { "content": { "question": "..." } }
+2. "split_content" → Visual + Text - MUST include imagePrompt! 3-4 concise bullets.
+   { "type": "split_content", "content": { "title": "Section title", "text": "Key insight 1\\nKey insight 2\\nKey insight 3" }, "imagePrompt": "Visual description (NO TEXT IN IMAGE)..." }
 
-## STRUCTURE (EXACTLY ${effectiveSlideCount} SLIDES)
-- Slide 1: "title" — cinematic opening + imagePrompt
-- Slide 2: "split_content" — hook + imagePrompt
-- Include at least one "poll", one "quiz", one "yesno", one "sentiment_meter", "agree_spectrum", "scale", and "wordcloud" if ${effectiveSlideCount} >= 8; otherwise prioritize variety in: poll, quiz, yesno, sentiment_meter, agree_spectrum, scale, wordcloud
-- Remaining slides: mix "content", "timeline", "bullet_points" as needed to reach ${effectiveSlideCount}
+3. "content" → Focused text - One main idea. Keep it short and clear.
+   { "type": "content", "content": { "title": "Title", "text": "Brief, clear explanation with key points..." } }
+
+4. "timeline" → EXACTLY 4 events with specific years and clear descriptions
+   { "type": "timeline", "content": { "title": "The Journey of...", "events": [{ "year": "2020", "title": "Event title", "description": "Clear description" }, ...4 events] } }
+
+### CATEGORY B: ENGAGEMENT (Interactive)
+5. "scale" → Rating scale - ask something that makes people THINK
+   { "type": "scale", "content": { "question": "Thought-provoking rating question?", "minLabel": "Label", "maxLabel": "Label" } }
+
+6. "yesno" → Yes/No question - something DEBATABLE, not obvious
+   { "type": "yesno", "content": { "question": "Provocative yes/no question that sparks discussion?" } }
+
+### CATEGORY C: COMPETITION (Quiz)
+7. "quiz" → Multiple choice - make it CHALLENGING and EDUCATIONAL
+   { "type": "quiz", "content": { "question": "Non-obvious question that teaches something?", "options": ["Plausible A", "Plausible B", "Correct C", "Plausible D"], "correctAnswer": 2 } }
+
+## MANDATORY SLIDE STRUCTURE (EXACTLY ${effectiveSlideCount} SLIDES)
+
+${effectiveSlideCount <= 5 ? `
+### For ${effectiveSlideCount} slides (compact format):
+### Slide 1: "title" - CINEMATIC opening. Include imagePrompt for stunning abstract background.
+### Slide 2: "split_content" - HOOK with surprising facts. MUST include imagePrompt.
+### Slide 3: "quiz" - Test knowledge with a TRICKY question.
+${effectiveSlideCount >= 4 ? `### Slide 4: "scale" - THOUGHT-PROVOKING rating question.` : ''}
+${effectiveSlideCount >= 5 ? `### Slide 5: "yesno" - END with a PROVOCATIVE discussion question.` : ''}
+` : `
+### Slide 1: "title" - CINEMATIC opening. Include imagePrompt for stunning abstract background.
+### Slide 2: "split_content" - HOOK with surprising facts. MUST include imagePrompt.
+### Slide 3: "quiz" - Test knowledge with a TRICKY question based on Slide 2.
+### Slide 4: "timeline" - EXACTLY 4 events with real years and vivid descriptions.
+### Slide 5: "scale" - THOUGHT-PROVOKING rating question that sparks reflection.
+### Slide 6: "content" - DEEP DIVE with stories, examples, specific data.
+### Slide 7: "yesno" - END with a PROVOCATIVE discussion question.
+${effectiveSlideCount > 7 ? `### Additional slides: Mix of content, quiz, and engagement slides to reach ${effectiveSlideCount} total.` : ''}
+`}
 
 ## CRITICAL IMAGE RULES
-- imagePrompt: NO TEXT, NO WORDS, NO LETTERS in the image
+- ALL imagePrompt must describe images with NO TEXT, NO WORDS, NO LETTERS
+- For title: subtle, abstract, soft backgrounds that evoke the topic mood
+- For split_content: clear subject, professional style, emotionally resonant
 
-## OUTPUT FORMAT
-Return ONLY valid JSON array with EXACTLY ${effectiveSlideCount} slides. No markdown, no explanation:
-[{ "type": "title", ... }, ...]
+## CONCISE CONTENT
+- Quiz/Poll: 4 options, SHORT (1-2 lines). Each must be non-empty.
+- Content: Keep text brief. 3-4 bullet points max per slide.
+- Scale labels, ranking items: Keep short.
+${SLIDE_TYPE_SCHEMA}
+
+## OUTPUT FORMAT (CRITICAL)
+Return a single JSON object (no markdown, no code blocks):
+{
+  "interpretation": "1-2 sentences: what you understood from the request and the learning goals",
+  "plan": "Brief plan: what each slide will cover (2-4 sentences)",
+  "slides": [
+    {"type":"...","content":{...},"imagePrompt":"..." optional},
+    ...exactly ${effectiveSlideCount} slides
+  ]
+}
+- Valid JSON only - no trailing commas, all keys in double quotes
+- interpretation and plan help the user see your reasoning BEFORE the slides
+`;
+}
+
+// =============================================================================
+// 10b. PRO AI: DYNAMIC INSTRUCTIONAL DESIGN (no fixed structure)
+// =============================================================================
+
+function buildProInstructionalDesignPrompt(
+  description: string,
+  audience: string,
+  slideCount: number,
+  userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null,
+  difficulty = "intermediate",
+): string {
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const difficultyNote =
+    difficulty === "beginner"
+      ? "Use simpler language and more accessible content depth."
+      : difficulty === "advanced"
+        ? "Use deeper, more nuanced content and challenging questions."
+        : "Balance between accessible and thought-provoking.";
+  const userContext = userAiSettings
+    ? [
+        userAiSettings.who_am_i && `Instructor profile: ${userAiSettings.who_am_i}`,
+        userAiSettings.what_i_lecture && `Typically lectures on: ${userAiSettings.what_i_lecture}`,
+        userAiSettings.teaching_style && `Teaching style: ${userAiSettings.teaching_style}`,
+        userAiSettings.additional_context && `Additional context: ${userAiSettings.additional_context}`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+  return `
+You are a world-class Instructional Designer and Presentation Architect. Your goal: create a presentation that perfectly matches the user's request—clear, readable, and complete.
+
+## USER REQUEST
+"${description}"
+Target Audience: ${audience}
+Difficulty: ${difficulty}. ${difficultyNote}
+${userContext ? `\n## INSTRUCTOR CONTEXT (use to personalize)\n${userContext}\n` : ""}
+${CLEAN_READABLE_PRINCIPLE}
+
+## YOUR TASK
+1. DEEP REASONING: Analyze the request. What does the user want? Match content vs interactive mix (e.g. 100% interactive, 70/30, or mostly content).
+2. CHOOSE SLIDE TYPES DYNAMICALLY: Select optimal types. Types: title, split_content, content, timeline, bullet_points, bar_chart, quiz, poll, wordcloud, scale, yesno, ranking, guess_number, sentiment_meter, agree_spectrum, finish_sentence
+3. For technical topics: LaTeX ($...$), precise definitions when needed.
+4. Create EXACTLY ${effectiveSlideCount} slides.
+
+## CONTENT QUALITY
+- Titles: clear, short (under 10 words when possible)
+- Bullet points: 3-4 strong points per slide, not 6. One line each.
+- Quiz: educational, 4 plausible options. Always non-empty.
+- Content: brief, readable. Avoid long paragraphs.
+
+## LANGUAGE
+- If topic is in Hebrew → ALL content in Hebrew
+- If topic is in English → ALL content in English
+
+## IMAGE RULES
+- imagePrompt: NO TEXT, NO WORDS in images. Describe visuals only.
+${SLIDE_TYPE_SCHEMA}
+
+## CONCISE CONTENT
+- Quiz/Poll: exactly 4 non-empty options. Short (1-2 lines).
+- EVERY option/item/choice MUST have real text. NEVER leave empty. Finish_sentence: always sentenceStart.
+
+## OUTPUT FORMAT (CRITICAL)
+Return a single JSON object (no markdown, no code blocks):
+{
+  "interpretation": "1-2 sentences: what you understood from the request and the learning goals",
+  "plan": "Brief plan: what each slide will cover and why (2-4 sentences total)",
+  "slides": [
+    { "type": "title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "..." },
+    { "type": "split_content", "content": { "title": "...", "text": "..." }, "imagePrompt": "..." },
+    ...exactly ${effectiveSlideCount} slides
+  ]
+}
+
+Valid JSON only. Each slide must have "type" and "content". Add "imagePrompt" for title, split_content, poll, wordcloud.
+`;
+}
+
+function buildInteractiveOnlyPrompt(
+  description: string,
+  slideCount: number,
+  difficulty: string,
+  userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
+): string {
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const difficultyNote =
+    difficulty === "beginner"
+      ? "Use simple, accessible questions. Avoid jargon."
+      : difficulty === "advanced"
+        ? "Use challenging questions. Deeper, nuanced options."
+        : "Balance between accessible and thought-provoking.";
+
+  const userContext = userAiSettings
+    ? [
+        userAiSettings.who_am_i && `Instructor profile: ${userAiSettings.who_am_i}`,
+        userAiSettings.what_i_lecture && `Typically lectures on: ${userAiSettings.what_i_lecture}`,
+        userAiSettings.teaching_style && `Teaching style: ${userAiSettings.teaching_style}`,
+        userAiSettings.additional_context && `Additional context: ${userAiSettings.additional_context}`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+  return `
+You are a world-class Instructional Designer. Create an INTERACTIVE-ONLY presentation: one title slide + all remaining slides are engagement/quiz slides.
+
+## USER REQUEST
+"${description}"
+${userContext ? `\n## INSTRUCTOR CONTEXT\n${userContext}\n` : ""}
+Difficulty level: ${difficulty}. ${difficultyNote}
+${CLEAN_READABLE_PRINCIPLE}
+
+## MANDATORY STRUCTURE
+- Slide 1: "title" - CINEMATIC opening. Include imagePrompt for stunning background.
+- Slides 2..${effectiveSlideCount}: Use a DIVERSE mix of these types (at least one of each per round if possible):
+  - poll: question + options (3-4 non-empty strings)
+  - quiz: question + options (3-4 non-empty strings) + correctAnswer (index 0-3)
+  - yesno: question + correctIsYes (boolean)
+  - sentiment_meter: question (optional leftLabel, rightLabel)
+  - agree_spectrum: statement (required) + leftLabel + rightLabel
+  - scale: question + minLabel + maxLabel
+  - wordcloud: question
+  - finish_sentence: sentenceStart (required) + optional wordBankOptions
+  - poll_quiz: like poll but with correctAnswer (index)
+
+## REQUIRED FIELDS
+- agree_spectrum: MUST have statement (non-empty), leftLabel, rightLabel
+- poll/quiz/poll_quiz: question + options array (2-4 items), each non-empty. correctAnswer in range for quiz/poll_quiz
+- yesno: correctAnswer = boolean (true=Yes correct). Frontend uses correctAnswer not correctIsYes for yesno—map correctIsYes to correctAnswer
+- sentiment_meter: question required; leftLabel/rightLabel optional
+- wordcloud, finish_sentence: question/sentenceStart required
+
+## LANGUAGE
+- If topic in Hebrew → ALL content in Hebrew
+- If topic in English → ALL content in English
+
+${SLIDE_TYPE_SCHEMA}
+
+## OUTPUT FORMAT (CRITICAL)
+{
+  "interpretation": "1-2 sentences: what you understood",
+  "plan": "Brief plan (2-4 sentences)",
+  "slides": [
+    { "type": "title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "..." },
+    { "type": "poll", "content": { "question": "...", "options": ["A","B","C","D"] } },
+    { "type": "quiz", "content": { "question": "...", "options": ["A","B","C","D"], "correctAnswer": 2 } },
+    { "type": "agree_spectrum", "content": { "statement": "I agree that...", "leftLabel": "Disagree", "rightLabel": "Agree" } },
+    ...exactly ${effectiveSlideCount} slides
+  ]
+}
+Valid JSON only. Add "imagePrompt" for title, poll, wordcloud when appropriate.
+`;
+}
+
+function buildProPlanOnlyPrompt(
+  description: string,
+  audience: string,
+  slideCount: number,
+  userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
+): string {
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const userContext = userAiSettings
+    ? [
+        userAiSettings.who_am_i && `Instructor profile: ${userAiSettings.who_am_i}`,
+        userAiSettings.what_i_lecture && `Typically lectures on: ${userAiSettings.what_i_lecture}`,
+        userAiSettings.teaching_style && `Teaching style: ${userAiSettings.teaching_style}`,
+        userAiSettings.additional_context && `Additional context: ${userAiSettings.additional_context}`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+  return `
+You are a world-class Instructional Designer. Analyze the user's request and create a plan—NO slide content yet.
+
+## USER REQUEST
+"${description}"
+Target Audience: ${audience}
+${userContext ? `\n## INSTRUCTOR CONTEXT\n${userContext}\n` : ""}
+
+## YOUR TASK
+1. DEEP REASONING: What does the user REALLY want? What learning goals? Adapt the mix: 100% interactive (poll/quiz/scale), 70% interactive 30% content, or mostly content (timeline/content)—based on the request.
+2. CHOOSE SLIDE TYPES DYNAMICALLY: Select optimal types and order. Do NOT use a fixed template.
+   Types: title, split_content, content, timeline, bullet_points, bar_chart, quiz, poll, wordcloud, scale, yesno, ranking, guess_number, sentiment_meter, agree_spectrum, finish_sentence
+3. Create EXACTLY ${effectiveSlideCount} slides.
+
+## OUTPUT FORMAT (JSON only, no markdown)
+{
+  "interpretation": "1-2 sentences: what you understood and the learning goals",
+  "plan": "Brief plan: what each slide will cover and why (2-4 sentences)",
+  "slideTypes": ["title", "split_content", "quiz", ...]
+}
+`;
+}
+
+function buildProSlidesFromPlanPrompt(
+  description: string,
+  interpretation: string,
+  plan: string,
+  slideTypes: string[]
+): string {
+  const slidesSpec = slideTypes.map((t, i) => `Slide ${i + 1}: ${t}`).join("\n");
+  return `
+You are a presentation content creator. Generate the full slide content based on this plan.
+${CLEAN_READABLE_PRINCIPLE}
+
+## ORIGINAL REQUEST
+"${description}"
+
+## INTERPRETATION
+${interpretation}
+
+## PLAN
+${plan}
+
+## SLIDE TYPES (in order)
+${slidesSpec}
+${SLIDE_TYPE_SCHEMA}
+
+## REQUIRED FIELDS CHECKLIST - BEFORE RETURNING
+For each slide, verify: quiz→question+options(4)+correctAnswer; poll→question+options(4); finish_sentence→sentenceStart; timeline→title+events(4); bullet_points→title+points(3-5); bar_chart→title+bars(4-6); ranking→question+items(4); content→title+text; wordcloud→question; etc.
+Empty = failure. Use topic-relevant defaults if unsure.
+
+## OUTPUT
+Return a JSON array of ${slideTypes.length} slides. Each: {"type":"...","content":{...},"imagePrompt":"..." when needed}
+Types must match the plan. Every slide MUST have ALL required fields filled. Language: match request. NO TEXT in images.
 `;
 }
 
@@ -979,19 +1510,21 @@ Return ONLY valid JSON array with EXACTLY ${effectiveSlideCount} slides. No mark
 function buildSingleSlidePrompt(slideType: string, prompt: string, style: string, includeImage: boolean): string {
   const typeInstructions: Record<string, string> = {
     title: `Generate a "title" slide with a CINEMATIC, compelling title. Output: { "type": "title", "content": { "title": "Bold compelling title", "subtitle": "Intriguing subtitle" }, "imagePrompt": "Visual description NO TEXT..." }`,
-    split_content: `Generate a "split_content" slide with 3-5 bullet points. Each bullet must deliver REAL VALUE - specific facts, surprising stats, or actionable insights. Output: { "type": "split_content", "content": { "title": "Engaging title", "text": "Surprising insight 1\\nSpecific detail 2\\nActionable takeaway 3" }, "imagePrompt": "Visual NO TEXT..." }`,
-    content: `Generate a "content" slide. Write like a TED talk - engaging, specific, story-driven. Output: { "type": "content", "content": { "title": "Compelling title", "text": "Rich engaging explanation with examples..." } }`,
+    split_content: `Generate a "split_content" slide with 3-5 CONCISE bullet points. Each bullet short - specific facts, surprising stats, or actionable insights. Output: { "type": "split_content", "content": { "title": "Engaging title", "text": "Short insight 1\\nShort detail 2\\nShort takeaway 3" }, "imagePrompt": "Visual NO TEXT..." }`,
+    content: `Generate a "content" slide. Engaging but CONCISE - avoid long paragraphs. Keep text brief. Output: { "type": "content", "content": { "title": "Compelling title", "text": "Brief engaging explanation..." } }`,
     timeline: `Generate a "timeline" slide with 3-5 events. Use SPECIFIC years and vivid details. Output: { "type": "timeline", "content": { "title": "The Journey of...", "events": [{ "year": "2020", "title": "Turning Point", "description": "Vivid details..." }, ...] } }`,
-    bullet_points: `Generate a "bullet_points" slide with 4-6 points. Each point must be insightful. Output: { "type": "bullet_points", "content": { "title": "...", "points": [{ "title": "Bold Point", "description": "Supporting detail..." }, ...] } }`,
-    bar_chart: `Generate a "bar_chart" slide with 4-6 bars using realistic data. Output: { "type": "bar_chart", "content": { "title": "...", "subtitle": "...", "bars": [{ "label": "Item", "value": 75 }, ...] } }`,
-    quiz: `Generate a "quiz" slide. Make it CHALLENGING - all options should be plausible. Output: { "type": "quiz", "content": { "question": "Non-obvious question?", "options": ["Plausible A", "Plausible B", "Correct C", "Plausible D"], "correctAnswer": 2 } }`,
-    poll: `Generate a "poll" slide with 4 thought-provoking options. Output: { "type": "poll", "content": { "question": "Engaging question?", "options": ["A", "B", "C", "D"] }, "imagePrompt": "Abstract background NO TEXT..." }`,
+    bullet_points: `Generate a "bullet_points" slide with 4-6 points. Keep titles and descriptions SHORT and insightful. Output: { "type": "bullet_points", "content": { "title": "...", "points": [{ "title": "Short", "description": "Short detail" }, ...] } }`,
+    bar_chart: `Generate a "bar_chart" slide with 4-6 bars using realistic data. Labels MUST be SHORT. Output: { "type": "bar_chart", "content": { "title": "...", "subtitle": "...", "bars": [{ "label": "Short", "value": 75 }, ...] } }`,
+    quiz: `Generate a "quiz" slide. Make it CHALLENGING - all options plausible. Options MUST be SHORT (1-2 lines max). Output: { "type": "quiz", "content": { "question": "Non-obvious question?", "options": ["Short A", "Short B", "Short C", "Short D"], "correctAnswer": 2 } }`,
+    poll: `Generate a "poll" slide with 4 thought-provoking options. Options MUST be SHORT (1-2 lines max). Output: { "type": "poll", "content": { "question": "Engaging question?", "options": ["Short A", "Short B", "Short C", "Short D"] }, "imagePrompt": "Abstract background NO TEXT..." }`,
     wordcloud: `Generate a "wordcloud" slide. Output: { "type": "wordcloud", "content": { "question": "Open-ended engaging question..." }, "imagePrompt": "Abstract background NO TEXT..." }`,
-    scale: `Generate a "scale" slide. Ask something that makes people THINK. Output: { "type": "scale", "content": { "question": "Thought-provoking question?", "minLabel": "Label", "maxLabel": "Label" } }`,
+    scale: `Generate a "scale" slide. Ask something that makes people THINK. minLabel and maxLabel MUST be SHORT. Output: { "type": "scale", "content": { "question": "Thought-provoking question?", "minLabel": "Short", "maxLabel": "Short" } }`,
     sentiment_meter: `Generate a "sentiment_meter" slide. Output: { "type": "sentiment_meter", "content": { "question": "How do you feel about...?" } }`,
     yesno: `Generate a "yesno" slide. Make it DEBATABLE, not obvious. Output: { "type": "yesno", "content": { "question": "Provocative question?", "correctIsYes": true } }`,
-    ranking: `Generate a "ranking" slide with 4 items. Output: { "type": "ranking", "content": { "question": "Rank these...", "items": ["A", "B", "C", "D"] } }`,
+    ranking: `Generate a "ranking" slide with 4 items. Items MUST be SHORT (1-2 lines max). Output: { "type": "ranking", "content": { "question": "Rank these...", "items": ["Short A", "Short B", "Short C", "Short D"] } }`,
     guess_number: `Generate a "guess_number" slide with a surprising answer. Output: { "type": "guess_number", "content": { "question": "Surprising number question?", "correctNumber": 42, "min": 0, "max": 100 } }`,
+    finish_sentence: `Generate a "finish_sentence" slide. REQUIRED: sentenceStart with a compelling incomplete sentence for participants to complete. Optional: wordBankOptions array for word-bank variant. Output: { "type": "finish_sentence", "content": { "sentenceStart": "Complete this thought-provoking sentence...", "wordBankOptions": ["option1", "option2", "option3", "option4"] } }`,
+    agree_spectrum: `Generate an "agree_spectrum" slide. REQUIRED: statement (provocative or debatable claim), leftLabel, rightLabel (e.g. Disagree/Agree). Output: { "type": "agree_spectrum", "content": { "statement": "Debatable statement?", "leftLabel": "Disagree", "rightLabel": "Agree" } }`,
   };
 
   const instruction = typeInstructions[slideType] || typeInstructions.content;
@@ -1001,6 +1534,7 @@ function buildSingleSlidePrompt(slideType: string, prompt: string, style: string
 Topic: "${prompt}"
 Style: ${style}
 Type: ${slideType}
+${CLEAN_READABLE_PRINCIPLE}
 
 ## LANGUAGE: Match the topic language (Hebrew→Hebrew, English→English)
 
@@ -1008,6 +1542,19 @@ Type: ${slideType}
 - Titles must be COMPELLING - use power words, questions, or bold statements
 - Content must deliver REAL VALUE - specific facts, surprising stats, actionable insights
 - Write like a storyteller, not a textbook
+
+## REQUIRED FIELDS - ZERO TOLERANCE
+Output MUST include every required field for this slide type. Never omit:
+- quiz/poll: question + options (4 non-empty) + correctAnswer for quiz
+- finish_sentence: sentenceStart (incomplete sentence)
+- timeline: title + events (4 items with year, title, description)
+- bullet_points: title + points (3-5 with title, description)
+- bar_chart: title + bars (4-6 with label, value)
+- ranking: question + items (4 non-empty)
+- content: title + text (non-empty)
+- wordcloud/scale/yesno/sentiment_meter: question
+- agree_spectrum: statement, leftLabel, rightLabel
+Empty or missing = failure. Use topic-relevant defaults if unsure.
 
 ## SPECIFICATION
 ${instruction}
@@ -1050,35 +1597,79 @@ function selectThemeForTopic(topic: string): GeneratedTheme {
 }
 
 // =============================================================================
-// 13. AI API CALL
+// 13. AI API CALL (Gemini)
 // =============================================================================
 
 async function callAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const model = "gemini-2.5-flash";
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const response = await fetch(apiUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+        },
       ],
-      temperature: 0.7,
-      max_tokens: 4096,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
+      },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("AI API Error:", response.status, errorText);
+    console.error("Gemini API Error:", response.status, errorText);
     throw new Error(`AI Service Error: ${response.status}`);
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || "";
+  return data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("").trim() || "";
+}
+
+/** Pro AI: Call Gemini with thinking/reasoning for deeper analysis. */
+async function callAIWithThinking(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
+  const model = "gemini-2.5-flash";
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const body: Record<string, unknown> = {
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.7,
+      maxOutputTokens: 16384,
+      responseMimeType: "application/json",
+      thinkingConfig: {
+        thinkingBudget: 4096,
+      },
+    },
+  };
+
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Gemini API Error (thinking):", response.status, errorText);
+    throw new Error(`AI Service Error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const textPart = parts.find((p: any) => p.text);
+  return textPart?.text?.trim() || "";
 }
 
 // =============================================================================
@@ -1098,16 +1689,14 @@ async function generateImage(apiKey: string, prompt: string, slideType: string):
 
     const enhancedPrompt = enhanceImagePrompt(prompt, slideType);
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const model = "gemini-2.5-flash-image";
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const response = await fetch(apiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image",
-        messages: [{ role: "user", content: enhancedPrompt }],
-        modalities: ["image", "text"],
+        contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
       }),
     });
 
@@ -1117,14 +1706,18 @@ async function generateImage(apiKey: string, prompt: string, slideType: string):
     }
 
     const data = await response.json();
-    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const partWithImage = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) || null;
+    const inlineData = partWithImage?.inlineData;
 
-    if (imageUrl) {
+    if (inlineData?.data) {
+      const mimeType = inlineData.mimeType || "image/png";
+      const dataUrl = `data:${mimeType};base64,${inlineData.data}`;
       console.log("✅ Image generated successfully");
-      imageCache.set(cacheKey, imageUrl);
-      return imageUrl;
+      imageCache.set(cacheKey, dataUrl);
+      return dataUrl;
     }
 
+    console.warn("No image data returned from Gemini");
     return null;
   } catch (error) {
     console.error("Image generation error:", error);
@@ -1145,28 +1738,47 @@ serve(async (req) => {
     // Auth verification
     const { user, error: authError } = await verifyAuth(req);
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: authError || "Unauthorized" }), {
+      console.error("[generate-slides] Auth failed:", authError || "No user");
+      const message = authError && /expired|invalid|token/i.test(authError)
+        ? "Session expired or invalid. Please sign out and sign in again, then try again."
+        : (authError || "Unauthorized");
+      return new Response(JSON.stringify({ error: message }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     console.log(`🔐 User: ${user.id}`);
 
+    // Ensure user has a user_credits row (for OAuth users who might not have triggered handle_new_user_signup)
+    const ensureResult = await ensureUserCredits(user.id);
+    if (!ensureResult.ok) {
+      console.error("[generate-slides] ensureUserCredits failed:", ensureResult.error);
+      return new Response(
+        JSON.stringify({ error: ensureResult.error || "Could not initialize credits" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const body = await req.json();
-    const sessionId =
-      typeof body.sessionId === "string" && body.sessionId.length >= 8 ? body.sessionId : undefined;
     const {
       description,
-      slideCount = 8,
       contentType = "with_content",
       difficulty = "intermediate",
+      targetAudience = "General Audience",
+      slideCount = 8,
       singleSlide,
       skipImages = false,
+      maxImages,
+      phase,
+      plan: providedPlan,
+      interpretation: providedInterpretation,
+      slideTypes: providedSlideTypes,
+      progressiveSlide,
     } = body;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured");
+    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured");
     }
 
     const inputText = singleSlide?.prompt || description || "";
@@ -1182,17 +1794,12 @@ serve(async (req) => {
 
       console.log(`🎯 Generating single ${type} slide`);
 
-      // Consume 1 credit for single slide generation
-      const creditResult = await consumeCredits(
-        user.id,
-        1,
-        `Single slide generation: ${type}`
-      );
-
-      if (!creditResult.success) {
+      // Check balance first (don't deduct until after success)
+      const balanceCheck = await checkCreditsBalance(user.id, 1);
+      if (!balanceCheck.allowed) {
         return new Response(
           JSON.stringify({ 
-            error: creditResult.error || "Insufficient credits",
+            error: balanceCheck.error || "Insufficient credits",
           }),
           { 
             status: 402, 
@@ -1203,13 +1810,13 @@ serve(async (req) => {
 
       const systemPrompt = buildSingleSlidePrompt(type, prompt, style, includeImage);
       const rawContent = await callAI(
-        LOVABLE_API_KEY,
+        GEMINI_API_KEY,
         systemPrompt,
         `Generate the JSON for a ${type} slide about: "${prompt}"`,
       );
 
       let rawSlide = cleanAndParseJSON(rawContent);
-
+      if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
       if (!rawSlide || typeof rawSlide !== "object") {
         throw new Error("Failed to parse slide from AI response");
       }
@@ -1221,7 +1828,7 @@ serve(async (req) => {
 
       if (!skipImages && (includeImage || slidesNeedingImages.includes(type))) {
         const imagePromptText = rawSlide.imagePrompt || `Professional visual for ${type} slide about: ${prompt}`;
-        generatedImageUrl = await generateImage(LOVABLE_API_KEY, imagePromptText, type);
+        generatedImageUrl = await generateImage(GEMINI_API_KEY, imagePromptText, type);
       }
 
       const selectedTheme = selectThemeForTopic(prompt);
@@ -1234,25 +1841,22 @@ serve(async (req) => {
         prompt,
       );
 
-      // Update usage stats
+      // Deduct credits only after successful generation
+      const creditResult = await consumeCredits(
+        user.id,
+        1,
+        `Single slide generation: ${type}`
+      );
+      if (!creditResult.success) {
+        console.error("[generate-slides] Failed to consume after single slide:", creditResult.error);
+        return new Response(
+          JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
       await updateUsageStats(user.id, 1, false);
 
       console.log(`✅ Single slide generated: ${type}`);
-
-      if (sessionId) {
-        await appendBuilderConversation(user.id, sessionId, [
-          {
-            role: "user",
-            content: prompt || "",
-            metadata: { kind: "single_slide_request", slideType: type, contentType },
-          },
-          {
-            role: "assistant",
-            content: `Generated one ${type} slide.`,
-            metadata: { kind: "single_slide_result", slideType: type },
-          },
-        ]);
-      }
 
       return new Response(
         JSON.stringify({
@@ -1266,6 +1870,52 @@ serve(async (req) => {
     }
 
     // ==========================================================================
+    // PROGRESSIVE SLIDE MODE (one slide at a time, with plan context)
+    // ==========================================================================
+    if (progressiveSlide && typeof progressiveSlide === "object") {
+      const { index, slideType, plan, interpretation } = progressiveSlide;
+      const desc = progressiveSlide.description || description;
+      if (!desc || typeof slideType !== "string") {
+        throw new Error("progressiveSlide requires description and slideType");
+      }
+      const balanceCheck = await checkCreditsBalance(user.id, 1);
+      if (!balanceCheck.allowed) {
+        return new Response(
+          JSON.stringify({ error: balanceCheck.error || "Insufficient credits" }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const ctxPrompt = plan && interpretation
+        ? `Presentation: "${desc}". Plan: ${plan}. This is slide ${(index || 0) + 1}. Context: ${interpretation}`
+        : desc;
+      const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(slideType);
+      const sysPrompt = buildSingleSlidePrompt(slideType, ctxPrompt, "professional", includeImage);
+      const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${slideType} slide: "${desc}"`);
+      let rawSlide = cleanAndParseJSON(rawContent);
+      if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
+      if (!rawSlide || typeof rawSlide !== "object") {
+        throw new Error("Failed to parse slide from AI response");
+      }
+      rawSlide = validateAndFixSlide(rawSlide, index || 0, desc);
+      let generatedImageUrl: string | null = null;
+      if (!skipImages && ["title", "split_content", "poll", "wordcloud"].includes(slideType) && rawSlide.imagePrompt) {
+        generatedImageUrl = await generateImage(GEMINI_API_KEY, rawSlide.imagePrompt, slideType);
+      }
+      const selectedTheme = selectThemeForTopic(desc);
+      const hebrewRegex = /[\u0590-\u05FF]/;
+      const detectedLanguage = hebrewRegex.test(desc) ? "hebrew" : "english";
+      const mappedSlide = mapSlideToFrontendFormat(rawSlide as RawSlide, index || 0, selectedTheme, detectedLanguage, generatedImageUrl || undefined, desc);
+      const creditResult = await consumeCredits(user.id, 1, `Progressive slide ${(index || 0) + 1}`);
+      if (!creditResult.success) {
+        return new Response(JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      return new Response(
+        JSON.stringify({ slide: mappedSlide, theme: { id: selectedTheme.id, themeName: selectedTheme.name, colors: selectedTheme.colors, font: selectedTheme.font, mood: selectedTheme.mood } }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // ==========================================================================
     // FULL PRESENTATION MODE
     // ==========================================================================
     if (!description) {
@@ -1274,18 +1924,71 @@ serve(async (req) => {
 
     console.log(`🎯 Generating full presentation: "${description}"`);
 
-    // Consume credits: 1 credit per slide for full presentation
-    const creditsToConsume = slideCount;
-    const creditResult = await consumeCredits(
-      user.id,
-      creditsToConsume,
-      `Presentation generation: ${slideCount} slides`
-    );
+    // Early checks BEFORE any AI call: credits + max_slides
+    const maxSlidesAllowed = await getUserMaxSlides(user.id);
+    if (slideCount > maxSlidesAllowed) {
+      return new Response(
+        JSON.stringify({
+          error: "Slide limit exceeded",
+          message: `Your plan allows up to ${maxSlidesAllowed} slides. Upgrade to add more.`,
+          maxSlides: maxSlidesAllowed,
+        }),
+        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    const effectiveSlideCount = Math.min(slideCount, maxSlidesAllowed);
 
-    if (!creditResult.success) {
+    const { isPro } = await getUserPlan(user.id);
+    const userAiSettings = isPro ? await getUserAiSettings(user.id) : null;
+
+    // Phase 1: Plan only - return reasoning + plan before building slides (all users, same AI capability)
+    if (phase === "plan") {
+      const planBalanceCheck = await checkCreditsBalance(user.id, 1);
+      if (!planBalanceCheck.allowed) {
+        return new Response(
+          JSON.stringify({ error: planBalanceCheck.error || "Insufficient credits" }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      const systemPrompt = buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings);
+      const planRaw = await callAIWithThinking(
+        GEMINI_API_KEY,
+        systemPrompt,
+        `Analyze and plan: "${description}".`
+      );
+      const planParsed = cleanAndParseJSON(planRaw);
+      if (!planParsed || typeof planParsed !== "object" || !Array.isArray(planParsed.slideTypes)) {
+        throw new Error("Failed to parse plan from AI response.");
+      }
+      // Cap slide types to user's max_slides
+      const cappedSlideTypes = (planParsed.slideTypes || []).slice(0, maxSlidesAllowed);
+      const planCreditResult = await consumeCredits(user.id, 1, "Presentation plan");
+      if (!planCreditResult.success) {
+        return new Response(
+          JSON.stringify({ error: planCreditResult.error || "Failed to deduct credits" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          phase: "plan",
+          interpretation: planParsed.interpretation || "",
+          plan: planParsed.plan || "",
+          slideCount: cappedSlideTypes.length,
+          slideTypes: cappedSlideTypes,
+          creditsConsumed: 1,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check balance for full generation (use effectiveSlideCount after max_slides cap)
+    const creditsToConsume = effectiveSlideCount;
+    const balanceCheck = await checkCreditsBalance(user.id, creditsToConsume);
+    if (!balanceCheck.allowed) {
       return new Response(
         JSON.stringify({ 
-          error: creditResult.error || "Insufficient credits",
+          error: balanceCheck.error || "Insufficient credits",
         }),
         { 
           status: 402, 
@@ -1295,29 +1998,93 @@ serve(async (req) => {
     }
 
     const selectedTheme = selectThemeForTopic(description);
-    console.log(`🎨 Selected theme: ${selectedTheme.name}`);
+    console.log(`🎨 Selected theme: ${selectedTheme.name}. Pro mode: ${isPro}`);
 
-    const systemPrompt =
-      contentType === "interactive"
-        ? buildInteractiveOnlyPrompt(description, difficulty, slideCount)
-        : buildMixedContentPrompt(description, difficulty, slideCount);
-    const rawContent = await callAI(
-      LOVABLE_API_KEY,
-      systemPrompt,
-      `Create the JSON slides array for: "${description}".`,
-    );
+    let rawContent: string;
+    let plan: string | undefined;
+    let interpretation: string | undefined;
+
+    if (isPro && providedPlan && providedInterpretation && Array.isArray(providedSlideTypes) && providedSlideTypes.length > 0) {
+      const slidesFromPlanPrompt = buildProSlidesFromPlanPrompt(
+        description,
+        providedInterpretation,
+        providedPlan,
+        providedSlideTypes
+      );
+      rawContent = await callAI(
+        GEMINI_API_KEY,
+        slidesFromPlanPrompt,
+        `Generate slide content for: "${description}".`
+      );
+      plan = providedPlan;
+      interpretation = providedInterpretation;
+      const parsed = cleanAndParseJSON(rawContent);
+      rawContent = Array.isArray(parsed) ? JSON.stringify(parsed) : rawContent;
+    } else {
+      // Same Pro-quality path for all users (Free only differs by max_slides cap)
+      const systemPrompt =
+        contentType === "interactive"
+          ? buildInteractiveOnlyPrompt(description, effectiveSlideCount, difficulty, userAiSettings)
+          : buildProInstructionalDesignPrompt(
+              description,
+              targetAudience,
+              effectiveSlideCount,
+              userAiSettings,
+              difficulty,
+            );
+      rawContent = await callAIWithThinking(
+        GEMINI_API_KEY,
+        systemPrompt,
+        `Create the presentation with interpretation, plan, and slides for: "${description}".`,
+      );
+      const proParsed = cleanAndParseJSON(rawContent);
+      if (proParsed && typeof proParsed === "object" && Array.isArray(proParsed.slides)) {
+        plan = proParsed.plan;
+        interpretation = proParsed.interpretation;
+        rawContent = JSON.stringify(proParsed.slides);
+      }
+    }
 
     console.log(`📝 Raw AI response length: ${rawContent.length} chars`);
 
-    let rawSlides = cleanAndParseJSON(rawContent);
+    const parsed = cleanAndParseJSON(rawContent);
+    let rawSlides = normalizeToSlidesArray(parsed) ?? (Array.isArray(parsed) ? parsed : null);
 
-    if (!rawSlides || !Array.isArray(rawSlides) || !rawSlides.length) {
-      throw new Error("Failed to parse slides from AI response");
+    if (!rawSlides || !rawSlides.length) {
+      const what = parsed == null ? "null" : Array.isArray(parsed) ? `array(length=${parsed.length})` : typeof parsed;
+      console.error("[generate-slides] Parse failed. Got:", what);
+      console.error("[generate-slides] Raw preview (400 chars):", rawContent.substring(0, 400));
+      throw new Error("Failed to parse slides from AI response. Please try again or use a shorter topic.");
     }
 
     rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));
 
     console.log(`✅ Parsed and validated ${rawSlides.length} slides`);
+
+    // WYSIWYG: Detect language from actual slide content (not just prompt) for correct direction/textAlign
+    const contentText = rawSlides
+      .map((s: any) => {
+        const c = s.content || {};
+        return [
+          c.title,
+          c.subtitle,
+          c.text,
+          c.question,
+          c.statement,
+          Array.isArray(c.options) ? c.options.join(" ") : "",
+          Array.isArray(c.bulletPoints) ? c.bulletPoints.join(" ") : "",
+          Array.isArray(c.items) ? c.items.join(" ") : "",
+          Array.isArray(c.points) ? (c.points as any[]).map((p: any) => p?.title || p?.description || "").join(" ") : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+      })
+      .join(" ");
+    const contentDetectedLanguage = hebrewRegex.test(contentText) ? "hebrew" : "english";
+    if (contentDetectedLanguage !== detectedLanguage) {
+      console.log(`🌍 Overriding language from content: ${detectedLanguage} → ${contentDetectedLanguage}`);
+    }
+    const effectiveDetectedLanguage = contentDetectedLanguage;
 
     let imageMap = new Map<number, string>();
 
@@ -1328,13 +2095,13 @@ serve(async (req) => {
           ({ slide }: { slide: any }) =>
             ["title", "split_content", "poll", "wordcloud"].includes(slide.type) && slide.imagePrompt,
         )
-        .slice(0, 3);
+        .slice(0, Math.min(maxImages ?? 3, rawSlides.length));
 
       console.log(`🖼️ Generating ${slidesNeedingImages.length} images...`);
 
       const imageResults = await Promise.all(
         slidesNeedingImages.map(async ({ slide, index }: { slide: any; index: number }) => {
-          const imageUrl = await generateImage(LOVABLE_API_KEY, slide.imagePrompt, slide.type);
+          const imageUrl = await generateImage(GEMINI_API_KEY, slide.imagePrompt, slide.type);
           return { index, imageUrl };
         }),
       );
@@ -1346,54 +2113,50 @@ serve(async (req) => {
 
     // *** KEY CHANGE: Pass full theme object instead of just theme.id ***
     const mappedSlides = rawSlides.map((slide: any, index: number) =>
-      mapSlideToFrontendFormat(slide, index, selectedTheme, detectedLanguage, imageMap.get(index), description),
+      mapSlideToFrontendFormat(slide, index, selectedTheme, effectiveDetectedLanguage, imageMap.get(index), description),
     );
 
-    // Update usage stats
+    // Deduct credits only after successful generation
+    const creditResult = await consumeCredits(
+      user.id,
+      creditsToConsume,
+      `Presentation generation: ${mappedSlides.length} slides`
+    );
+    if (!creditResult.success) {
+      console.error("[generate-slides] Failed to consume after full presentation:", creditResult.error);
+      return new Response(
+        JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     await updateUsageStats(user.id, mappedSlides.length, true);
 
     console.log(`🚀 Mapped ${mappedSlides.length} slides. Credits consumed: ${creditsToConsume}`);
 
-    if (sessionId) {
-      await appendBuilderConversation(user.id, sessionId, [
-        {
-          role: "user",
-          content: description,
-          metadata: { kind: "initial_prompt", contentType, difficulty, slideCount },
-        },
-        {
-          role: "assistant",
-          content:
-            `Generated ${mappedSlides.length} slides. Theme: ${selectedTheme.name} (${selectedTheme.id}).`,
-          metadata: {
-            kind: "initial_generation",
-            slideCount: mappedSlides.length,
-            themeId: selectedTheme.id,
-            creditsConsumed: creditsToConsume,
-          },
-        },
-      ]);
-    }
+    const responsePayload: Record<string, unknown> = {
+      slides: mappedSlides,
+      theme: {
+        id: selectedTheme.id,
+        themeName: selectedTheme.name,
+        colors: selectedTheme.colors,
+        font: selectedTheme.font,
+        mood: selectedTheme.mood,
+      },
+      slideCount: mappedSlides.length,
+      detectedLanguage: effectiveDetectedLanguage,
+      creditsConsumed: creditsToConsume,
+    };
+    if (plan !== undefined) responsePayload.plan = plan;
+    if (interpretation !== undefined) responsePayload.interpretation = interpretation;
 
     return new Response(
-      JSON.stringify({
-        slides: mappedSlides,
-        theme: {
-          id: selectedTheme.id,
-          themeName: selectedTheme.name,
-          colors: selectedTheme.colors,
-          font: selectedTheme.font,
-          mood: selectedTheme.mood,
-        },
-        slideCount: mappedSlides.length,
-        detectedLanguage,
-        creditsConsumed: creditsToConsume,
-      }),
+      JSON.stringify(responsePayload),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error: any) {
-    console.error("❌ Error:", error.message);
-    return new Response(JSON.stringify({ error: error.message || "Unknown error occurred" }), {
+    const errMsg = error?.message || String(error) || "Unknown error occurred";
+    console.error("[generate-slides] Error:", errMsg, error?.stack ? "\n" + error.stack : "");
+    return new Response(JSON.stringify({ error: errMsg }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

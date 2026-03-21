@@ -1,18 +1,14 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Check, Users } from "lucide-react";
-import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
+import { Plus, Trash2, Check, Users, Circle, HelpCircle, type LucideIcon } from "lucide-react";
+import { SlideWrapper, QuestionHeader, ActivityFooter, CleanBarResults } from "./index";
 import { Slide, QuizSlideContent } from "@/types/slides";
 import { Button } from "@/components/ui/button";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import { Confetti, SuccessBurst } from "@/components/effects";
-import { ThemeId, getTheme } from "@/types/themes";
+import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
+import { FormattedText } from "@/components/editor/FormattedText";
 import { DesignStyleId, getDesignStyle, getAnimationVariants, getSpacingClasses, getShadowClasses } from "@/types/designStyles";
-import {
-  presenterShowCounts,
-  presenterShowPercentages,
-  presenterShowProgressBars,
-} from "@/lib/presenterSlideDisplay";
 
 export interface QuizSlideProps {
   slide: Slide;
@@ -25,6 +21,8 @@ export interface QuizSlideProps {
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
   showCorrectAnswer?: boolean;
+  /** In presenter mode: force show counts + percentages even when minimal */
+  forceShowStats?: boolean;
 }
 
 export function QuizSlide({
@@ -38,32 +36,33 @@ export function QuizSlide({
   designStyleId = 'dynamic',
   hideFooter = false,
   showCorrectAnswer = false,
+  forceShowStats = false,
 }: QuizSlideProps) {
-  const content = slide.content as QuizSlideContent;
-  const options =
-    Array.isArray(content.options) && content.options.length > 0
-      ? content.options
-      : ["Option A", "Option B", "Option C", "Option D"];
-  const question = typeof content.question === "string" ? content.question : "";
-  const safeCorrect =
-    typeof content.correctAnswer === "number"
-      ? Math.max(0, Math.min(content.correctAnswer, options.length - 1))
-      : 0;
+  const rawContent = slide.content as QuizSlideContent;
+  const content = {
+    ...rawContent,
+    question: typeof rawContent?.question === 'string' ? rawContent.question : '',
+    options: Array.isArray(rawContent?.options) && rawContent.options.length > 0
+      ? rawContent.options
+      : ['Option 1', 'Option 2'],
+    correctAnswer: typeof rawContent?.correctAnswer === 'number' && rawContent.correctAnswer >= 0
+      ? Math.min(rawContent.correctAnswer, (rawContent?.options?.length ?? 2) - 1)
+      : 0,
+  };
   const theme = getTheme(themeId);
   const designStyle = getDesignStyle(designStyleId);
   const styleConfig = designStyle.config;
+  const showCounts = forceShowStats || styleConfig.showCounts;
+  const showPercentages = forceShowStats || styleConfig.showPercentages;
   const animations = getAnimationVariants(designStyle);
   const spacing = getSpacingClasses(designStyle);
   const shadowClass = getShadowClasses(designStyle);
-
-  const showCounts = presenterShowCounts(isEditing, styleConfig.showCounts);
-  const showPercentages = presenterShowPercentages(isEditing, styleConfig.showPercentages);
-  const showProgressBars = presenterShowProgressBars(isEditing, styleConfig.showProgressBars);
   
   const [showCelebration, setShowCelebration] = useState(false);
   const [prevShowResults, setPrevShowResults] = useState(showResults);
 
-  const results = liveResults || options.map(() => 0);
+  // Use live results if provided, otherwise use zeros
+  const results = liveResults || content.options.map(() => 0);
   const hasResults = totalResponses > 0;
 
   // Trigger celebration when showResults becomes true (only for dynamic style)
@@ -86,12 +85,12 @@ export function QuizSlide({
     };
   };
 
-  const handleQuestionChange = (next: string) => {
-    onUpdate?.({ ...content, question: next });
+  const handleQuestionChange = (question: string) => {
+    onUpdate?.({ ...content, question });
   };
 
   const handleOptionChange = (index: number, value: string) => {
-    const newOptions = [...options];
+    const newOptions = [...content.options];
     newOptions[index] = value;
     onUpdate?.({ ...content, options: newOptions });
   };
@@ -101,25 +100,39 @@ export function QuizSlide({
   };
 
   const addOption = () => {
-    if (options.length < 6) {
-      onUpdate?.({ ...content, options: [...options, `Option ${options.length + 1}`] });
+    if (content.options.length < 6) {
+      onUpdate?.({ ...content, options: [...content.options, `Option ${content.options.length + 1}`] });
     }
   };
 
   const removeOption = (index: number) => {
-    if (options.length > 2) {
-      const newOptions = options.filter((_, i) => i !== index);
-      const newCorrectAnswer =
-        safeCorrect >= newOptions.length ? newOptions.length - 1 : safeCorrect;
+    if (content.options.length > 2) {
+      const newOptions = content.options.filter((_, i) => i !== index);
+      const newCorrectAnswer = content.correctAnswer >= newOptions.length 
+        ? newOptions.length - 1 
+        : content.correctAnswer;
       onUpdate?.({ ...content, options: newOptions, correctAnswer: newCorrectAnswer });
     }
   };
 
-  // Get text color from slide design
-  const textColor = slide.design?.textColor || '#ffffff';
+  // Get text color from slide design - ensure visibility on light themes (soft-pop)
+  const rawTextColor = slide.design?.textColor || '#ffffff';
+  const isLightTheme = themeId === 'soft-pop';
+  const textColor = isLightTheme && (rawTextColor === '#ffffff' || rawTextColor === '#fff' || !rawTextColor)
+    ? '#1f2937'
+    : rawTextColor;
 
-  // Minimal style - simpler, no animations
   const isMinimal = designStyleId === 'minimal';
+  const isCompact = designStyleId === 'compact';
+  const isListWithIcons = slide.design?.quizVariant === 'listWithIcons';
+
+  // Content-matched icon for listWithIcons variant (simple keyword match)
+  const getOptionIcon = (option: string): LucideIcon => {
+    const t = option.toLowerCase();
+    if (/\d|one|two|first|second|1|2|3|4/.test(t)) return Circle;
+    if (/yes|true|correct|right|✓|נכון|כן/.test(t)) return Check;
+    return HelpCircle;
+  };
 
   return (
     <>
@@ -130,40 +143,144 @@ export function QuizSlide({
         <div className="flex flex-col h-full min-h-0 overflow-hidden">
           {/* Header - flex-shrink-0 to prevent shrinking */}
           <QuestionHeader
-            question={question}
+            question={content.question}
             onEdit={handleQuestionChange}
             editable={isEditing}
             subtitle={isEditing ? "Quiz: Select the correct answer" : undefined}
             textColor={textColor}
           />
 
-          {!isEditing && hasResults && (
-            <div className="px-3 md:px-6 pt-1 flex flex-col gap-1 items-center shrink-0">
-              {showCorrectAnswer ? (
-                <p className="text-center text-sm md:text-base font-semibold text-emerald-300/95 max-w-2xl">
-                  Correct answer: <span className="text-white">{options[safeCorrect]}</span>
-                </p>
-              ) : (
-                <p className="text-center text-xs md:text-sm text-white/55">Live results</p>
-              )}
-            </div>
-          )}
-
           {/* Content area - scrollable if needed */}
           <div className={`flex-1 flex items-center justify-center px-3 md:px-6 pb-4 min-h-0 overflow-y-auto`}>
             <div className="w-full max-w-3xl max-h-full">
-              {/* Options Grid - use stack for minimal, grid for dynamic */}
-              <div className={`
-                ${isMinimal 
-                  ? 'flex flex-col space-y-2 max-w-md mx-auto' 
-                  : `grid ${spacing.gap} ${options.length <= 2 ? 'grid-cols-1 max-w-md mx-auto' : 'grid-cols-2'}`
-                }
-              `}>
-              {options.map((option, index) => {
-                  const optionColorClass = theme.optionColors[index % theme.optionColors.length];
+              {/* Clean bar results view - when resultVisualization is clean_bars */}
+              {!isEditing && showResults && slide.design?.resultVisualization === 'clean_bars' ? (
+                <CleanBarResults
+                  options={content.options}
+                  results={results}
+                  totalResponses={totalResponses}
+                  correctIndex={content.correctAnswer}
+                  textColor={textColor}
+                />
+              ) : isListWithIcons ? (
+              /* listWithIcons: vertical list with content-matched icon per option */
+              <div className="flex flex-col gap-4 max-w-lg mx-auto">
+                {content.options.map((option, index) => {
+                  const optionColorClass = getSafeOptionColor(theme, index);
+                  const optionTextColorClass = optionColorClass.includes('text-black') ? 'text-black' : 'text-white';
                   const count = results[index] || 0;
                   const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-                  const isCorrect = index === safeCorrect;
+                  const isCorrect = index === content.correctAnswer;
+                  const isHighlighted = showResults && isCorrect;
+                  const IconComponent = getOptionIcon(option);
+                  return (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${
+                        isHighlighted ? 'bg-green-500/40 border-green-400' :
+                        (isEditing || showCorrectAnswer) && isCorrect ? 'bg-green-500/30 border-green-400/50' :
+                        `${optionColorClass} border-white/20`
+                      }`}
+                    >
+                      <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg bg-white/20">
+                        <IconComponent className={`w-5 h-5 ${optionTextColorClass}`} />
+                      </div>
+                      <div className="flex-1 min-w-0 flex items-center justify-between gap-3">
+                        {isEditing ? (
+                          <AutoResizeTextarea
+                            value={option}
+                            onChange={(e) => handleOptionChange(index, e.target.value)}
+                            className={`flex-1 bg-transparent ${optionTextColorClass} font-semibold outline-none resize-none text-base`}
+                            placeholder={`Option ${index + 1}`}
+                            minRows={1}
+                            maxRows={2}
+                          />
+                        ) : (
+                          <span className={`${optionTextColorClass} font-semibold text-left break-words`}>
+                            <FormattedText>{String(option || "")}</FormattedText>
+                          </span>
+                        )}
+                        {!isEditing && hasResults && (
+                          <span className="text-white/80 text-sm font-medium flex-shrink-0">{percentage}%</span>
+                        )}
+                      </div>
+                      {(isHighlighted || (showCorrectAnswer && isCorrect)) && (
+                        <Check className="w-6 h-6 text-white flex-shrink-0" />
+                      )}
+                      {isEditing && (
+                        <div className="flex gap-1 flex-shrink-0">
+                          <motion.button
+                            whileTap={{ scale: 0.9 }}
+                            onClick={() => handleCorrectAnswerChange(index)}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center ${isCorrect ? 'bg-green-500 text-white' : 'bg-white/20 text-white'}`}
+                            title="Mark as correct"
+                          >
+                            <Check className="w-4 h-4" />
+                          </motion.button>
+                          {content.options.length > 2 && (
+                            <motion.button
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => removeOption(index)}
+                              className="w-8 h-8 rounded-full bg-white/20 text-white hover:bg-red-500/80 flex items-center justify-center"
+                              title="Remove"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </motion.button>
+                          )}
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
+                {isEditing && content.options.length < 6 && (
+                  <Button
+                    variant="outline"
+                    onClick={addOption}
+                    className="bg-white/10 border-white/30 text-white hover:bg-white/20 mt-2"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Option
+                  </Button>
+                )}
+                {!isEditing && !hasResults && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-6 text-center"
+                  >
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
+                      <Users className="w-4 h-4" />
+                      <span>Waiting for responses...</span>
+                    </div>
+                  </motion.div>
+                )}
+              </div>
+              ) : (
+              <>
+              {/* Options - 4 options always 2x2 grid (2 up, 2 down); otherwise stack/minimal, row/compact, or grid/dynamic */}
+              <div className={`
+                ${content.options.length === 4
+                  ? `grid grid-cols-2 grid-rows-2 ${spacing.gap} h-full min-h-[180px]`
+                  : isMinimal 
+                    ? 'flex flex-col space-y-2 max-w-md mx-auto' 
+                    : isCompact
+                      ? `flex flex-row flex-wrap justify-center ${spacing.gap}`
+                      : `grid ${spacing.gap} h-full min-h-[180px] ${
+                          content.options.length <= 2 ? 'grid-cols-1 max-w-md mx-auto' : 
+                          'grid-cols-3 grid-rows-2'
+                        }`
+                }
+              `}>
+              {content.options.map((option, index) => {
+                  const optionColorClass = getSafeOptionColor(theme, index);
+                  const optionTextColorClass = optionColorClass.includes('text-black') ? 'text-black' : 'text-white';
+                  const optionTextMutedClass = optionColorClass.includes('text-black') ? 'text-black/80' : 'text-white/80';
+                  const count = results[index] || 0;
+                  const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
+                  const isCorrect = index === content.correctAnswer;
                   const isHighlighted = showResults && isCorrect;
                   
                   // Get border radius based on theme
@@ -182,18 +299,18 @@ export function QuizSlide({
                   return (
                     <motion.div 
                       key={index} 
-                      className="relative group"
+                      className={`relative group min-w-0 ${(content.options.length === 4 || (!isMinimal && !isCompact && content.options.length >= 3)) ? 'h-full min-h-0 flex flex-col' : ''} ${isCompact && content.options.length !== 4 ? 'flex-1 min-w-[140px] max-w-[280px]' : ''}`}
                       initial={isMinimal ? { opacity: 0 } : entranceAnim.initial}
                       animate={isMinimal ? { opacity: 1 } : entranceAnim.animate}
                       transition={isMinimal ? { duration: 0.2 } : entranceAnim.transition}
                     >
                       <motion.div
                         className={`
-                          relative ${isMinimal ? 'p-3' : spacing.padding} ${getBorderRadius()} border-2 transition-all overflow-hidden 
+                          relative flex-1 min-h-0 flex flex-col ${isMinimal ? 'p-3' : spacing.padding} ${getBorderRadius()} border-2 transition-all overflow-hidden 
                           ${isMinimal ? '' : shadowClass}
                           ${isHighlighted 
                             ? 'bg-green-500/40 border-green-400' 
-                            : isEditing && isCorrect
+                            : (isEditing || showCorrectAnswer) && isCorrect
                             ? 'bg-green-500/30 border-green-400/50'
                             : `${optionColorClass} border-white/20`
                           }
@@ -206,49 +323,51 @@ export function QuizSlide({
                         transition={styleConfig.pulseOnNewVote ? { duration: 0.3 } : undefined}
                         style={{
                           fontFamily: theme.tokens.fontFamily,
+                          ...(isCompact && content.options.length !== 4 ? { minHeight: 80 } : {}),
                         }}
                       >
-                        {/* Option content */}
-                        <div className="flex items-center justify-between gap-2 min-h-[2rem]">
+                        {/* Option content - equal height, scroll if long */}
+                        <div className="flex-1 min-h-0 flex items-center justify-between gap-2 overflow-y-auto overflow-x-hidden">
                           {isEditing ? (
                             <AutoResizeTextarea
                               value={option}
                               onChange={(e) => handleOptionChange(index, e.target.value)}
-                              className={`flex-1 bg-transparent text-white font-semibold outline-none text-center resize-none leading-snug ${
+                              className={`flex-1 bg-transparent ${optionTextColorClass} font-semibold outline-none text-center resize-none leading-snug ${
                                 styleConfig.optionTextSize === 'large'
                                   ? 'text-base md:text-lg'
                                   : 'text-sm md:text-base'
                               }`}
                               placeholder={`Option ${index + 1}`}
                               minRows={1}
+                              maxRows={4}
                             />
                           ) : (
-                            <span className={`flex-1 text-white font-semibold text-center line-clamp-2 ${
+                            <span className={`flex-1 min-w-0 ${optionTextColorClass} font-semibold text-center break-words ${
                               styleConfig.optionTextSize === 'large' ? 'text-base md:text-lg' : 'text-sm md:text-base'
                             }`}>
-                              {option}
+                              <FormattedText>{String(option || "")}</FormattedText>
                             </span>
                           )}
                           
-                          {/* Live count indicator - based on style config */}
+                          {/* Live count indicator - based on style config (forceShowStats in presenter) */}
                           {!isEditing && hasResults && (showCounts || showPercentages) && (
                             <AnimatePresence mode="wait">
                               <motion.span 
                                 key={count}
                                 initial={styleConfig.showAnimatedNumbers ? { scale: 1.5, opacity: 0 } : { opacity: 1 }}
                                 animate={{ scale: 1, opacity: 1 }}
-                                className="text-white/80 font-bold text-sm md:text-base flex-shrink-0 tabular-nums"
+                                className={`${optionTextMutedClass} font-bold text-sm md:text-base flex-shrink-0`}
                               >
                                 {showCounts && `${count}`}
-                                {showCounts && showPercentages && " · "}
-                                {showPercentages && `${percentage}%`}
+                                {showCounts && showPercentages && ' '}
+                                {showPercentages && `(${percentage}%)`}
                               </motion.span>
                             </AnimatePresence>
                           )}
                         </div>
 
                         {/* Progress bar overlay for presentation mode */}
-                        {!isEditing && hasResults && showProgressBars && (
+                        {!isEditing && hasResults && styleConfig.showProgressBars && (
                           <motion.div
                             className="absolute bottom-0 left-0 h-1 bg-white/30 rounded-b-xl"
                             initial={{ width: 0 }}
@@ -260,8 +379,8 @@ export function QuizSlide({
                           />
                         )}
 
-                        {/* Correct answer check mark */}
-                        {isHighlighted && (
+                        {/* Correct answer check mark - show when revealed or in builder/editor preview */}
+                        {(isHighlighted || (showCorrectAnswer && isCorrect)) && (
                           <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
@@ -293,7 +412,7 @@ export function QuizSlide({
                             <Check className="w-4 h-4" />
                           </motion.button>
                           
-                          {options.length > 2 && (
+                          {content.options.length > 2 && (
                             <motion.button
                               whileHover={{ scale: 1.1 }}
                               whileTap={{ scale: 0.9 }}
@@ -312,7 +431,7 @@ export function QuizSlide({
               </div>
 
               {/* Add option button - only in editor */}
-              {isEditing && options.length < 6 && (
+              {isEditing && content.options.length < 6 && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -330,7 +449,7 @@ export function QuizSlide({
               )}
 
               {/* Zero-state waiting indicator - only in presentation mode with no results */}
-              {!isEditing && !hasResults && (
+              {!isEditing && !hasResults && !(showResults && slide.design?.resultVisualization === 'clean_bars') && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -358,6 +477,8 @@ export function QuizSlide({
                     </div>
                   </motion.div>
                 </motion.div>
+              )}
+              </>
               )}
             </div>
           </div>

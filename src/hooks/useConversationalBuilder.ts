@@ -18,6 +18,9 @@ export interface AICommand {
 }
 
 interface ConversationalBuilderState {
+  // Which presentation this chat belongs to (null = unset)
+  sessionLectureId: string | null;
+  
   // Sandbox slides (not committed to DB yet)
   sandboxSlides: Slide[];
   
@@ -30,10 +33,13 @@ interface ConversationalBuilderState {
   
   // Original prompt
   originalPrompt: string;
-  contentType: 'interactive' | 'with_content';
+  targetAudience: string;
   
   // Theme
   generatedTheme: any;
+  
+  // Ensure chat is scoped to this lecture; reset if switching to a different presentation
+  ensureSessionForLecture: (lectureId: string) => void;
   
   // Actions
   setSandboxSlides: (slides: Slide[]) => void;
@@ -44,7 +50,7 @@ interface ConversationalBuilderState {
   addMessage: (message: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   updateLastMessage: (content: string) => void;
   setIsGenerating: (value: boolean) => void;
-  setOriginalPrompt: (prompt: string, contentType: 'interactive' | 'with_content') => void;
+  setOriginalPrompt: (prompt: string, contentType?: string) => void;
   setGeneratedTheme: (theme: any) => void;
   reset: () => void;
   
@@ -55,13 +61,37 @@ interface ConversationalBuilderState {
 const generateId = () => `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
 export const useConversationalBuilder = create<ConversationalBuilderState>((set, get) => ({
+  sessionLectureId: null,
   sandboxSlides: [],
   messages: [],
   isGenerating: false,
   currentPreviewIndex: 0,
   originalPrompt: '',
-  contentType: 'interactive',
+  targetAudience: 'general',
   generatedTheme: null,
+  
+  ensureSessionForLecture: (lectureId) => {
+    const { sessionLectureId } = get();
+    if (sessionLectureId === lectureId) return;
+    if (sessionLectureId === 'new' && lectureId !== 'new') {
+      set({ sessionLectureId: lectureId });
+      return;
+    }
+    if (sessionLectureId !== null && sessionLectureId !== lectureId) {
+      set({
+        sessionLectureId: lectureId,
+        sandboxSlides: [],
+        messages: [],
+        isGenerating: false,
+        currentPreviewIndex: 0,
+        originalPrompt: '',
+        targetAudience: 'general',
+        generatedTheme: null,
+      });
+      return;
+    }
+    set({ sessionLectureId: lectureId });
+  },
   
   setSandboxSlides: (slides) => set({ sandboxSlides: slides }),
   
@@ -114,20 +144,21 @@ export const useConversationalBuilder = create<ConversationalBuilderState>((set,
   
   setIsGenerating: (value) => set({ isGenerating: value }),
   
-  setOriginalPrompt: (prompt, contentType) => set({ 
+  setOriginalPrompt: (prompt, contentType = 'interactive') => set({ 
     originalPrompt: prompt,
-    contentType,
+    targetAudience: contentType,
   }),
   
   setGeneratedTheme: (theme) => set({ generatedTheme: theme }),
   
   reset: () => set({
+    sessionLectureId: null,
     sandboxSlides: [],
     messages: [],
     isGenerating: false,
     currentPreviewIndex: 0,
     originalPrompt: '',
-    contentType: 'interactive',
+    targetAudience: 'general',
     generatedTheme: null,
   }),
   

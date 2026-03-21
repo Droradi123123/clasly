@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { Check, X } from "lucide-react";
-import { ThemeId, getTheme } from "@/types/themes";
+import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
 
 interface OptionButtonProps {
   option: string;
@@ -33,7 +33,7 @@ export function OptionButton({
   themeId = 'neon-cyber',
 }: OptionButtonProps) {
   const theme = getTheme(themeId);
-  const colorClass = theme.optionColors[index % theme.optionColors.length];
+  const colorClass = getSafeOptionColor(theme, index);
   const label = OPTION_LABELS[index];
 
   // Get border radius based on theme button style

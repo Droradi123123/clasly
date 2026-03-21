@@ -189,4 +189,16 @@
   .slide-text-large .slide-question {
     font-size: clamp(1.5rem, 4vw, 2.5rem);
   }
+
+  /* Content slide body - larger emphasis on main text */
+  .slide-content-body {
+    font-size: clamp(1rem, 2.2vw, 1.25rem);
+    line-height: 1.6;
+  }
+  .slide-text-small .slide-content-body {
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+  }
+  .slide-text-large .slide-content-body {
+    font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  }
 }

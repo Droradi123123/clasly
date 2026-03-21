@@ -12,7 +12,8 @@ export type SlideType =
   | 'bar_chart'
   // Interactive slides
   | 'quiz' 
-  | 'poll' 
+  | 'poll'
+  | 'poll_quiz'  // Poll design with correct answer (quiz category)
   | 'wordcloud' 
   | 'yesno' 
   | 'ranking' 
@@ -27,6 +28,12 @@ export type ImagePosition = 'left' | 'right';
 
 // Overlay image position for all slides
 export type OverlayImagePosition = 'none' | 'background' | 'left' | 'right';
+
+// Logo position on slides
+export type LogoPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+// Logo scope - current slide only or all slides
+export type LogoScope = 'current' | 'all';
 
 export type InteractionStyle = 
   | 'bar_chart' 
@@ -63,15 +70,50 @@ export interface GradientPreset {
   angle: number;
 }
 
+// Synced with generate-slides GRADIENT_DEFINITIONS – AI emits these IDs; frontend must recognize all
 export const GRADIENT_PRESETS: GradientPreset[] = [
-  { id: 'purple-blue', name: 'Purple Blue', colors: ['#667eea', '#764ba2'], angle: 135 },
+  // Original frontend presets (kept for manual slides)
+  { id: 'purple-blue', name: 'Purple Blue', colors: ['#7c3aed', '#2563eb'], angle: 135 },
   { id: 'green-teal', name: 'Green Teal', colors: ['#11998e', '#38ef7d'], angle: 135 },
   { id: 'orange-red', name: 'Orange Red', colors: ['#ff416c', '#ff4b2b'], angle: 135 },
-  { id: 'pink-orange', name: 'Pink Orange', colors: ['#f857a6', '#ff5858'], angle: 135 },
-  { id: 'blue-cyan', name: 'Blue Cyan', colors: ['#00c6ff', '#0072ff'], angle: 135 },
+  { id: 'pink-orange', name: 'Pink Orange', colors: ['#ec4899', '#f97316'], angle: 135 },
+  { id: 'blue-cyan', name: 'Blue Cyan', colors: ['#1d4ed8', '#06b6d4'], angle: 145 },
   { id: 'dark', name: 'Dark', colors: ['#232526', '#414345'], angle: 135 },
   { id: 'sunset', name: 'Sunset', colors: ['#fa709a', '#fee140'], angle: 135 },
   { id: 'ocean', name: 'Ocean', colors: ['#2e3192', '#1bffff'], angle: 135 },
+  // AI palette – Neon Cyber
+  { id: 'purple-pink', name: 'Purple Pink', colors: ['#9333ea', '#ec4899'], angle: 120 },
+  { id: 'dark-blue', name: 'Dark Blue', colors: ['#1e1b4b', '#312e81'], angle: 160 },
+  { id: 'cyan-teal', name: 'Cyan Teal', colors: ['#06b6d4', '#14b8a6'], angle: 135 },
+  // AI palette – Soft Pop
+  { id: 'peach-rose', name: 'Peach Rose', colors: ['#fb923c', '#f472b6'], angle: 140 },
+  { id: 'soft-pink', name: 'Soft Pink', colors: ['#f9a8d4', '#c084fc'], angle: 130 },
+  { id: 'lavender-pink', name: 'Lavender Pink', colors: ['#a78bfa', '#f472b6'], angle: 150 },
+  { id: 'coral-warm', name: 'Coral Warm', colors: ['#fb7185', '#fdba74'], angle: 135 },
+  // AI palette – Academic Pro
+  { id: 'blue-gray', name: 'Blue Gray', colors: ['#3b82f6', '#64748b'], angle: 145 },
+  { id: 'steel-blue', name: 'Steel Blue', colors: ['#475569', '#1e40af'], angle: 135 },
+  { id: 'navy-slate', name: 'Navy Slate', colors: ['#1e3a5f', '#334155'], angle: 160 },
+  { id: 'teal-blue', name: 'Teal Blue', colors: ['#0d9488', '#2563eb'], angle: 140 },
+  { id: 'cool-gray', name: 'Cool Gray', colors: ['#4b5563', '#6b7280'], angle: 150 },
+  // AI palette – Swiss Minimal
+  { id: 'dark-red', name: 'Dark Red', colors: ['#991b1b', '#1c1917'], angle: 135 },
+  { id: 'charcoal-black', name: 'Charcoal Black', colors: ['#292524', '#0c0a09'], angle: 160 },
+  { id: 'red-orange', name: 'Red Orange', colors: ['#dc2626', '#ea580c'], angle: 130 },
+  { id: 'dark-gold', name: 'Dark Gold', colors: ['#78350f', '#292524'], angle: 145 },
+  { id: 'mono-dark', name: 'Mono Dark', colors: ['#27272a', '#18181b'], angle: 150 },
+  // AI palette – Sunset Warmth
+  { id: 'orange-gold', name: 'Orange Gold', colors: ['#ea580c', '#ca8a04'], angle: 135 },
+  { id: 'sunset-warm', name: 'Sunset Warm', colors: ['#dc2626', '#f59e0b'], angle: 140 },
+  { id: 'amber-rose', name: 'Amber Rose', colors: ['#d97706', '#e11d48'], angle: 130 },
+  { id: 'terracotta', name: 'Terracotta', colors: ['#9a3412', '#b45309'], angle: 150 },
+  { id: 'warm-peach', name: 'Warm Peach', colors: ['#f97316', '#fbbf24'], angle: 135 },
+  // AI palette – Ocean Breeze
+  { id: 'ocean-teal', name: 'Ocean Teal', colors: ['#0891b2', '#0d9488'], angle: 135 },
+  { id: 'aqua-green', name: 'Aqua Green', colors: ['#06b6d4', '#10b981'], angle: 140 },
+  { id: 'sky-blue', name: 'Sky Blue', colors: ['#0ea5e9', '#38bdf8'], angle: 150 },
+  { id: 'sea-foam', name: 'Sea Foam', colors: ['#14b8a6', '#34d399'], angle: 130 },
+  { id: 'blue-green', name: 'Blue Green', colors: ['#2563eb', '#059669'], angle: 145 },
 ];
 
 // Scale options for Scale slide type
@@ -95,6 +137,23 @@ export interface SlideDesign {
   designStyleId?: string; // Design style (minimal/dynamic) - layer on top of theme
   overlayImageUrl?: string; // Image overlay for any slide
   overlayImagePosition?: OverlayImagePosition; // Position of overlay image
+  /** Logo URL - shown per slide or all slides based on logoScope */
+  logoUrl?: string;
+  logoPosition?: LogoPosition;
+  logoScope?: LogoScope; // 'current' = this slide only, 'all' = all slides in presentation
+  /** Result visualization for quiz/poll/yesno: 'default' = cards/buttons, 'clean_bars' = clean horizontal bar chart */
+  resultVisualization?: 'default' | 'clean_bars';
+  wordCloudStyleId?: 'organic' | 'compact';
+  /** Per-type distinct design variants (default = current design when undefined) */
+  quizVariant?: 'cards' | 'listWithIcons';
+  pollVariant?: 'bars' | 'rankedBars';
+  yesNoVariant?: 'buttons' | 'thumbsDynamic';
+  scaleVariant?: 'meter' | 'stepsClick';
+  rankingVariant?: 'list' | 'podium';
+  guessNumberVariant?: 'input' | 'thermometer';
+  finishSentenceVariant?: 'input' | 'wordBank';
+  sentimentMeterVariant?: 'slider' | 'emojiRow';
+  agreeSpectrumVariant?: 'spectrum' | 'steps';
 }
 
 // Activity settings for interactive slides
@@ -119,10 +178,11 @@ export interface QuizSlideContent extends BaseSlideContent {
   correctAnswer: number; // index of correct option
 }
 
-// Poll slide content
+// Poll slide content (also used by poll_quiz; correctAnswer only applies to poll_quiz)
 export interface PollSlideContent extends BaseSlideContent {
   question: string;
   options: string[];
+  correctAnswer?: number; // index of correct option (poll_quiz only)
 }
 
 // Word Cloud slide content
@@ -163,6 +223,8 @@ export interface ScaleSlideContent extends BaseSlideContent {
 export interface FinishSentenceSlideContent extends BaseSlideContent {
   sentenceStart: string; // The sentence to complete, e.g., "The best part of today's session was..."
   maxCharacters?: number;
+  /** Optional word bank for wordBank variant – chips to choose from to complete the sentence */
+  wordBankOptions?: string[];
 }
 
 // Image Guess slide content (Progressive Reveal) - DEPRECATED: Removed from UI
@@ -284,6 +346,8 @@ export const SLIDE_TYPES: SlideTypeInfo[] = [
   
   // Interactive slides - engagement focused, no correct answers
   { type: 'poll', label: 'Poll', labelHe: 'סקר', icon: 'BarChart3', category: 'interactive', description: 'Opinion poll without correct answer' },
+  // Quiz slides - with correct answers (poll_quiz = poll design + correct answer)
+  { type: 'poll_quiz', label: 'Poll (Quiz)', labelHe: 'סקר (מבחן)', icon: 'BarChart3', category: 'quiz', description: 'Poll-style bar chart with one correct answer', supportsCorrectAnswer: true },
   { type: 'wordcloud', label: 'Word Cloud', labelHe: 'ענן מילים', icon: 'Cloud', category: 'interactive', description: 'Collect words and visualize' },
   { type: 'scale', label: 'Scale', labelHe: 'סולם', icon: 'Sliders', category: 'interactive', description: 'Rate on a scale' },
   { type: 'sentiment_meter', label: 'Sentiment', labelHe: 'סנטימנט', icon: 'Heart', category: 'interactive', description: 'Continuous emotional scale' },
@@ -328,6 +392,12 @@ export function createDefaultSlideContent(type: SlideType): SlideContent {
       return { 
         question: 'What do you think?', 
         options: ['Option 1', 'Option 2', 'Option 3', 'Option 4'] 
+      };
+    case 'poll_quiz':
+      return { 
+        question: 'What is the correct answer?', 
+        options: ['Option A', 'Option B', 'Option C', 'Option D'],
+        correctAnswer: 0 
       };
     case 'wordcloud':
       return { question: 'Describe this in one word...' };
@@ -426,18 +496,22 @@ function generateUniqueId(): string {
 
 // Helper to create a new slide
 export function createNewSlide(type: SlideType, order: number): Slide {
+  const baseDesign = {
+    gradientPreset: 'purple-blue',
+    textColor: '#ffffff',
+    fontFamily: 'Inter',
+    fontSize: 'medium',
+    textAlign: 'center',
+    designStyleId: 'dynamic', // Default to dynamic style
+  };
+  const design = type === 'yesno'
+    ? { ...baseDesign, yesNoVariant: 'thumbsDynamic' as const }
+    : baseDesign;
   return {
     id: generateUniqueId(),
     type,
     content: createDefaultSlideContent(type),
-    design: {
-      gradientPreset: 'purple-blue',
-      textColor: '#ffffff',
-      fontFamily: 'Inter',
-      fontSize: 'medium',
-      textAlign: 'center',
-      designStyleId: 'dynamic', // Default to dynamic style
-    },
+    design,
     layout: 'centered',
     activitySettings: {
       duration: 60,

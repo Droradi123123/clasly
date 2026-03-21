@@ -5,8 +5,10 @@ import type { Slide, SplitContentSlideContent } from "@/types/slides";
 import type { ThemeId } from "@/types/themes";
 import { Button } from "@/components/ui/button";
 import { ImageUploader } from "@/components/editor/ImageUploader";
+import { SlideImage } from "@/components/editor/SlideImage";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
-import { inferDirectionFromSlide } from "@/lib/textDirection";
+import { useSlideLayout } from "@/contexts/SlideLayoutContext";
+import { FormattedText } from "@/components/editor/FormattedText";
 
 export interface SplitContentSlideProps {
   slide: Slide;
@@ -26,8 +28,7 @@ export function SplitContentSlide({
   const content = slide.content as SplitContentSlideContent;
   const textColor = slide.design?.textColor || "#ffffff";
   const imagePosition = content.imagePosition || "right";
-  const direction = slide.design?.direction || inferDirectionFromSlide(slide);
-  const textAlign = (slide.design?.textAlign || "center") as any;
+  const { direction, textAlign } = useSlideLayout();
 
   // Safe access to bulletPoints - handle legacy 'text' field or empty data
   const bulletPoints = content.bulletPoints || (content.text ? [content.text] : [""]);
@@ -60,7 +61,7 @@ export function SplitContentSlide({
   };
 
   const textSection = (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col justify-center p-4 md:p-6" dir={direction}>
+    <div className="flex-1 flex flex-col justify-center p-4 md:p-6 min-h-0" dir={direction}>
       {isEditing ? (
         <AutoResizeTextarea
           value={content.title}
@@ -75,32 +76,31 @@ export function SplitContentSlide({
           className="text-xl md:text-3xl font-bold mb-4 break-words"
           style={{ color: textColor, textAlign }}
         >
-          {content.title}
+          <FormattedText>{String(content.title || "")}</FormattedText>
         </h2>
       )}
 
-      <ul className="space-y-3 min-h-0">
+      <ul className="space-y-3 min-h-0 list-none ps-0 pe-0" style={{ listStyle: 'none' }}>
         {bulletPoints.map((point, index) => (
           <motion.li
             key={index}
             initial={{ opacity: 0, x: direction === "rtl" ? 20 : -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.1 }}
-            className={`flex items-start gap-3 group ${
-              direction === "rtl" ? "flex-row-reverse" : "flex-row"
-            }`}
+            className="flex items-start gap-3 group"
           >
-            <span className="w-2 h-2 rounded-full mt-2.5 flex-shrink-0 bg-primary" />
+            <span className="w-2 h-2 rounded-full mt-2.5 flex-shrink-0 bg-primary" aria-hidden />
 
             {isEditing ? (
               <div className="flex-1 flex items-start gap-2 min-w-0">
                 <AutoResizeTextarea
                   value={point}
                   onChange={(e) => handlePointChange(index, e.target.value)}
-                  className="flex-1 text-base md:text-lg bg-transparent border-0 outline-none placeholder:opacity-50"
+                  className="flex-1 text-base md:text-lg bg-transparent border-0 outline-none placeholder:opacity-50 resize-none break-words min-w-0"
                   style={{ color: textColor, opacity: 0.9, textAlign }}
                   placeholder="Enter point..."
                   minRows={1}
+                  maxRows={6}
                 />
                 {bulletPoints.length > 1 && (
                   <button
@@ -119,7 +119,7 @@ export function SplitContentSlide({
                 className="text-base md:text-lg break-words"
                 style={{ color: textColor, opacity: 0.9, textAlign }}
               >
-                {point}
+                <FormattedText>{String(point || "")}</FormattedText>
               </span>
             )}
           </motion.li>
@@ -127,29 +127,33 @@ export function SplitContentSlide({
       </ul>
 
       {isEditing && bulletPoints.length < MAX_POINTS && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={addPoint}
-          className="mt-4 w-fit text-white/60 hover:text-white hover:bg-white/10"
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          Add Point
-        </Button>
+        <div className="mt-4" style={{ textAlign: direction === 'rtl' ? 'right' : 'left' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={addPoint}
+            className="w-fit text-white/60 hover:text-white hover:bg-white/10"
+          >
+            <Plus className={`w-4 h-4 ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
+            Add Point
+          </Button>
+        </div>
       )}
     </div>
   );
 
   const imageSection = (
-    <div className="relative flex-1 min-w-0 min-h-0 h-full overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
       {content.imageUrl ? (
-        <img
-          src={content.imageUrl}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+        <div className="w-full h-full min-h-0">
+          <SlideImage
+            src={content.imageUrl}
+            alt="Slide image"
+            className="w-full h-full object-cover"
+          />
+        </div>
       ) : isEditing ? (
-        <div className="absolute inset-0 flex items-center justify-center p-4 bg-black/15">
+        <div className="flex-1 flex items-center justify-center p-4">
           <ImageUploader
             value={content.imageUrl}
             onChange={handleImageUrlChange}
@@ -158,7 +162,7 @@ export function SplitContentSlide({
           />
         </div>
       ) : (
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-white/50 bg-black/10">
+        <div className="flex-1 flex flex-col items-center justify-center text-white/50 p-4">
           <Image className="w-16 h-16 mb-4 opacity-50" />
           <p className="text-sm opacity-60">No image added</p>
         </div>
@@ -168,9 +172,9 @@ export function SplitContentSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-col h-full min-h-0">
         <div
-          className={`flex min-h-0 flex-1 flex-row ${
+          className={`flex-1 flex min-h-0 ${
             imagePosition === "left" ? "flex-row-reverse" : "flex-row"
           }`}
         >

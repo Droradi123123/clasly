@@ -1,6 +1,13 @@
+import { Link } from "react-router-dom";
 import { Zap } from "lucide-react";
+import { webinarFooterContent } from "@/content/webinarLandingContent";
 
-export default function Footer() {
+interface FooterProps {
+  variant?: "default" | "webinar";
+}
+
+export default function Footer({ variant = "default" }: FooterProps) {
+  const tagline = variant === "webinar" ? webinarFooterContent.tagline : "Making presentations interactive.";
   return (
     <footer className="py-8 px-4 border-t border-border/50">
       <div className="container mx-auto max-w-6xl flex flex-col md:flex-row items-center justify-between gap-4">
@@ -10,9 +17,23 @@ export default function Footer() {
           </div>
           <span className="font-display font-semibold text-foreground">Clasly</span>
         </div>
-        <p className="text-sm text-muted-foreground">
-          © 2024 Clasly. Making presentations interactive.
-        </p>
+        <div className="flex items-center gap-6">
+          <Link to="/changelog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            שינויים
+          </Link>
+          <Link to="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Terms and Conditions
+          </Link>
+          <Link to="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            Privacy Policy
+          </Link>
+          <Link to="/changelog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            שינויים
+          </Link>
+          <p className="text-sm text-muted-foreground">
+            © 2026 Clasly. {tagline}
+          </p>
+        </div>
       </div>
     </footer>
   );

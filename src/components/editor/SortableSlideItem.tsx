@@ -2,6 +2,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 import type { Slide } from "@/types/slides";
+import { SlideImage } from "@/components/editor/SlideImage";
 import { isQuizSlide, isInteractiveSlide } from "@/types/slides";
 
 interface SortableSlideItemProps {
@@ -92,11 +93,10 @@ export function SortableSlideItem({
         {/* Slide preview thumbnail (only for imported image slides) */}
         {showImageThumb ? (
           <div className="mt-1.5 w-full aspect-video rounded overflow-hidden bg-muted">
-            <img
+            <SlideImage
               src={(slide.content as any).imageUrl}
               alt={slideTitle}
               className="w-full h-full object-cover"
-              loading="lazy"
             />
           </div>
         ) : (

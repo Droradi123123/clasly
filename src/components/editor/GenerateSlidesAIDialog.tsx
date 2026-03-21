@@ -23,7 +23,11 @@ import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 import { GeneratedTheme } from "@/types/generatedTheme";
 import { supabase } from "@/integrations/supabase/client";
+import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
+import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
+import { Link } from "react-router-dom";
+import { AlertCircle } from "lucide-react";
 
 interface GenerateSlidesAIDialogProps {
   open: boolean;
@@ -63,15 +67,10 @@ export default function GenerateSlidesAIDialog({
   const [error, setError] = useState<string | null>(null);
   const [generatedThemeName, setGeneratedThemeName] = useState<string | null>(null);
   
-  // Get subscription info for slide limits
-  const { isFree, maxSlides } = useSubscriptionContext();
+  // Get subscription info for slide limits and credits
+  const { isFree, maxSlides, hasAITokens, credits, aiTokensRemaining } = useSubscriptionContext();
   const planSlideLimit = isFree ? (maxSlides ?? 5) : 8;
-
-  /** Fresh ID each time the dialog opens — matches `builder_conversation` rows for this generation. */
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
-  useEffect(() => {
-    if (open) setSessionId(crypto.randomUUID());
-  }, [open]);
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
 
   // Update description when initialPrompt changes
   useEffect(() => {
@@ -106,9 +105,19 @@ export default function GenerateSlidesAIDialog({
     return planSlideLimit; // default to plan limit
   };
 
+  const expectedCount = getExpectedSlideCount();
+  // Only block when we KNOW user has insufficient credits. When credits is null (e.g. new user),
+  // let the server create the row via ensureUserCredits and validate.
+  const creditsKnown = credits != null;
+  const hasEnoughCredits = creditsKnown ? hasAITokens(expectedCount) : true;
+
   const handleGenerate = async () => {
     if (!description.trim()) {
       toast.error("Please describe your presentation topic");
+      return;
+    }
+    if (!hasEnoughCredits) {
+      setShowOutOfCreditsModal(true);
       return;
     }
 
@@ -118,55 +127,38 @@ export default function GenerateSlidesAIDialog({
     setGeneratedThemeName(null);
 
     try {
-      // Get authenticated session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+      if (sessionError || !session) {
         throw new Error("Please sign in to generate presentations");
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-slides`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            description,
-            contentType,
-            difficulty,
-            slideCount: expectedCount,
-            sessionId,
-          }),
-        }
-      );
+      const { data, error: fnError } = await supabase.functions.invoke("generate-slides", {
+        body: {
+          description,
+          contentType,
+          difficulty,
+          slideCount: expectedCount,
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        if (response.status === 429) {
-          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+      if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) {
+          setShowOutOfCreditsModal(true);
         }
-        if (response.status === 402) {
-          throw new Error("AI credits exhausted. Please add credits to continue.");
-        }
-        throw new Error(errorData.error || "Failed to generate slides");
+        const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate slides.");
+        throw new Error(msg);
       }
+      const resData = data as { error?: string; slides?: unknown[]; theme?: unknown };
+      if (resData?.error) throw new Error(resData.error);
+      if (!resData?.slides?.length) throw new Error("No slides returned");
 
-      const data = await response.json();
-      
-      if (!data.slides || !Array.isArray(data.slides)) {
-        throw new Error("Invalid response from AI");
-      }
-
-      // Extract generated theme if present
-      const generatedTheme: GeneratedTheme | undefined = data.theme;
+      const generatedTheme: GeneratedTheme | undefined = resData.theme as GeneratedTheme | undefined;
       if (generatedTheme) {
         setGeneratedThemeName(generatedTheme.themeName);
       }
 
-      // Transform AI response to proper Slide objects with theme applied
-      const slides: Slide[] = data.slides.map((aiSlide: any, index: number) => {
+      const slides: Slide[] = (resData.slides as any[]).map((aiSlide: any, index: number) => {
         const baseSlide = createNewSlide(aiSlide.type, index);
         
         // Apply generated theme styling if available
@@ -201,13 +193,21 @@ export default function GenerateSlidesAIDialog({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to generate slides";
       setError(errorMessage);
-      toast.error(errorMessage);
+      const isSessionError = /sign out|session invalid|invalid jwt/i.test(errorMessage);
+      if (isSessionError) {
+        toast.error("נא להתנתק ולהתחבר מחדש", {
+          action: {
+            label: "התנתק והתחבר",
+            onClick: () => supabase.auth.signOut(),
+          },
+        });
+      } else {
+        toast.error(errorMessage);
+      }
     } finally {
       setIsGenerating(false);
     }
   };
-
-  const expectedCount = getExpectedSlideCount();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -289,6 +289,20 @@ export default function GenerateSlidesAIDialog({
                 </motion.div>
               )}
 
+              {/* Not enough credits */}
+              {!hasEnoughCredits && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <div className="text-sm">
+                    <p>This will use {expectedCount} credits. You have {aiTokensRemaining} remaining.</p>
+                    <p className="mt-1 flex flex-wrap gap-2">
+                      <Link to="/billing" className="underline font-medium">Buy credits</Link>
+                      <Link to="/pricing" className="underline font-medium">Upgrade plan</Link>
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Describe Your Presentation</Label>
@@ -332,7 +346,7 @@ export default function GenerateSlidesAIDialog({
                     <div>
                       <div className="font-medium">Interactive Only</div>
                       <div className="text-sm text-muted-foreground">
-                        Quizzes, polls, word clouds & more
+                        One title slide + rest are interactive (quizzes, polls, scales, etc.)
                       </div>
                     </div>
                   </Label>
@@ -348,7 +362,7 @@ export default function GenerateSlidesAIDialog({
                     <div>
                       <div className="font-medium">Content + Interactive</div>
                       <div className="text-sm text-muted-foreground">
-                        Educational content with interactions
+                        Mixed: instructional content plus interactions
                       </div>
                     </div>
                   </Label>
@@ -360,6 +374,7 @@ export default function GenerateSlidesAIDialog({
                 </p>
               </div>
 
+              {/* Difficulty */}
               <div className="space-y-2">
                 <Label>Difficulty Level</Label>
                 <Select value={difficulty} onValueChange={(v) => setDifficulty(v as "beginner" | "intermediate" | "advanced")}>
@@ -384,7 +399,7 @@ export default function GenerateSlidesAIDialog({
                 <Button
                   variant="hero"
                   onClick={handleGenerate}
-                  disabled={!description.trim()}
+                  disabled={!description.trim() || !hasEnoughCredits || isGenerating}
                   className="px-8"
                 >
                   <Sparkles className="w-4 h-4" />
@@ -395,6 +410,7 @@ export default function GenerateSlidesAIDialog({
           )}
         </AnimatePresence>
       </DialogContent>
+      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </Dialog>
   );
 }

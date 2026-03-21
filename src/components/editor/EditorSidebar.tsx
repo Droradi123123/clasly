@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Palette, Type, AlignLeft, AlignCenter, AlignRight, Check, Plus, Trophy, CheckCircle, ImageIcon, X, Loader2 } from "lucide-react";
+import { Palette, Type, AlignLeft, AlignCenter, AlignRight, Check, Plus, Trophy, CheckCircle, ImageIcon, X, Loader2, ArrowLeftRight, Trash2 } from "lucide-react";
 import { Slide, GRADIENT_PRESETS, FontFamily, FontSize, TextAlign, SlideDesign, isQuizSlide, isInteractiveSlide, OverlayImagePosition } from "@/types/slides";
-import { ThemeId } from "@/types/themes";
+import { ThemeId, getTheme } from "@/types/themes";
 import { DesignStyleId } from "@/types/designStyles";
 import { ThemeSelector } from "./ThemeSelector";
 import { DesignStyleSelector } from "./DesignStyleSelector";
@@ -46,7 +46,7 @@ export function EditorSidebar({
   slide, 
   onUpdateDesign, 
   onUpdateContent,
-  selectedThemeId = 'neon-cyber', 
+  selectedThemeId = 'academic-pro', 
   onSelectTheme, 
   selectedDesignStyleId = 'dynamic', 
   onSelectDesignStyle,
@@ -128,6 +128,28 @@ export function EditorSidebar({
             </RadioGroup>
           )}
           
+          {/* Poll (Quiz) – dropdown to select correct option */}
+          {slide.type === 'poll_quiz' && content.options && (
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground">Correct answer</Label>
+              <Select
+                value={String(content.correctAnswer ?? 0)}
+                onValueChange={(v) => updateContent({ correctAnswer: parseInt(v, 10) })}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {content.options.map((opt, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {opt || `Option ${i + 1}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          
           {/* Quiz correct answer (already handled in main editor, show indicator) */}
           {slide.type === 'quiz' && (
             <div className="p-2 rounded-lg bg-green-500/10 border border-green-500/20">
@@ -199,13 +221,50 @@ export function EditorSidebar({
         </div>
       )}
 
+      {/* Split Content - Image position & remove */}
+      {slide.type === 'split_content' && onUpdateContent && (
+        <div className="space-y-3 pb-4 border-b border-border/50">
+          <Label className="text-sm font-medium">Image</Label>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => updateContent({ imagePosition: content.imagePosition === 'left' ? 'right' : 'left' })}
+              className="flex-1"
+              title="Swap image position"
+            >
+              <ArrowLeftRight className="w-4 h-4 mr-1" />
+              {content.imagePosition === 'left' ? 'Right' : 'Left'}
+            </Button>
+            {content.imageUrl && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => updateContent({ imageUrl: '' })}
+                className="text-destructive hover:text-destructive"
+                title="Remove image"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Theme Selector */}
       {onSelectTheme && (
         <div className="space-y-3 pb-4 border-b border-border/50">
           <ThemeSelector
             selectedThemeId={selectedThemeId}
-            onSelectTheme={onSelectTheme}
+            onSelectTheme={(id) => {
+              const theme = getTheme(id);
+              updateDesign({
+                themeId: id,
+                gradientPreset: undefined,
+                backgroundColor: theme.preview.gradient,
+              });
+              onSelectTheme(id);
+            }}
             onPremiumBlocked={onPremiumThemeBlocked}
           />
         </div>
@@ -538,12 +597,23 @@ function SlideImageOverlay({
 
       if (uploadError) throw uploadError;
 
-      const { data: { publicUrl } } = supabase.storage
-        .from('slide-images')
-        .getPublicUrl(filePath);
-
+      let displayUrl: string;
+      try {
+        const { data: signedData } = await supabase.storage
+          .from('slide-images')
+          .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
+        if (signedData?.signedUrl) {
+          displayUrl = signedData.signedUrl;
+        } else {
+          const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+          displayUrl = publicData.publicUrl;
+        }
+      } catch {
+        const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
+        displayUrl = publicData.publicUrl;
+      }
       onUpdateDesign({ 
-        overlayImageUrl: publicUrl,
+        overlayImageUrl: displayUrl,
         overlayImagePosition: design.overlayImagePosition || 'background'
       });
       toast.success('Image uploaded');

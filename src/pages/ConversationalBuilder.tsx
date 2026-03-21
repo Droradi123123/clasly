@@ -7,45 +7,49 @@ import { toast } from 'sonner';
 import ChatPanel from '@/components/builder/ChatPanel';
 import PreviewPanel from '@/components/builder/PreviewPanel';
 import { useConversationalBuilder } from '@/hooks/useConversationalBuilder';
-import { createLecture } from '@/lib/lectureService';
+import { createLecture, updateLecture } from '@/lib/lectureService';
+import { useBuilderConversationPersistence } from '@/hooks/useBuilderConversationPersistence';
 import { Slide } from '@/types/slides';
 import { useAuth } from '@/hooks/useAuth';
+import { useIsMobile } from '@/hooks/useIsMobile';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase } from '@/integrations/supabase/client';
+import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus, withTimeout } from '@/lib/supabaseFunctions';
+import { ensureSlidesDesignDefaults } from '@/lib/designDefaults';
 import { useSubscriptionContext } from '@/contexts/SubscriptionContext';
-import { insertBuilderConversationMessages } from '@/lib/builderConversation';
+import { OutOfCreditsModal } from '@/components/credits/OutOfCreditsModal';
 
 const ConversationalBuilder: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const { maxSlides, isFree } = useSubscriptionContext();
-
-  /** One ID per builder visit — all messages share this in Supabase `builder_conversation`. */
-  const [sessionId] = useState(() => crypto.randomUUID());
-
-  /** Persist editor-import welcome to DB once `user` is available (handles slow auth). */
-  const pendingEditorImportLog = useRef<{ slideCount: number } | null>(null);
-
+  const isMobile = useIsMobile();
+  const { maxSlides, isFree, hasAITokens, isLoading: isSubLoading } = useSubscriptionContext();
+  
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
+  /** Draft lecture saved in DB as soon as AI generates slides; updated on every edit so it never gets lost. */
+  const [draftLectureId, setDraftLectureId] = useState<string | null>(null);
   
   const {
     sandboxSlides,
     setSandboxSlides,
+    messages,
     addMessage,
     updateLastMessage,
     setIsGenerating,
     isGenerating,
     setOriginalPrompt,
     originalPrompt,
-    contentType,
+    targetAudience,
     setGeneratedTheme,
     currentPreviewIndex,
     setCurrentPreviewIndex,
     reset,
   } = useConversationalBuilder();
+
   
   // Track if we've already started generation to prevent duplicates
   const [hasStartedGeneration, setHasStartedGeneration] = useState(false);
@@ -54,12 +58,18 @@ const ConversationalBuilder: React.FC = () => {
   const urlPrompt = searchParams.get('prompt') || '';
   const pendingPrompt = localStorage.getItem('clasly_pending_prompt') || '';
   const initialPrompt = urlPrompt || pendingPrompt;
-  const contentTypeFromUrl: 'interactive' | 'with_content' =
-    searchParams.get('contentType') === 'with_content' ? 'with_content' : 'interactive';
+  const contentMode = (searchParams.get('mode') || 'interactive') as 'interactive' | 'with_content';
 
   // Optional: open builder from the editor with existing slides + a focused slide
   const editorSlideIndexParam = searchParams.get('slide');
   const editorSlideIndex = editorSlideIndexParam ? Number(editorSlideIndexParam) : 0;
+
+  // Redirect mobile users to continue-on-desktop (building is desktop-only)
+  useEffect(() => {
+    if (isMobile) {
+      navigate('/continue-on-desktop', { replace: true });
+    }
+  }, [isMobile, navigate]);
 
   // Check auth and show modal if not logged in
   useEffect(() => {
@@ -67,6 +77,14 @@ const ConversationalBuilder: React.FC = () => {
       setShowAuthModal(true);
     }
   }, [isAuthLoading, user]);
+
+  const { flush: flushConversation } = useBuilderConversationPersistence({
+    userId: user?.id,
+    messages,
+    lectureId: draftLectureId,
+    originalPrompt: originalPrompt || undefined,
+    targetAudience: targetAudience || undefined,
+  });
 
   // If opened from Editor, load slides from localStorage once and focus the requested slide
   useEffect(() => {
@@ -84,14 +102,13 @@ const ConversationalBuilder: React.FC = () => {
           Math.max(editorSlideIndex, 0),
           parsed.length - 1
         );
-        setSandboxSlides(parsed);
+        setSandboxSlides(ensureSlidesDesignDefaults(parsed));
         setCurrentPreviewIndex(safeIndex);
         addMessage({
           role: 'assistant',
           content:
             'Loaded your presentation from the editor. What would you like to change?',
         });
-        pendingEditorImportLog.current = { slideCount: parsed.length };
       }
     } catch (e) {
       console.error('Failed to load slides from editor:', e);
@@ -101,20 +118,6 @@ const ConversationalBuilder: React.FC = () => {
     }
   }, [addMessage, editorSlideIndex, sandboxSlides.length, setSandboxSlides, setCurrentPreviewIndex]);
 
-  useEffect(() => {
-    if (!user || !pendingEditorImportLog.current) return;
-    const { slideCount } = pendingEditorImportLog.current;
-    pendingEditorImportLog.current = null;
-    void insertBuilderConversationMessages(sessionId, [
-      {
-        role: 'assistant',
-        content:
-          'Loaded your presentation from the editor. What would you like to change?',
-        metadata: { kind: 'editor_import', slideCount },
-      },
-    ]);
-  }, [user, sessionId]);
-
   // Generate initial presentation on mount - ONLY ONCE
   useEffect(() => {
     // Guard against multiple calls
@@ -123,90 +126,128 @@ const ConversationalBuilder: React.FC = () => {
     if (!user || isAuthLoading) return;
     if (sandboxSlides.length > 0) return;
     if (originalPrompt) return; // Already set, don't run again
+    // Wait for subscription/credits to load before credit check (avoids false "no credits" when loading)
+    if (isSubLoading) return;
 
     // Clear pending prompt from localStorage immediately
     localStorage.removeItem('clasly_pending_prompt');
+    localStorage.removeItem('clasly_pending_prompt_ts');
 
     // Mark as started BEFORE async operation
     setHasStartedGeneration(true);
-    setOriginalPrompt(initialPrompt, contentTypeFromUrl);
-    generateInitialPresentation(initialPrompt, contentTypeFromUrl);
-  }, [initialPrompt, user, isAuthLoading, hasStartedGeneration, sandboxSlides.length, originalPrompt]);
+    setOriginalPrompt(initialPrompt, contentMode);
+    generateInitialPresentation(initialPrompt, contentMode);
+  }, [initialPrompt, user, isAuthLoading, isSubLoading, hasStartedGeneration, sandboxSlides.length, originalPrompt]);
+
+  // Keep draft in DB in sync when user edits via chat (debounced)
+  useEffect(() => {
+    if (!draftLectureId || sandboxSlides.length === 0) return;
+    const t = setTimeout(() => {
+      updateLecture(draftLectureId, { slides: sandboxSlides }).catch((e) =>
+        console.warn('Failed to update draft:', e)
+      );
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [draftLectureId, sandboxSlides]);
   
-  const generateInitialPresentation = async (
-    prompt: string,
-    ct: 'interactive' | 'with_content',
-  ) => {
+  const generateInitialPresentation = async (prompt: string, contentType: 'interactive' | 'with_content') => {
+    const slideCount = isFree ? (maxSlides ?? 5) : Math.min(10, maxSlides ?? 10);
+    // No client-side credit block; server is source of truth (ensureUserCredits + checkCreditsBalance).
+    // On 402, catch handler sets showOutOfCreditsModal.
+
     setIsInitialLoading(true);
     setIsGenerating(true);
-    
-    // Add system welcome message
+
+    // Show user's prompt in chat so they see what they asked for
+    addMessage({ role: 'user', content: prompt });
     addMessage({
       role: 'assistant',
-      content: `I'm creating a presentation about "${prompt}". Just a moment...`,
+      content: `I'm building a presentation now:\n\n"${prompt}"`,
     });
     
     try {
-      // Get authenticated session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+      if (sessionError || !session) {
         throw new Error("Please sign in to generate presentations");
       }
 
-      // Use AbortController with extended timeout for AI generation (2 minutes)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 120000);
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-slides`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
+      let invokeResult = await supabase.functions.invoke('generate-slides', {
+        body: {
+          description: prompt,
+          contentType,
+          difficulty: 'intermediate',
+          slideCount,
+          maxImages: isFree ? 3 : 6,
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
+        await new Promise((r) => setTimeout(r, 2500));
+        invokeResult = await supabase.functions.invoke('generate-slides', {
+          body: {
             description: prompt,
-            contentType: ct,
+            contentType,
             difficulty: 'intermediate',
-            slideCount: isFree ? (maxSlides ?? 5) : 7,
-            sessionId,
-          }),
-          signal: controller.signal,
+            slideCount,
+            maxImages: isFree ? 3 : 6,
+          },
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      }
+      const { data, error: fnError } = invokeResult;
+      if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
+        const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
+        throw new Error(msg);
+      }
+      const resData = data as {
+        error?: string;
+        slides?: unknown[];
+        theme?: unknown;
+        plan?: string;
+        interpretation?: string;
+      };
+      if (resData?.error) throw new Error(resData.error);
+      if (!resData?.slides?.length) throw new Error('No slides returned');
+
+      const processedSlides: Slide[] = ensureSlidesDesignDefaults((resData.slides as any[]).map((slide: any, index: number) => ({
+        ...slide,
+        id: slide.id || `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+        order: index,
+      })));
+      setSandboxSlides(processedSlides);
+      setGeneratedTheme(resData.theme);
+
+      // Auto-save draft so the presentation is never lost (credits, navigation, or leave)
+      const draftTitle = (prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')) || 'Untitled Presentation';
+      try {
+        const newLecture = await createLecture(draftTitle, processedSlides);
+        setDraftLectureId(newLecture.id);
+      } catch (e) {
+        console.warn('Failed to auto-save draft:', e);
+      }
+
+      // Build success message: for Pro, include interpretation + plan (reasoning reflection)
+      let successMsg = '';
+      if (resData.interpretation || resData.plan) {
+        if (resData.interpretation) {
+          successMsg += `**What I understood:** ${resData.interpretation}\n\n`;
         }
-      );
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `API error: ${response.status}`);
+        if (resData.plan) {
+          successMsg += `**My plan:** ${resData.plan}\n\n`;
+        }
       }
-      
-      const data = await response.json();
-      
-      if (data.slides && data.slides.length > 0) {
-        const processedSlides: Slide[] = data.slides.map((slide: any, index: number) => ({
-          ...slide,
-          id: slide.id || `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-          order: index,
-        }));
-        
-        setSandboxSlides(processedSlides);
-        setGeneratedTheme(data.theme);
-        
-        // Update welcome message with success
-        updateLastMessage(
-          `I've created a ${processedSlides.length}-slide presentation about "${prompt}".\n\n` +
-          `**What you can ask me:**\n` +
-          `- "Change the text on slide 3"\n` +
-          `- "Make the tone more professional"\n` +
-          `- "Add a quiz after slide 2"\n` +
-          `- "Delete the timeline slide"\n` +
-          `- "Change images to a different style"\n\n` +
-          `When you're happy with the result, click **"Approve & Edit"** to continue in the full editor.`
-        );
-      }
+      successMsg +=
+        `I've created a ${processedSlides.length}-slide presentation about "${prompt}".\n\n` +
+        `**What you can ask me:**\n` +
+        `- "Change the text on slide 3"\n` +
+        `- "Make the tone more professional"\n` +
+        `- "Add a quiz after slide 2"\n` +
+        `- "Delete the timeline slide"\n` +
+        `- "Change images to a different style"\n\n` +
+        `You can **keep editing by typing** what you want changed in the box below, or click **Continue to Edit** to open the full editor.`;
+
+      updateLastMessage(successMsg);
     } catch (error) {
       console.error('Error generating presentation:', error);
       const errorMessage = error instanceof Error 
@@ -215,7 +256,20 @@ const ConversationalBuilder: React.FC = () => {
       updateLastMessage(
         `Sorry, I couldn't generate the presentation. ${errorMessage}`
       );
-      toast.error('Failed to generate presentation');
+      const isSessionError = /sign out|session invalid|invalid jwt/i.test(errorMessage);
+      if (isSessionError) {
+        toast.error('נא להתנתק ולהתחבר מחדש', {
+          action: {
+            label: 'התנתק והתחבר',
+            onClick: async () => {
+              await supabase.auth.signOut();
+              setShowAuthModal(true);
+            },
+          },
+        });
+      } else {
+        toast.error('Failed to generate presentation');
+      }
     } finally {
       setIsInitialLoading(false);
       setIsGenerating(false);
@@ -223,53 +277,72 @@ const ConversationalBuilder: React.FC = () => {
   };
   
   const handleSendMessage = async (userMessage: string) => {
-    // Add user message
+    if (!hasAITokens(1)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
     addMessage({ role: 'user', content: userMessage });
-    
-    // Add loading assistant message
     addMessage({ role: 'assistant', content: '', isLoading: true });
     setIsGenerating(true);
+
+    const progressStages: { after: number; text: string }[] = [
+      { after: 0, text: 'Starting...' },
+      { after: 4, text: 'AI is thinking...' },
+      { after: 12, text: 'Processing your request...' },
+      { after: 30, text: 'This is taking longer than usual...' },
+    ];
+    const startTime = Date.now();
+    const progressId = setInterval(() => {
+      const elapsedSec = (Date.now() - startTime) / 1000;
+      const stage = [...progressStages].reverse().find((s) => elapsedSec >= s.after);
+      if (stage) updateLastMessage(stage.text);
+    }, 3000);
     
     try {
-      // Get authenticated session
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
+      if (sessionError || !session) {
         throw new Error("Please sign in to use the chat builder");
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat-builder`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
+      const conversationHistory = messages
+        .slice(0, -1)
+        .filter((m) => (m.role === 'user' || m.role === 'assistant') && !m.isLoading)
+        .slice(-20)
+        .map((m) => ({ role: m.role, content: m.content }));
+
+      const invokeFn = () =>
+        supabase.functions.invoke('chat-builder', {
+          body: {
             message: userMessage,
+            conversationHistory,
             slides: sandboxSlides,
             currentSlideIndex: currentPreviewIndex,
             originalPrompt,
-            contentType,
-            sessionId,
-          }),
-        }
-      );
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `API error: ${response.status}`);
+            targetAudience,
+          },
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+
+      let result = await withTimeout(invokeFn(), 90_000, 'Request timed out. Please try again.');
+      if (result.error && getEdgeFunctionStatus(result.error) === 503) {
+        await new Promise((r) => setTimeout(r, 2500));
+        result = await withTimeout(invokeFn(), 90_000, 'Request timed out. Please try again.');
       }
-      
-      const data = await response.json();
-      
-      // Update slides if AI made changes
-      if (data.updatedSlides) {
-        setSandboxSlides(data.updatedSlides);
+
+      const { data, error: fnError } = result;
+
+      if (fnError) {
+        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
+        const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to process message.');
+        throw new Error(msg);
       }
-      
-      // Update the assistant message
-      updateLastMessage(data.message || 'Done! Check out the updated slides.');
+      const resData = data as { error?: string; message?: string; updatedSlides?: unknown[] };
+      if (resData?.error) throw new Error(resData.error);
+
+      if (resData?.updatedSlides?.length) {
+        setSandboxSlides(ensureSlidesDesignDefaults(resData.updatedSlides as Slide[]));
+      }
+      updateLastMessage(resData?.message || 'Done! Check out the updated slides.');
       
     } catch (error) {
       console.error('Error processing message:', error);
@@ -277,6 +350,7 @@ const ConversationalBuilder: React.FC = () => {
         `Sorry, I couldn't process that request. ${error instanceof Error ? error.message : 'Please try again.'}`
       );
     } finally {
+      clearInterval(progressId);
       setIsGenerating(false);
     }
   };
@@ -290,21 +364,30 @@ const ConversationalBuilder: React.FC = () => {
     setIsSaving(true);
     
     try {
-      // Generate title from first slide content or originalPrompt
-      let title = originalPrompt || '';
-      if (!title && sandboxSlides.length > 0) {
-        const firstSlide = sandboxSlides[0];
-        title = (firstSlide.content as any)?.title || 
-                (firstSlide.content as any)?.question || 
-                'Untitled Presentation';
+      await flushConversation();
+
+      if (draftLectureId) {
+        const updated = await updateLecture(draftLectureId, { slides: sandboxSlides });
+        toast.success('Presentation saved!');
+        reset();
+        setDraftLectureId(null);
+        navigate(`/editor/${draftLectureId}`, {
+          state: { preloadedLecture: { ...updated, slides: sandboxSlides } },
+        });
+      } else {
+        let title = originalPrompt || '';
+        if (!title && sandboxSlides.length > 0) {
+          const firstSlide = sandboxSlides[0];
+          title = (firstSlide.content as any)?.title || (firstSlide.content as any)?.question || 'Untitled Presentation';
+        }
+        title = title.slice(0, 50) + (title.length > 50 ? '...' : '');
+        const newLecture = await createLecture(title || 'Untitled Presentation', sandboxSlides);
+        toast.success('Presentation saved!');
+        reset();
+        navigate(`/editor/${newLecture.id}`, {
+          state: { preloadedLecture: { ...newLecture, slides: sandboxSlides } },
+        });
       }
-      title = title.slice(0, 50) + (title.length > 50 ? '...' : '');
-      
-      const newLecture = await createLecture(title || 'Untitled Presentation', sandboxSlides);
-      
-      toast.success('Presentation saved!');
-      reset(); // Clear the builder state
-      navigate(`/editor/${newLecture.id}`);
     } catch (error) {
       console.error('Error saving presentation:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to save presentation';
@@ -314,13 +397,13 @@ const ConversationalBuilder: React.FC = () => {
     }
   };
   
-  const handleCancel = () => {
-    if (sandboxSlides.length > 0) {
-      if (!confirm('Are you sure? Your presentation draft will be lost.')) {
-        return;
-      }
+  const handleCancel = async () => {
+    await flushConversation();
+    if (sandboxSlides.length > 0 && draftLectureId) {
+      toast.info('Draft saved. Find it in your Dashboard.');
     }
     reset();
+    setDraftLectureId(null);
     navigate('/dashboard');
   };
   
@@ -353,29 +436,33 @@ const ConversationalBuilder: React.FC = () => {
             disabled={sandboxSlides.length === 0 || isSaving || isGenerating}
           >
             <Check className="w-4 h-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Approve & Edit'}
+            {isSaving ? 'Saving...' : 'Continue to Edit'}
           </Button>
         </div>
       </header>
       
       {/* Main content - Split view */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Chat panel - Left side */}
+        {/* Chat panel - Left side (wider, clearer for "type to edit") */}
         <motion.div
           initial={{ x: -20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="w-[400px] min-w-[350px] max-w-[500px] border-r border-border"
+          className="w-[min(380px,36%)] min-w-[300px] max-w-[400px] border-r border-border flex flex-col"
         >
-          <ChatPanel onSendMessage={handleSendMessage} />
+          <ChatPanel
+          onSendMessage={handleSendMessage}
+          onContinueToEdit={handleApprove}
+          canContinueToEdit={sandboxSlides.length > 0 && !isSaving && !isGenerating}
+        />
         </motion.div>
         
         {/* Preview panel - Right side */}
         <motion.div
           initial={{ x: 20, opacity: 0 }}
           animate={{ x: 0, opacity: 1 }}
-          className="flex-1"
+          className="flex-1 flex flex-col min-h-0"
         >
-          <PreviewPanel isInitialLoading={isInitialLoading} />
+          <PreviewPanel isInitialLoading={isInitialLoading} initialPrompt={initialPrompt} />
         </motion.div>
       </div>
       
@@ -386,6 +473,7 @@ const ConversationalBuilder: React.FC = () => {
         onSuccess={() => setShowAuthModal(false)}
         promptText={initialPrompt}
       />
+      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </div>
   );
 };

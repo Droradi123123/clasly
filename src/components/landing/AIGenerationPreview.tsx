@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Loader2, CheckCircle, BarChart3, MessageSquare, Cloud, HelpCircle, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { webinarMockSlides } from "@/content/webinarLandingContent";
 
 const LOADING_STEPS = [
   { text: "Analyzing your topic...", icon: Sparkles },
@@ -32,14 +33,17 @@ interface AIGenerationPreviewProps {
   isGenerating: boolean;
   onComplete: () => void;
   onReset: () => void;
+  variant?: "default" | "webinar";
 }
 
 export default function AIGenerationPreview({ 
   prompt, 
   isGenerating, 
   onComplete, 
-  onReset 
+  onReset,
+  variant = "default"
 }: AIGenerationPreviewProps) {
+  const slides = variant === "webinar" ? webinarMockSlides : MOCK_SLIDES;
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
@@ -90,7 +94,7 @@ export default function AIGenerationPreview({
 
     const slideInterval = setInterval(() => {
       setVisibleSlides((prev) => {
-        if (prev >= MOCK_SLIDES.length) {
+        if (prev >= slides.length) {
           clearInterval(slideInterval);
           setTimeout(onComplete, 500);
           return prev;
@@ -100,7 +104,7 @@ export default function AIGenerationPreview({
     }, 200);
 
     return () => clearInterval(slideInterval);
-  }, [showSlides, onComplete]);
+  }, [showSlides, onComplete, slides.length]);
 
   if (!isGenerating && !showSlides) return null;
 
@@ -207,7 +211,7 @@ export default function AIGenerationPreview({
 
                 {/* Generated slides */}
                 <div className="space-y-3">
-                  {MOCK_SLIDES.map((slide, index) => (
+                  {slides.map((slide, index) => (
                     <motion.div
                       key={index}
                       initial={{ opacity: 0, x: -20 }}

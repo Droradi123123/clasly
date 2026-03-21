@@ -4,6 +4,9 @@ import { SlideWrapper } from "./SlideWrapper";
 import { Slide, BeforeAfterSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { Button } from "@/components/ui/button";
+import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
+import { useSlideLayout } from "@/contexts/SlideLayoutContext";
+import { FormattedText } from "@/components/editor/FormattedText";
 
 export interface BeforeAfterSlideProps {
   slide: Slide;
@@ -23,6 +26,7 @@ export function BeforeAfterSlide({
   const content = slide.content as BeforeAfterSlideContent;
   const theme = getTheme(themeId);
   const textColor = slide.design?.textColor || '#ffffff';
+  const { direction, textAlign } = useSlideLayout();
 
   const handleBeforeTitleChange = (beforeTitle: string) => {
     onUpdate?.({ ...content, beforeTitle });
@@ -79,22 +83,24 @@ export function BeforeAfterSlide({
   ) => (
     <div 
       className={`flex-1 p-6 md:p-10 ${isAfter ? 'bg-gradient-to-br from-primary/30 to-primary/50 rounded-r-2xl' : ''}`}
+      dir={direction}
     >
       {isEditing ? (
-        <input
+        <AutoResizeTextarea
           value={title}
           onChange={(e) => onTitleChange(e.target.value)}
-          className="text-2xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-6 placeholder:opacity-50 w-full"
-          style={{ color: textColor }}
+          className="text-2xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-6 placeholder:opacity-50 w-full resize-none break-words"
+          style={{ color: textColor, textAlign }}
           placeholder={isAfter ? "After title..." : "Before title..."}
+          minRows={1}
         />
       ) : (
-        <h2 className="text-2xl md:text-3xl font-bold mb-6" style={{ color: textColor }}>
-          {title}
+        <h2 className="text-2xl md:text-3xl font-bold mb-6" style={{ color: textColor, textAlign }}>
+          <FormattedText>{String(title || "")}</FormattedText>
         </h2>
       )}
 
-      <ul className="space-y-4">
+      <ul className="space-y-4 list-none ps-0 pe-0" style={{ listStyle: 'none' }}>
         {points.map((point, index) => (
           <motion.li
             key={index}
@@ -106,15 +112,18 @@ export function BeforeAfterSlide({
             <span 
               className="w-2 h-2 rounded-full mt-2.5 flex-shrink-0"
               style={{ backgroundColor: isAfter ? '#10B981' : textColor }}
+              aria-hidden
             />
             {isEditing ? (
-              <div className="flex-1 flex items-center gap-2">
-                <input
+              <div className="flex-1 flex items-center gap-2 min-w-0">
+                <AutoResizeTextarea
                   value={point}
                   onChange={(e) => onPointChange(index, e.target.value)}
-                  className="flex-1 text-base md:text-lg bg-transparent border-0 outline-none"
-                  style={{ color: textColor, opacity: 0.9 }}
+                  className="flex-1 text-base md:text-lg bg-transparent border-0 outline-none resize-none break-words min-w-0"
+                  style={{ color: textColor, opacity: 0.9, textAlign }}
                   placeholder="Enter point..."
+                  minRows={1}
+                  maxRows={6}
                 />
                 {points.length > 1 && (
                   <button
@@ -126,8 +135,8 @@ export function BeforeAfterSlide({
                 )}
               </div>
             ) : (
-              <span className="text-base md:text-lg" style={{ color: textColor, opacity: 0.9 }}>
-                {point}
+              <span className="text-base md:text-lg break-words" style={{ color: textColor, opacity: 0.9, textAlign }}>
+                <FormattedText>{String(point || "")}</FormattedText>
               </span>
             )}
           </motion.li>
@@ -135,15 +144,17 @@ export function BeforeAfterSlide({
       </ul>
 
       {isEditing && points.length < MAX_POINTS && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onAddPoint}
-          className="mt-4 w-fit text-white/60 hover:text-white hover:bg-white/10"
-        >
-          <Plus className="w-4 h-4 mr-1" />
-          Add Point
-        </Button>
+        <div className="mt-4" style={{ textAlign: direction === 'rtl' ? 'right' : 'left' }}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onAddPoint}
+            className="w-fit text-white/60 hover:text-white hover:bg-white/10"
+          >
+            <Plus className={`w-4 h-4 ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
+            Add Point
+          </Button>
+        </div>
       )}
     </div>
   );

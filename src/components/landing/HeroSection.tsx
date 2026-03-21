@@ -6,10 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/hooks/useAuth";
 import { AuthModal } from "@/components/auth/AuthModal";
+import HowItWorks from "@/components/landing/HowItWorks";
+import { webinarHeroContent, webinarQuizContent } from "@/content/webinarLandingContent";
 
 interface HeroSectionProps {
   onGenerate: (prompt: string) => void;
   onSeeExample: () => void;
+  variant?: "default" | "webinar";
 }
 
 // Confetti Particle Component
@@ -69,19 +72,35 @@ function FlyingEmoji({
   );
 }
 
+const DEFAULT_QUIZ_OPTIONS = [
+  { letter: "A", text: "London", color: "bg-red-500" },
+  { letter: "B", text: "Paris", color: "bg-blue-500", correct: true },
+  { letter: "C", text: "Berlin", color: "bg-yellow-500" },
+  { letter: "D", text: "Madrid", color: "bg-green-500" },
+];
+
+const DEFAULT_QUIZ_QUESTION = "What is the capital of France?";
+
+interface QuizContent {
+  question: string;
+  options: { letter: string; text: string; color: string; phoneColor?: string; correct?: boolean }[];
+}
+
 // Desktop Screen Illustration Component
-function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boolean; flyingEmojis: { id: number; emoji: string }[] }) {
+function DesktopIllustration({ showConfetti, flyingEmojis, compact, quizContent }: { showConfetti: boolean; flyingEmojis: { id: number; emoji: string }[]; compact?: boolean; quizContent?: QuizContent }) {
   const confettiColors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181", "#AA96DA"];
-  
+  const question = quizContent?.question ?? DEFAULT_QUIZ_QUESTION;
+  const options = quizContent?.options ?? DEFAULT_QUIZ_OPTIONS;
+
   return (
     <motion.div
-      initial={{ opacity: 0, x: -60 }}
+      initial={{ opacity: 0, x: compact ? -20 : -60 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.8, delay: 0.4 }}
+      transition={{ duration: 0.6, delay: compact ? 0.1 : 0.4 }}
       className="relative"
     >
       {/* Desktop Monitor */}
-      <div className="w-64 md:w-80 bg-slate-800 rounded-xl p-2 shadow-2xl">
+      <div className={`${compact ? "w-44 sm:w-52 p-1.5 rounded-lg" : "w-64 md:w-80 p-2 rounded-xl"} bg-slate-800 shadow-2xl`}>
         {/* Screen Bezel */}
         <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-lg overflow-hidden">
           {/* Browser Chrome */}
@@ -97,7 +116,7 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
           </div>
           
           {/* Presentation Slide Content */}
-          <div className="relative bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 p-4 md:p-6 min-h-[140px] md:min-h-[180px] overflow-hidden">
+          <div className={`relative bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-500 overflow-hidden ${compact ? "p-2 min-h-[100px]" : "p-4 md:p-6 min-h-[140px] md:min-h-[180px]"}`}>
             {/* Confetti Layer */}
             <AnimatePresence>
               {showConfetti && (
@@ -134,24 +153,19 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
             </AnimatePresence>
             
             {/* Slide Header */}
-            <div className="text-center mb-4 relative z-10">
-              <div className="inline-flex items-center gap-1 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] text-white/90 mb-2">
+            <div className={`text-center relative z-10 ${compact ? "mb-2" : "mb-4"}`}>
+              <div className={`inline-flex items-center gap-1 bg-white/20 backdrop-blur-sm rounded-full text-white/90 mb-1 ${compact ? "px-2 py-0.5 text-[8px]" : "px-3 py-1 text-[10px] mb-2"}`}>
                 <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
                 LIVE
               </div>
-              <h3 className="text-white font-bold text-sm md:text-base leading-tight">
-                What is the capital of France?
+              <h3 className={`text-white font-bold leading-tight ${compact ? "text-[10px]" : "text-sm md:text-base"}`}>
+                {question}
               </h3>
             </div>
             
             {/* Quiz Options Grid */}
-            <div className="grid grid-cols-2 gap-2 relative z-10">
-              {[
-                { letter: "A", text: "London", color: "bg-red-500" },
-                { letter: "B", text: "Paris", color: "bg-blue-500", correct: true },
-                { letter: "C", text: "Berlin", color: "bg-yellow-500" },
-                { letter: "D", text: "Madrid", color: "bg-green-500" },
-              ].map((option) => (
+            <div className={`grid grid-cols-2 relative z-10 ${compact ? "gap-1" : "gap-2"}`}>
+              {options.map((option) => (
                 <motion.div
                   key={option.letter}
                   animate={showConfetti && option.correct ? { 
@@ -159,12 +173,12 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
                     boxShadow: ["0 0 0 0 rgba(255,255,255,0)", "0 0 20px 5px rgba(255,255,255,0.5)", "0 0 0 0 rgba(255,255,255,0)"]
                   } : {}}
                   transition={{ duration: 0.6 }}
-                  className={`${option.color} rounded-lg px-2 py-1.5 flex items-center gap-1.5 shadow-md ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
+                  className={`${option.color} ${compact ? "rounded-md px-1.5 py-1 gap-1" : "rounded-lg px-2 py-1.5 gap-1.5"} flex items-center shadow-md ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
                 >
-                  <span className="w-4 h-4 bg-white/30 rounded-full flex items-center justify-center text-[8px] font-bold text-white">
+                  <span className={`${compact ? "w-3 h-3 text-[6px]" : "w-4 h-4 text-[8px]"} bg-white/30 rounded-full flex items-center justify-center font-bold text-white`}>
                     {option.letter}
                   </span>
-                  <span className="text-white text-[10px] font-medium">{option.text}</span>
+                  <span className={`text-white font-medium ${compact ? "text-[8px]" : "text-[10px]"}`}>{option.text}</span>
                   {option.correct && showConfetti && (
                     <span className="ml-auto text-xs">✓</span>
                   )}
@@ -173,8 +187,8 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
             </div>
             
             {/* Live Counter */}
-            <div className="mt-3 flex justify-center relative z-10">
-              <div className="bg-white/20 backdrop-blur-sm rounded-full px-3 py-1 text-[9px] text-white/90">
+            <div className={`flex justify-center relative z-10 ${compact ? "mt-1.5" : "mt-3"}`}>
+              <div className={`bg-white/20 backdrop-blur-sm rounded-full text-white/90 ${compact ? "px-2 py-0.5 text-[7px]" : "px-3 py-1 text-[9px]"}`}>
                 👥 24 participants
               </div>
             </div>
@@ -202,23 +216,44 @@ function DesktopIllustration({ showConfetti, flyingEmojis }: { showConfetti: boo
 function PhoneIllustration({ 
   onParisClick, 
   onEmojiClick,
-  showConfetti 
+  showConfetti,
+  compact,
+  quizContent
 }: { 
   onParisClick: () => void; 
   onEmojiClick: (emoji: string) => void;
   showConfetti: boolean;
+  compact?: boolean;
+  quizContent?: QuizContent;
 }) {
   const confettiColors = ["#FF6B6B", "#4ECDC4", "#FFE66D", "#95E1D3", "#F38181", "#AA96DA"];
-  
+  const DEFAULT_PHONE_OPTIONS = [
+    { letter: "A", text: "London", color: "from-red-500 to-red-600", correct: false },
+    { letter: "B", text: "Paris", color: "from-blue-500 to-blue-600", correct: true },
+    { letter: "C", text: "Berlin", color: "from-yellow-500 to-yellow-600", correct: false },
+    { letter: "D", text: "Madrid", color: "from-green-500 to-green-600", correct: false },
+  ];
+  const options = quizContent
+    ? quizContent.options.map((o) => {
+        const extended = o as { phoneColor?: string };
+        return {
+          letter: o.letter,
+          text: o.text,
+          color: extended.phoneColor ?? `from-${o.color.replace("bg-", "")} to-${o.color.replace("bg-", "").replace("-500", "-600")}`,
+          correct: !!o.correct,
+        };
+      })
+    : DEFAULT_PHONE_OPTIONS;
+
   return (
     <motion.div
-      initial={{ opacity: 0, x: 60 }}
+      initial={{ opacity: 0, x: compact ? 20 : 60 }}
       animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.8, delay: 0.5 }}
+      transition={{ duration: 0.6, delay: compact ? 0.15 : 0.5 }}
       className="relative"
     >
       {/* Phone Frame */}
-      <div className="w-36 md:w-44 bg-slate-800 rounded-[2rem] p-1.5 shadow-2xl">
+      <div className={`${compact ? "w-28 sm:w-32 rounded-[1.5rem] p-1" : "w-36 md:w-44 rounded-[2rem] p-1.5"} bg-slate-800 shadow-2xl`}>
         {/* Screen */}
         <div className="bg-slate-900 rounded-[1.75rem] overflow-hidden">
           {/* Dynamic Island */}
@@ -227,7 +262,7 @@ function PhoneIllustration({
           </div>
           
           {/* App Content */}
-          <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-3 min-h-[200px] md:min-h-[240px] overflow-hidden">
+          <div className={`relative bg-gradient-to-br from-slate-800 to-slate-900 overflow-hidden ${compact ? "px-2 py-2 min-h-[140px]" : "px-3 py-3 min-h-[200px] md:min-h-[240px]"}`}>
             {/* Confetti Layer */}
             <AnimatePresence>
               {showConfetti && (
@@ -245,22 +280,17 @@ function PhoneIllustration({
             </AnimatePresence>
             
             {/* Header */}
-            <div className="text-center mb-3 relative z-10">
-              <div className="inline-flex items-center gap-1 bg-primary/20 rounded-full px-2 py-0.5 text-[8px] text-primary mb-1">
+            <div className={`text-center relative z-10 ${compact ? "mb-2" : "mb-3"}`}>
+              <div className={`inline-flex items-center gap-1 bg-primary/20 rounded-full text-primary ${compact ? "px-1.5 py-0.5 text-[6px] mb-0.5" : "px-2 py-0.5 text-[8px] mb-1"}`}>
                 <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" />
                 Connected
               </div>
-              <p className="text-white/70 text-[9px]">Tap your answer!</p>
+              <p className={`text-white/70 ${compact ? "text-[7px]" : "text-[9px]"}`}>Tap your answer!</p>
             </div>
             
             {/* Voting Buttons */}
-            <div className="space-y-2 relative z-10">
-              {[
-                { letter: "A", text: "London", color: "from-red-500 to-red-600" },
-                { letter: "B", text: "Paris", color: "from-blue-500 to-blue-600", correct: true },
-                { letter: "C", text: "Berlin", color: "from-yellow-500 to-yellow-600" },
-                { letter: "D", text: "Madrid", color: "from-green-500 to-green-600" },
-              ].map((option) => (
+            <div className={`relative z-10 ${compact ? "space-y-1" : "space-y-2"}`}>
+              {options.map((option) => (
                 <motion.button
                   key={option.letter}
                   onClick={option.correct ? onParisClick : undefined}
@@ -269,12 +299,12 @@ function PhoneIllustration({
                   animate={showConfetti && option.correct ? { 
                     scale: [1, 1.08, 1],
                   } : {}}
-                  className={`w-full bg-gradient-to-r ${option.color} rounded-xl px-3 py-2.5 flex items-center gap-2 shadow-lg cursor-pointer transition-transform ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
+                  className={`w-full bg-gradient-to-r ${option.color} ${compact ? "rounded-lg px-2 py-1.5 gap-1" : "rounded-xl px-3 py-2.5 gap-2"} flex items-center shadow-lg cursor-pointer transition-transform ${option.correct && showConfetti ? 'ring-2 ring-white' : ''}`}
                 >
-                  <span className="w-5 h-5 bg-white/30 rounded-full flex items-center justify-center text-[10px] font-bold text-white">
+                  <span className={`bg-white/30 rounded-full flex items-center justify-center font-bold text-white ${compact ? "w-4 h-4 text-[8px]" : "w-5 h-5 text-[10px]"}`}>
                     {option.letter}
                   </span>
-                  <span className="text-white text-xs font-semibold">{option.text}</span>
+                  <span className={`text-white font-semibold ${compact ? "text-[9px]" : "text-xs"}`}>{option.text}</span>
                   {option.correct && showConfetti && (
                     <span className="ml-auto text-sm">✓</span>
                   )}
@@ -283,14 +313,14 @@ function PhoneIllustration({
             </div>
             
             {/* Emoji Reactions */}
-            <div className="mt-3 flex justify-center gap-2 relative z-10">
+            <div className={`flex justify-center gap-2 relative z-10 ${compact ? "mt-1.5 gap-1" : "mt-3"}`}>
               {["🎉", "👍", "❤️", "😮"].map((emoji) => (
                 <motion.button
                   key={emoji}
                   onClick={() => onEmojiClick(emoji)}
                   whileHover={{ scale: 1.15 }}
                   whileTap={{ scale: 0.9 }}
-                  className="w-8 h-8 bg-white/10 rounded-full flex items-center justify-center text-sm hover:bg-white/20 transition-colors"
+                  className={`bg-white/10 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors ${compact ? "w-6 h-6 text-xs" : "w-8 h-8 text-sm"}`}
                 >
                   {emoji}
                 </motion.button>
@@ -371,7 +401,10 @@ function SyncConnector() {
   );
 }
 
-export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionProps) {
+export default function HeroSection({ onGenerate, onSeeExample, variant = "default" }: HeroSectionProps) {
+  const isWebinar = variant === "webinar";
+  const heroContent = isWebinar ? webinarHeroContent : null;
+  const quizContent = isWebinar ? webinarQuizContent : undefined;
   const navigate = useNavigate();
   const { user } = useAuth();
   const [prompt, setPrompt] = useState("");
@@ -384,21 +417,23 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
 
   const handleGenerate = () => {
     if (!prompt.trim()) return;
+    const trimmed = prompt.trim();
     
     if (user) {
       // User is logged in, go directly to builder
-      navigate(`/builder?prompt=${encodeURIComponent(prompt.trim())}&audience=general`);
+      navigate(`/builder?prompt=${encodeURIComponent(trimmed)}&audience=general`);
     } else {
-      // Store prompt and show auth modal
-      setPendingPrompt(prompt.trim());
+      // Save prompt immediately so we never lose it (before auth, OAuth redirect, etc.)
+      localStorage.setItem('clasly_pending_prompt', trimmed);
+      localStorage.setItem('clasly_pending_prompt_ts', String(Date.now()));
+      setPendingPrompt(trimmed);
       setShowAuthModal(true);
     }
   };
 
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
-    // Navigate to builder with prompt
-    navigate(`/builder?prompt=${encodeURIComponent(pendingPrompt)}&audience=general`);
+    // AuthModal already navigates in onAuthStateChange - no duplicate navigation needed
   };
 
   const handleParisClick = useCallback(() => {
@@ -426,75 +461,76 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
   }, []);
 
   return (
-    <section className="relative min-h-[90vh] flex items-center justify-center px-4 py-16 md:py-24 bg-background overflow-hidden">
+    <section className="relative min-h-[85vh] sm:min-h-[90vh] flex flex-col lg:items-center lg:justify-center px-4 sm:px-4 py-12 sm:py-16 md:py-24 bg-background overflow-hidden pt-20 sm:pt-24 lg:pt-28 scroll-mt-20">
       {/* Subtle gradient background */}
       <div className="absolute inset-0 bg-gradient-to-b from-primary/[0.02] via-transparent to-transparent pointer-events-none" />
       
       {/* Soft glow behind the input */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/4 w-[800px] h-[500px] bg-gradient-radial from-primary/5 via-transparent to-transparent blur-3xl pointer-events-none" />
 
-      <div className="relative z-10 container mx-auto max-w-7xl">
-        {/* Top Section with Illustrations and Text */}
-        <div className="relative flex flex-col lg:flex-row items-center justify-center gap-8 lg:gap-4 mb-10">
-          {/* Sync Connector - ABOVE everything */}
+      <div className="relative z-10 container mx-auto max-w-7xl w-full flex flex-col">
+        {/* MOBILE: Simple vertical flow - headline → subheadline → input → illustrations */}
+        {/* DESKTOP: Original layout with illustrations on sides */}
+        
+        <div className="relative flex flex-col lg:flex-row items-center justify-center gap-6 lg:gap-4 mb-4 sm:mb-6 lg:mb-10">
           <SyncConnector />
           
-          {/* Left Illustration - Desktop */}
+          {/* Left Illustration - Desktop only */}
           <div className="hidden lg:block flex-shrink-0 relative z-20">
-            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} />
+            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} quizContent={quizContent} />
           </div>
 
-          {/* Center Text Content */}
-          <div className="text-center max-w-2xl px-4 lg:px-8 relative z-10">
-            {/* Headline */}
+          {/* Text + Input - on mobile: headline → subheadline → input (monday vibe style) */}
+          <div className="text-center max-w-2xl w-full px-1 sm:px-4 lg:px-8 relative z-10 flex flex-col items-center">
+            {/* Headline - much larger on mobile, ensure visible */}
             <motion.h1
-              initial={{ opacity: 0, y: 30 }}
+              initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-display font-bold text-foreground mb-5 leading-[1.1] tracking-tight"
+              className="text-4xl sm:text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-display font-bold text-foreground mb-4 sm:mb-5 leading-[1.12] tracking-tight"
             >
-              Build interactive slides that{" "}
-              <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
-                engage everyone in seconds.
-              </span>
+              {heroContent ? (
+                <>
+                  {heroContent.headline}{" "}
+                  <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
+                    {heroContent.headlineHighlight}
+                  </span>
+                </>
+              ) : (
+                <>
+                  Turn your words into{" "}
+                  <span className="bg-gradient-to-r from-primary via-primary to-primary/80 bg-clip-text text-transparent">
+                    interactive lectures.
+                  </span>
+                </>
+              )}
             </motion.h1>
 
             {/* Sub-headline */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.15 }}
-              className="text-base md:text-lg lg:text-xl text-muted-foreground max-w-xl mx-auto"
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="text-base sm:text-lg md:text-xl text-muted-foreground max-w-xl mx-auto leading-relaxed mb-6 sm:mb-8"
             >
-              AI builds the complete experience instantly: an interactive deck for the main screen{" "}
-              <span className="font-semibold text-foreground/80">AND</span>{" "}
-              a live game interface for audience phones.
+              {heroContent?.subheadline ?? (
+                <>
+                  AI builds the full experience in seconds: an interactive deck for the main screen{" "}
+                  <span className="font-semibold text-foreground/80">and</span>{" "}
+                  a live interface for every phone in the room.
+                </>
+              )}
             </motion.p>
-            
-            {/* Mobile Illustrations - Show on smaller screens */}
-            <div className="flex lg:hidden items-center justify-center gap-6 mt-8 relative">
-              <div className="scale-75">
-                <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} />
-              </div>
-              <div className="scale-75">
-                <PhoneIllustration 
-                  onParisClick={handleParisClick} 
-                  onEmojiClick={handleEmojiClick}
-                  showConfetti={showConfetti}
-                />
-              </div>
-            </div>
           </div>
 
-          {/* Right Illustration - Phone */}
+          {/* Right Illustration - Desktop only */}
           <div className="hidden lg:block flex-shrink-0 relative z-20">
             <PhoneIllustration 
               onParisClick={handleParisClick} 
               onEmojiClick={handleEmojiClick}
               showConfetti={showConfetti}
+              quizContent={quizContent}
             />
-            
-            {/* Flying Emojis Container */}
             <AnimatePresence>
               {flyingEmojis.map(({ id, emoji }) => (
                 <FlyingEmoji 
@@ -508,33 +544,28 @@ export default function HeroSection({ onGenerate, onSeeExample }: HeroSectionPro
           </div>
         </div>
 
-        {/* Large AI Input Box - The Star (UNCHANGED) */}
+        {/* Large AI Input Box - Immediately after text (monday vibe reference) */}
         <motion.div
-          initial={{ opacity: 0, y: 40, scale: 0.95 }}
+          initial={{ opacity: 0, y: 30, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.6, delay: 0.3 }}
-          className="relative max-w-3xl mx-auto"
+          transition={{ duration: 0.6, delay: 0.2 }}
+          className="relative max-w-3xl mx-auto w-full mb-0 p-[3px] rounded-2xl sm:rounded-3xl bg-gradient-to-r from-violet-500 via-pink-400 to-amber-400 shadow-xl shadow-pink-500/20"
         >
-          {/* Gradient border effect */}
-          <div className="absolute -inset-[2px] rounded-3xl bg-gradient-to-r from-primary/40 via-primary/60 to-primary/40 opacity-60 blur-sm" />
-          
-          {/* Main container */}
-          <div className="relative bg-card rounded-3xl border border-border shadow-2xl shadow-primary/5 overflow-hidden">
+          {/* Main container - solid background inside gradient frame */}
+          <div className="relative bg-card rounded-xl sm:rounded-[1.35rem] shadow-2xl overflow-hidden">
             {/* Textarea - The Canvas */}
-            <div className="p-6 pb-4">
+            <div className="p-4 sm:p-6 pb-3 sm:pb-4">
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder="Describe your topic, audience, and goal…
-
-Example: Create a fun trivia quiz about world capitals for my geography class. Include multiple choice questions and a word cloud for student feedback."
-                className="min-h-[180px] md:min-h-[200px] w-full border-0 bg-transparent resize-none text-base md:text-lg placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 leading-relaxed"
+                placeholder={heroContent?.placeholder ?? "Describe your topic and we'll build your presentation…\n\nExample: Create a trivia quiz about world capitals with multiple choice and word cloud."}
+                className="min-h-[140px] sm:min-h-[180px] md:min-h-[200px] w-full border-0 bg-transparent resize-none text-sm sm:text-base md:text-lg placeholder:text-muted-foreground/40 focus-visible:ring-0 focus-visible:ring-offset-0 leading-relaxed"
               />
             </div>
 
             {/* Bottom Bar */}
-            <div className="flex items-center justify-between gap-4 px-6 py-4 border-t border-border/50 bg-muted/30">
-              {/* Left hints */}
+            <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 sm:gap-4 px-4 sm:px-6 py-3 sm:py-4 border-t border-border/50 bg-muted/30">
+              {/* Left hints - hidden on mobile */}
               <div className="hidden sm:flex items-center gap-4 text-muted-foreground">
                 <div className="flex items-center gap-1.5 text-sm">
                   <Sparkles className="w-4 h-4 text-primary/70" />
@@ -542,12 +573,12 @@ Example: Create a fun trivia quiz about world capitals for my geography class. I
                 </div>
               </div>
 
-              {/* Right CTA */}
+              {/* Right CTA - full width on mobile */}
               <Button
                 size="lg"
                 onClick={handleGenerate}
                 disabled={!prompt.trim()}
-                className="h-12 px-8 rounded-xl text-base font-semibold gap-2 ml-auto shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow"
+                className="h-11 sm:h-12 px-6 sm:px-8 rounded-xl text-sm sm:text-base font-semibold gap-2 w-full sm:w-auto sm:ml-auto shadow-lg shadow-primary/20 hover:shadow-primary/30 transition-shadow"
               >
                 Build it
                 <Zap className="w-4 h-4" />
@@ -556,51 +587,75 @@ Example: Create a fun trivia quiz about world capitals for my geography class. I
           </div>
         </motion.div>
 
+        {/* Suggestions - immediately under text box (desktop & mobile) */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+          className="mt-4 sm:mt-5 flex flex-wrap items-center justify-center gap-2 sm:gap-3 px-1"
+        >
+          <span className="text-xs sm:text-sm text-muted-foreground mr-1 sm:mr-2 shrink-0">Try:</span>
+          {(heroContent?.suggestions ?? [
+            "Lecture on photosynthesis with quiz",
+            "Class feedback poll",
+            "Course recap with Q&A",
+          ]).map((template) => (
+            <button
+              key={template}
+              onClick={() => setPrompt(isWebinar ? template : `Create an interactive ${template.toLowerCase()} for my students`)}
+              className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-full bg-muted/60 text-xs sm:text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
+            >
+              {template}
+            </button>
+          ))}
+        </motion.div>
+
+        {/* How it works - steps flow (desktop & mobile) */}
+        <div className="mt-8 sm:mt-10 lg:mt-12 w-full">
+          <HowItWorks variant={variant} />
+        </div>
+
+        {/* Mobile-only: Desktop + Phone illustrations AFTER How it works, side by side */}
+        <div className="lg:hidden flex flex-col items-center gap-6 mt-8 sm:mt-10">
+          <div className="flex flex-row items-center justify-center gap-3 sm:gap-6 w-full max-w-sm sm:max-w-md mx-auto">
+            <DesktopIllustration showConfetti={showConfetti} flyingEmojis={landedEmojis} compact quizContent={quizContent} />
+            <PhoneIllustration 
+              onParisClick={handleParisClick} 
+              onEmojiClick={handleEmojiClick}
+              showConfetti={showConfetti}
+              compact
+              quizContent={quizContent}
+            />
+          </div>
+        </div>
+
         {/* Hints below */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.5, delay: 0.5 }}
-          className="mt-8 flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground"
+          className="mt-5 sm:mt-8 flex flex-wrap items-center justify-center gap-4 sm:gap-6 text-xs sm:text-sm text-muted-foreground"
         >
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-primary/60" />
-            <span>Ready in seconds</span>
+            <span>{heroContent?.hints?.[0]?.text ?? "Ready in seconds"}</span>
           </div>
           <div className="flex items-center gap-2">
             <Settings2 className="w-4 h-4 text-primary/60" />
-            <span>No setup required</span>
+            <span>{heroContent?.hints?.[1]?.text ?? "No setup required"}</span>
           </div>
-        </motion.div>
-
-        {/* Quick templates */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.6 }}
-          className="mt-10 flex flex-wrap items-center justify-center gap-2"
-        >
-          <span className="text-sm text-muted-foreground mr-2">Try:</span>
-          {[
-            "Team ice-breaker quiz",
-            "Product launch poll",
-            "Classroom Q&A",
-          ].map((template) => (
-            <button
-              key={template}
-              onClick={() => setPrompt(`Create a ${template.toLowerCase()} with interactive questions that engage participants`)}
-              className="px-4 py-2 rounded-full bg-muted/60 text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-all border border-transparent hover:border-border"
-            >
-              {template}
-            </button>
-          ))}
         </motion.div>
       </div>
 
       {/* Auth Modal */}
       <AuthModal 
         isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)}
+        onClose={() => {
+          setShowAuthModal(false);
+          localStorage.removeItem('clasly_pending_prompt');
+          localStorage.removeItem('clasly_pending_prompt_ts');
+          setPendingPrompt('');
+        }}
         onSuccess={handleAuthSuccess}
         promptText={pendingPrompt}
         redirectTo="builder"

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { lovable } from "@/integrations/lovable";
 import { supabase } from "@/integrations/supabase/client";
+import { getOAuthAllowedHosts } from "@/lib/authUtils";
 import { toast } from "sonner";
 
 interface GoogleSignInButtonProps {
@@ -12,57 +12,31 @@ interface GoogleSignInButtonProps {
 export const GoogleSignInButton = ({ className, size = "lg" }: GoogleSignInButtonProps) => {
   const [isLoading, setIsLoading] = useState(false);
 
-  const isCustomDomain = () => {
-    return !window.location.hostname.includes("lovable.app") &&
-           !window.location.hostname.includes("lovableproject.com") &&
-           window.location.hostname !== "localhost";
-  };
-
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      if (isCustomDomain()) {
-        const { data, error } = await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: window.location.origin,
-            skipBrowserRedirect: true,
-          },
-        });
-        
-        if (error) {
-          toast.error("Failed to sign in with Google");
-          console.error("Google sign-in error:", error);
-          setIsLoading(false);
-          return;
-        }
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+          skipBrowserRedirect: true,
+        },
+      });
 
-        if (data?.url) {
-          const oauthUrl = new URL(data.url);
-          // Allow Google + any Supabase project host (hardcoding one ref breaks production on another project)
-          const h = oauthUrl.hostname;
-          const isAllowed =
-            h === "accounts.google.com" ||
-            h.endsWith(".supabase.co") ||
-            h.endsWith(".supabase.in");
-          if (!isAllowed) {
-            console.error("Blocked OAuth URL host:", h);
-            throw new Error("Invalid OAuth redirect URL");
-          }
-          window.location.href = data.url;
-        } else {
-          toast.error("Could not start Google sign-in. Check Supabase URL and Google provider settings.");
-          console.error("signInWithOAuth returned no URL", { data });
+      if (error) {
+        toast.error("Failed to sign in with Google");
+        console.error("Google sign-in error:", error);
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.url) {
+        const oauthUrl = new URL(data.url);
+        const allowedHosts = getOAuthAllowedHosts();
+        if (!allowedHosts.some((host) => oauthUrl.hostname === host || oauthUrl.hostname.endsWith("." + host))) {
+          throw new Error("Invalid OAuth redirect URL");
         }
-      } else {
-        const { error } = await lovable.auth.signInWithOAuth("google", {
-          redirect_uri: window.location.origin,
-        });
-        
-        if (error) {
-          toast.error("Failed to sign in with Google");
-          console.error("Google sign-in error:", error);
-        }
+        window.location.href = data.url;
       }
     } catch (err) {
       toast.error("An unexpected error occurred");

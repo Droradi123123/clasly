@@ -5,6 +5,9 @@ import { Slide } from "@/types/slides";
 import { ThemeId } from "@/types/themes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
+import { useSlideLayout } from "@/contexts/SlideLayoutContext";
+import { FormattedText } from "@/components/editor/FormattedText";
 
 export interface BarChartSlideContent {
   title: string;
@@ -38,6 +41,7 @@ export function BarChartSlide({
 }: BarChartSlideProps) {
   const content = slide.content as BarChartSlideContent;
   const textColor = slide.design?.textColor || '#ffffff';
+  const { direction, textAlign } = useSlideLayout();
   
   const bars = content.bars || [
     { label: 'Item 1', value: 25 },
@@ -86,42 +90,45 @@ export function BarChartSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex flex-col h-full p-8">
-        {/* Title */}
-        <div className="text-center mb-8">
+      <div className="flex flex-col min-h-0 h-full p-8 overflow-y-auto overflow-x-hidden" dir={direction}>
+        {/* Title - wraps like Present */}
+        <div className="mb-8 w-full min-w-0 flex-shrink-0" style={{ textAlign }}>
           {isEditing ? (
-            <input
+            <AutoResizeTextarea
               value={content.title || ''}
               onChange={(e) => handleTitleChange(e.target.value)}
-              className="text-3xl md:text-4xl font-bold bg-transparent border-0 outline-none text-center w-full"
-              style={{ color: textColor }}
+              className="text-3xl md:text-4xl font-bold bg-transparent border-0 outline-none w-full resize-none break-words"
+              style={{ color: textColor, textAlign }}
               placeholder="Add your title here"
+              minRows={1}
             />
           ) : (
-            <h2 className="text-3xl md:text-4xl font-bold" style={{ color: textColor }}>
-              {content.title || 'Add your title here'}
+            <h2 className="text-3xl md:text-4xl font-bold w-full break-words" style={{ color: textColor, textAlign }}>
+              <FormattedText>{String(content.title || 'Add your title here')}</FormattedText>
             </h2>
           )}
           
           {(isEditing || content.subtitle) && (
             isEditing ? (
-              <input
+              <AutoResizeTextarea
                 value={content.subtitle || ''}
                 onChange={(e) => handleSubtitleChange(e.target.value)}
-                className="text-lg md:text-xl bg-transparent border-0 outline-none text-center w-full mt-2 opacity-80"
-                style={{ color: textColor }}
+                className="text-lg md:text-xl bg-transparent border-0 outline-none w-full mt-2 opacity-80 resize-none break-words"
+                style={{ color: textColor, textAlign }}
                 placeholder="Optional subtitle..."
+                minRows={1}
+                maxRows={4}
               />
             ) : (
-              <p className="text-lg md:text-xl mt-2 opacity-80" style={{ color: textColor }}>
-                {content.subtitle}
+              <p className="text-lg md:text-xl mt-2 opacity-80 w-full break-words" style={{ color: textColor, textAlign }}>
+                <FormattedText>{String(content.subtitle || '')}</FormattedText>
               </p>
             )
           )}
         </div>
 
         {/* Chart */}
-        <div className="flex-1 flex items-end justify-center gap-4 md:gap-8 pb-8">
+        <div className="flex-1 min-h-0 flex items-end justify-center gap-4 md:gap-8 pb-8">
           {bars.map((bar, index) => {
             const heightPercent = (bar.value / maxValue) * 100;
             const colorClass = BAR_COLORS[index % BAR_COLORS.length];
@@ -132,7 +139,7 @@ export function BarChartSlide({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="flex flex-col items-center flex-1 max-w-32 group"
+                className="flex flex-col items-center flex-1 min-w-0 max-w-32 group"
               >
                 {/* Value input */}
                 {isEditing ? (
@@ -166,15 +173,17 @@ export function BarChartSlide({
                   </motion.div>
                 </div>
 
-                {/* Label */}
-                <div className="mt-3 flex flex-col items-center gap-1">
+                {/* Label - wraps like Present, no clipping */}
+                <div className="mt-3 w-full min-w-0 flex flex-col items-center gap-1">
                   {isEditing ? (
                     <>
-                      <Input
+                      <AutoResizeTextarea
                         value={bar.label}
                         onChange={(e) => handleBarLabelChange(index, e.target.value)}
-                        className="w-full h-7 text-xs text-center bg-white/10 border-white/20 text-white"
+                        className="w-full min-h-[28px] text-xs text-center bg-white/10 border border-white/20 rounded text-white resize-none break-words"
                         placeholder="Label..."
+                        minRows={1}
+                        maxRows={4}
                       />
                       {bars.length > 1 && (
                         <button
@@ -187,10 +196,10 @@ export function BarChartSlide({
                     </>
                   ) : (
                     <span 
-                      className="text-sm font-medium text-center"
+                      className="text-sm font-medium text-center break-words w-full min-w-0"
                       style={{ color: textColor, opacity: 0.9 }}
                     >
-                      {bar.label}
+                      <FormattedText>{String(bar.label || '')}</FormattedText>
                     </span>
                   )}
                 </div>
