@@ -90,6 +90,20 @@ export const useConversationalBuilder = create<ConversationalBuilderState>((set,
       });
       return;
     }
+    // Fresh session: loading a saved lecture — clear stale sandbox from another tab/session
+    if (sessionLectureId === null && lectureId !== 'new') {
+      set({
+        sessionLectureId: lectureId,
+        sandboxSlides: [],
+        messages: [],
+        isGenerating: false,
+        currentPreviewIndex: 0,
+        originalPrompt: '',
+        targetAudience: 'general',
+        generatedTheme: null,
+      });
+      return;
+    }
     set({ sessionLectureId: lectureId });
   },
   

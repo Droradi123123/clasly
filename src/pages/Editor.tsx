@@ -190,20 +190,10 @@ const Editor = () => {
     })
   );
 
-  // Single source of truth for display and Present: prefer sandbox when AI has returned slides (so we show images before sync); else slides. User edits clear sandbox so we show slides.
-  const displaySlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
-  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
-  const currentSlide = displaySlides[safeIndex];
-  const slidePreviewRef = useRef<HTMLDivElement>(null);
-  const isConstrainedViewport = useConstrainedViewport();
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const skipScrollSyncRef = useRef(false);
-  const saveInProgressRef = useRef(false);
-
-  // AI Panel (useConversationalBuilder) - sync with Editor slides
+  // AI Panel (useConversationalBuilder) — MUST run before displaySlides (sandboxSlides)
   const {
     sandboxSlides,
+    sessionLectureId,
     setSandboxSlides,
     setCurrentPreviewIndex,
     addMessage,
@@ -218,6 +208,22 @@ const Editor = () => {
     reset: resetConversationalBuilder,
     ensureSessionForLecture,
   } = useConversationalBuilder();
+
+  // Prefer sandbox only when AI panel is open for this lecture (avoids stale global sandbox breaking editor)
+  const effectiveLectureId = String(lectureDbId || lectureId);
+  const useSandbox =
+    sandboxSlides.length > 0 &&
+    isAIPanelOpen &&
+    effectiveLectureId === String(sessionLectureId);
+  const displaySlides = useSandbox ? sandboxSlides : slides;
+  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
+  const currentSlide = displaySlides[safeIndex];
+  const slidePreviewRef = useRef<HTMLDivElement>(null);
+  const isConstrainedViewport = useConstrainedViewport();
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const skipScrollSyncRef = useRef(false);
+  const saveInProgressRef = useRef(false);
 
   useBuilderConversationPersistence({
     userId: user?.id,
@@ -234,6 +240,24 @@ const Editor = () => {
     if (lectureId !== 'new' || !prompt || ai !== '1') return;
     resetConversationalBuilder();
     hasTriggeredInitialGen.current = false;
+    setLectureDbId(null);
+    setLectureCode('');
+    setSlides([createNewSlide('title', 0)]);
+    setLectureTitle('Untitled Lecture');
+    setCurrentSlideIndex(0);
+    setHasChanges(false);
+  }, [lectureId, searchParams, resetConversationalBuilder]);
+
+  // Scope / clear sandbox whenever lecture route changes (not only when AI panel is open)
+  useEffect(() => {
+    if (!lectureId) return;
+    ensureSessionForLecture(lectureDbId || lectureId);
+  }, [lectureId, lectureDbId, ensureSessionForLecture]);
+
+  // /editor/new without AI prompt — empty deck, no stale sandbox
+  useEffect(() => {
+    if (lectureId !== 'new' || searchParams.get('prompt')) return;
+    resetConversationalBuilder();
     setLectureDbId(null);
     setLectureCode('');
     setSlides([createNewSlide('title', 0)]);
