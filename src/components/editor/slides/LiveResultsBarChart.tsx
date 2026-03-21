@@ -26,6 +26,7 @@ export function LiveResultsBarChart({
   highlightIndex,
   showPercentage = true,
 }: LiveResultsBarChartProps) {
+  const maxResult = Math.max(...results, 1);
   const hasResults = totalResponses > 0;
 
   return (
@@ -35,7 +36,7 @@ export function LiveResultsBarChart({
         {options.map((option, index) => {
           const count = results[index] || 0;
           const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-          const widthPercent = hasResults ? percentage : 0;
+          const widthPercent = hasResults ? (count / maxResult) * 100 : 0;
           const colorSet = BAR_COLORS[index % BAR_COLORS.length];
           const isHighlighted = highlightIndex === index;
 
@@ -47,18 +48,18 @@ export function LiveResultsBarChart({
               transition={{ delay: index * 0.1, type: "spring", stiffness: 200 }}
               className="relative"
             >
-              {/* Option label, count and percentage */}
+              {/* Option label and count */}
               <div className="flex items-center justify-between mb-2">
                 <span className="text-white font-semibold text-lg md:text-xl">{option}</span>
                 <AnimatePresence mode="wait">
                   <motion.span
-                    key={`${count}-${percentage}`}
+                    key={count}
                     initial={{ scale: 1.5, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.5, opacity: 0 }}
                     className="text-white font-bold text-xl md:text-2xl"
                   >
-                    {hasResults ? `${count} (${percentage}%)` : '0'}
+                    {count}
                   </motion.span>
                 </AnimatePresence>
               </div>

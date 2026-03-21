@@ -63,11 +63,11 @@ serve(async (req) => {
       );
     }
 
-    // For PDF/PPTX, use Gemini to analyze and extract slides
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    // For PDF/PPTX, use AI to analyze and extract slides
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
-    if (!GEMINI_API_KEY) {
-      console.log('GEMINI_API_KEY not found, returning placeholder');
+    if (!LOVABLE_API_KEY) {
+      console.log('LOVABLE_API_KEY not found, returning placeholder');
       return new Response(
         JSON.stringify({
           slides: [{
@@ -86,20 +86,19 @@ serve(async (req) => {
 
     console.log(`Processing ${isPDF ? 'PDF' : 'PPTX'} file: ${fileName}`);
     
-    const geminiModel = 'gemini-2.5-flash';
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${GEMINI_API_KEY}`;
-
-    // Use Gemini to analyze the document
-    const response = await fetch(apiUrl, {
+    // Use AI to analyze the document
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+      },
       body: JSON.stringify({
-        contents: [
+        model: 'google/gemini-2.5-flash',
+        messages: [
           {
-            role: 'user',
-            parts: [
-              {
-                text: `You are a presentation analyzer. Analyze the uploaded document and extract ALL slides/pages.
+            role: 'system',
+            content: `You are a presentation analyzer. Analyze the uploaded document and extract ALL slides/pages.
 For each slide, extract:
 - The slide number (pageNumber)
 - The main title or heading
@@ -107,6 +106,7 @@ For each slide, extract:
 - The type of slide (title, content, image, bullet_points)
 
 IMPORTANT: You MUST identify and return ALL slides in the presentation, not just one.
+Count the total number of slides/pages and create an entry for each one.
 
 Return a JSON object with this exact structure:
 {
@@ -116,34 +116,41 @@ Return a JSON object with this exact structure:
       "title": "Slide title here",
       "content": "Main content or bullet points as text",
       "type": "title" | "content" | "bullet_points"
-    }
+    },
+    // ... more slides
   ],
   "totalPages": <number of slides>
 }
 
-Now analyze this ${isPDF ? 'PDF document' : 'PowerPoint presentation'} named "${file.name}". Extract ALL slides/pages and their content.`,
+If you cannot read the content clearly, still create entries for each page you can detect with placeholder content.`
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `Analyze this ${isPDF ? 'PDF document' : 'PowerPoint presentation'} named "${file.name}". 
+                
+Extract ALL slides/pages and their content. Make sure to identify every slide in the document and return them all.
+If the document has multiple pages/slides, return an array with all of them.`
               },
               {
-                inlineData: {
-                  mimeType: isPDF
-                    ? 'application/pdf'
-                    : 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                  data: base64Content,
+                type: 'image_url',
+                image_url: {
+                  url: `data:${isPDF ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.presentationml.presentation'};base64,${base64Content}`,
                 },
               },
             ],
           },
         ],
-        generationConfig: {
-          maxOutputTokens: 8000,
-          responseMimeType: 'application/json',
-        },
+        max_tokens: 8000,
+        response_format: { type: 'json_object' },
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Gemini API error:', response.status, errorText);
+      console.error('AI API error:', response.status, errorText);
       
       // If AI fails, return a helpful fallback
       return new Response(
@@ -163,7 +170,7 @@ Now analyze this ${isPDF ? 'PDF document' : 'PowerPoint presentation'} named "${
     }
 
     const aiResult = await response.json();
-    const content = aiResult.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join('').trim() || '';
+    const content = aiResult.choices?.[0]?.message?.content;
     
     if (!content) {
       console.error('No content from AI');

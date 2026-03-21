@@ -1,4 +1,5 @@
-import { motion, AnimatePresence } from "framer-motion";
+import { useMemo } from "react";
+import { motion } from "framer-motion";
 import { Users, Sparkles } from "lucide-react";
 import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, FinishSentenceSlideContent } from "@/types/slides";
@@ -10,8 +11,10 @@ interface FinishSentenceSlideProps {
   isEditing?: boolean;
   onUpdate?: (content: FinishSentenceSlideContent) => void;
   liveResults?: {
-    responses: Array<{ text: string; count: number }>;
-    clusters: Array<{ theme: string; keywords: string[]; count: number }>;
+    /** Raw answers from the presenter aggregation (live session) */
+    texts?: string[];
+    responses?: Array<{ text: string; count: number }>;
+    clusters?: Array<{ theme: string; keywords: string[]; count: number }>;
   };
   totalResponses?: number;
   themeId?: ThemeId;
@@ -27,6 +30,19 @@ const CLUSTER_COLORS = [
   'from-amber-500 to-orange-500',
   'from-rose-500 to-pink-500',
 ];
+
+function aggregateTextsByFrequency(texts: string[]): { text: string; count: number }[] {
+  const map = new Map<string, { text: string; count: number }>();
+  for (const raw of texts) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    const prev = map.get(key);
+    if (prev) prev.count += 1;
+    else map.set(key, { text: trimmed, count: 1 });
+  }
+  return Array.from(map.values()).sort((a, b) => b.count - a.count);
+}
 
 export function FinishSentenceSlide({
   slide,
@@ -44,14 +60,15 @@ export function FinishSentenceSlide({
   
   const hasResults = totalResponses > 0;
   const isMinimal = designStyleId === 'minimal';
-  const isCompact = designStyleId === 'compact';
-  const isWordBank = slide.design?.finishSentenceVariant === 'wordBank';
   const textColor = slide.design?.textColor || '#ffffff';
 
-  const wordChips = content.wordBankOptions?.length ? content.wordBankOptions : ['...', '...', '...', '...'];
+  const clusters = liveResults?.clusters ?? [];
+  const responseTexts = liveResults?.texts ?? [];
 
-  // Mock clusters for zero state / preview
-  const clusters = liveResults?.clusters || [];
+  const groupedResponses = useMemo(
+    () => aggregateTextsByFrequency(responseTexts),
+    [responseTexts]
+  );
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
@@ -60,11 +77,17 @@ export function FinishSentenceSlide({
           question={content.sentenceStart}
           onEdit={(q) => onUpdate?.({ ...content, sentenceStart: q })}
           editable={isEditing}
-          subtitle={isEditing ? "AI groups similar responses automatically" : undefined}
+          subtitle={
+            isEditing
+              ? "AI groups similar responses automatically"
+              : hasResults
+                ? `${totalResponses} response${totalResponses === 1 ? "" : "s"} · sorted by frequency`
+                : undefined
+          }
           textColor={textColor}
         />
 
-        {!isWordBank && (
+        {/* AI Badge */}
         <div className="flex justify-center mb-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
@@ -75,64 +98,12 @@ export function FinishSentenceSlide({
             <span className="text-xs font-medium text-violet-300">AI-Powered Grouping</span>
           </motion.div>
         </div>
-        )}
 
         {/* Content area */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 overflow-hidden min-h-0">
           <div className="w-full max-w-3xl">
-            {isWordBank ? (
-            /* wordBank: sentence + chips to choose from */
-            <div className="space-y-6">
-              <p className="text-center text-lg md:text-xl font-medium" style={{ color: textColor }}>
-                {content.sentenceStart} <span className="border-b-2 border-dashed border-white/40 px-2">_____</span>
-              </p>
-              <div className="flex flex-wrap justify-center gap-2">
-                {wordChips.map((chip, i) => (
-                  <motion.span
-                    key={i}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="px-4 py-2 rounded-xl bg-white/20 border border-white/30 font-medium cursor-default hover:bg-white/30 transition-colors"
-                    style={{ color: textColor }}
-                  >
-                    {isEditing ? (
-                      <input
-                        value={chip}
-                        onChange={(e) => {
-                          const next = [...wordChips];
-                          next[i] = e.target.value;
-                          onUpdate?.({ ...content, wordBankOptions: next });
-                        }}
-                        className="bg-transparent outline-none w-24 text-center"
-                        style={{ color: textColor }}
-                      />
-                    ) : (
-                      chip
-                    )}
-                  </motion.span>
-                ))}
-              </div>
-              {!hasResults && (
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
-                    <Users className="w-4 h-4" />
-                    <span>Tap a word to complete – waiting for responses...</span>
-                  </div>
-                </div>
-              )}
-              {hasResults && liveResults?.responses?.length > 0 && (
-                <div className="flex flex-wrap justify-center gap-2 pt-2">
-                  {liveResults.responses.slice(0, 8).map((r, i) => (
-                    <span key={i} className="px-3 py-1 rounded-lg bg-white/10 text-sm">
-                      {r.text} <span className="text-white/60">({r.count})</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            ) : hasResults && clusters.length > 0 ? (
-            /* Clusters Display */
+            {/* Clusters (AI) or live text list */}
+            {hasResults && clusters.length > 0 ? (
               <div className="space-y-4">
                 {clusters.map((cluster, index) => (
                   <motion.div
@@ -142,8 +113,7 @@ export function FinishSentenceSlide({
                     transition={{ 
                       delay: index * 0.1,
                       type: isMinimal ? "tween" : "spring",
-                      stiffness: isCompact ? 80 : 100,
-                      damping: isCompact ? 18 : 20
+                      stiffness: 100 
                     }}
                     className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${CLUSTER_COLORS[index % CLUSTER_COLORS.length]} p-[2px]`}
                   >
@@ -168,6 +138,26 @@ export function FinishSentenceSlide({
                     </div>
                   </motion.div>
                 ))}
+              </div>
+            ) : hasResults && groupedResponses.length > 0 ? (
+              <div className="max-h-[min(50vh,28rem)] overflow-y-auto rounded-2xl border border-white/15 bg-black/30 p-4">
+                <p className="text-white/60 text-sm mb-3">Live responses (grouped)</p>
+                <div className="flex flex-wrap gap-2">
+                  {groupedResponses.map((entry, index) => (
+                    <motion.span
+                      key={`${entry.text}-${index}`}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: Math.min(index * 0.03, 0.4) }}
+                      className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white/95 break-words"
+                    >
+                      <span>{entry.text}</span>
+                      <span className="rounded-md bg-black/35 px-2 py-0.5 text-xs font-bold tabular-nums text-white/90">
+                        ×{entry.count}
+                      </span>
+                    </motion.span>
+                  ))}
+                </div>
               </div>
             ) : (
               /* Zero State - Animated Cards Preview */
@@ -194,7 +184,7 @@ export function FinishSentenceSlide({
                 
                 {/* Waiting indicator */}
                 <motion.div
-                  animate={!isMinimal ? { opacity: isCompact ? [0.6, 0.9, 0.6] : [0.5, 1, 0.5] } : undefined}
+                  animate={!isMinimal ? { opacity: [0.5, 1, 0.5] } : undefined}
                   transition={{ duration: 2, repeat: Infinity }}
                   className="text-center mt-6"
                 >
@@ -216,11 +206,10 @@ export function FinishSentenceSlide({
                   </div>
                 </motion.div>
               </div>
-            )
-            }
+            )}
 
-            {/* Editor hint - only for non-wordBank */}
-            {isEditing && !isWordBank && (
+            {/* Editor hint */}
+            {isEditing && (
               <motion.p
                 className="text-center text-white/50 mt-6 text-xs md:text-sm"
                 animate={{ opacity: [0.4, 0.7, 0.4] }}

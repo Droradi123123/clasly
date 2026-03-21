@@ -4,9 +4,6 @@ import { SlideWrapper } from "./SlideWrapper";
 import { Slide, BulletPointsSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { Button } from "@/components/ui/button";
-import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
-import { useSlideLayout } from "@/contexts/SlideLayoutContext";
-import { FormattedText } from "@/components/editor/FormattedText";
 
 export interface BulletPointsSlideProps {
   slide: Slide;
@@ -26,7 +23,6 @@ export function BulletPointsSlide({
   const content = slide.content as BulletPointsSlideContent;
   const theme = getTheme(themeId);
   const textColor = slide.design?.textColor || '#ffffff';
-  const { direction, textAlign } = useSlideLayout();
 
   const handleTitleChange = (title: string) => {
     onUpdate?.({ ...content, title });
@@ -61,24 +57,23 @@ export function BulletPointsSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex flex-col h-full p-4 md:p-6 min-h-0 min-w-0 overflow-hidden" dir={direction}>
-        {/* Title - multiline with Enter support */}
+      <div className="flex flex-col h-full p-4 md:p-6 overflow-hidden">
+        {/* Title - more compact */}
         {isEditing ? (
-          <AutoResizeTextarea
+          <input
             value={content.title}
             onChange={(e) => handleTitleChange(e.target.value)}
-            className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-4 placeholder:opacity-50 resize-none break-words"
-            style={{ color: textColor, textAlign }}
+            className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-4 placeholder:opacity-50"
+            style={{ color: textColor }}
             placeholder="Enter title..."
-            minRows={1}
           />
         ) : (
-          <h2 className="text-xl md:text-3xl font-bold mb-4" style={{ color: textColor, textAlign }}>
-            <FormattedText>{String(content.title || "")}</FormattedText>
+          <h2 className="text-xl md:text-3xl font-bold mb-4" style={{ color: textColor }}>
+            {content.title}
           </h2>
         )}
 
-        {/* Points list - RTL: icon (bullet) on the right */}
+        {/* Points list */}
         <div className="flex-1 space-y-3 overflow-y-auto min-h-0">
           {content.points.map((point, index) => (
             <motion.div
@@ -88,7 +83,7 @@ export function BulletPointsSlide({
               transition={{ delay: index * 0.1 }}
               className="flex items-start gap-4 group"
             >
-              {/* Icon (bullet) - position follows dir: RTL = right, LTR = left */}
+              {/* Icon - smaller */}
               <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/20">
                 <Zap className="w-4 h-4 md:w-5 md:h-5 text-primary" />
               </div>
@@ -96,32 +91,29 @@ export function BulletPointsSlide({
               {/* Content */}
               <div className="flex-1 min-w-0">
                 {isEditing ? (
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <AutoResizeTextarea
+                  <div className="space-y-1">
+                    <input
                       value={point.title}
                       onChange={(e) => handlePointTitleChange(index, e.target.value)}
-                      className="text-lg md:text-xl font-semibold bg-transparent border-0 outline-none w-full resize-none break-words"
-                      style={{ color: textColor, textAlign }}
+                      className="text-lg md:text-xl font-semibold bg-transparent border-0 outline-none w-full"
+                      style={{ color: textColor }}
                       placeholder="Point title..."
-                      minRows={1}
                     />
-                    <AutoResizeTextarea
+                    <input
                       value={point.description}
                       onChange={(e) => handlePointDescChange(index, e.target.value)}
-                      className="text-sm md:text-base bg-transparent border-0 outline-none w-full resize-none break-words"
-                      style={{ color: textColor, opacity: 0.7, textAlign }}
+                      className="text-sm md:text-base bg-transparent border-0 outline-none w-full"
+                      style={{ color: textColor, opacity: 0.7 }}
                       placeholder="Point description..."
-                      minRows={1}
-                      maxRows={6}
                     />
                   </div>
                 ) : (
                   <>
-                    <h3 className="text-lg md:text-xl font-semibold break-words" style={{ color: textColor, textAlign }}>
-                      <FormattedText>{String(point.title || "")}</FormattedText>
+                    <h3 className="text-lg md:text-xl font-semibold" style={{ color: textColor }}>
+                      {point.title}
                     </h3>
-                    <p className="text-sm md:text-base break-words" style={{ color: textColor, opacity: 0.7, textAlign }}>
-                      <FormattedText>{String(point.description || "")}</FormattedText>
+                    <p className="text-sm md:text-base" style={{ color: textColor, opacity: 0.7 }}>
+                      {point.description}
                     </p>
                   </>
                 )}
@@ -140,19 +132,17 @@ export function BulletPointsSlide({
           ))}
         </div>
 
-        {/* Add point button - align with direction */}
+        {/* Add point button */}
         {isEditing && content.points.length < MAX_POINTS && (
-          <div className="mt-4" style={{ textAlign: direction === 'rtl' ? 'right' : 'left' }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={addPoint}
-              className="w-fit text-white/60 hover:text-white hover:bg-white/10"
-            >
-              <Plus className={`w-4 h-4 ${direction === 'rtl' ? 'ml-1' : 'mr-1'}`} />
-              Add Point ({content.points.length}/{MAX_POINTS})
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={addPoint}
+            className="mt-4 w-fit text-white/60 hover:text-white hover:bg-white/10"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Add Point ({content.points.length}/{MAX_POINTS})
+          </Button>
         )}
       </div>
     </SlideWrapper>

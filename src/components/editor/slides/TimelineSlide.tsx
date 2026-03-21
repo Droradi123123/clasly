@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { normalizeTimelineContent } from "./timeline/normalizeTimelineContent";
 import { TimelineHorizontal } from "./timeline/TimelineHorizontal";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
-import { useSlideLayout } from "@/contexts/SlideLayoutContext";
 
 export interface TimelineSlideProps {
   slide: Slide;
@@ -31,7 +30,6 @@ export function TimelineSlide({
 
   const content = normalizeTimelineContent(rawContent);
   const textColor = slide.design?.textColor || "hsl(var(--foreground))";
-  const { direction, textAlign } = useSlideLayout();
 
   const handleTitleChange = (title: string) => {
     onUpdate?.({ ...content, title });
@@ -70,21 +68,21 @@ export function TimelineSlide({
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
-      <div className="flex flex-col h-full p-4 md:p-6 min-h-0 min-w-0" dir={direction}>
+      <div className="flex flex-col h-full p-4 md:p-6 min-h-0">
         {/* Title */}
         {isEditing ? (
           <AutoResizeTextarea
             value={content.title}
             onChange={(e) => handleTitleChange(e.target.value)}
-            className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-3 placeholder:opacity-50 w-full"
-            style={{ color: textColor, textAlign }}
+            className="text-xl md:text-3xl font-bold bg-transparent border-0 outline-none mb-3 text-center placeholder:opacity-50"
+            style={{ color: textColor }}
             placeholder="Timeline title..."
             minRows={1}
           />
         ) : (
           <h2
-            className="text-xl md:text-3xl font-bold mb-3 break-words w-full"
-            style={{ color: textColor, textAlign }}
+            className="text-xl md:text-3xl font-bold mb-3 text-center break-words"
+            style={{ color: textColor }}
           >
             {content.title}
           </h2>

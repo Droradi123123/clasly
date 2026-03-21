@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useMemo } from "react";
+import { motion } from "framer-motion";
 import { Users } from "lucide-react";
 import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, WordCloudSlideContent } from "@/types/slides";
-import { ThemeId } from "@/types/themes";
+import { ThemeId, getTheme } from "@/types/themes";
 
 interface WordCloudSlideProps {
   slide: Slide;
@@ -15,25 +15,24 @@ interface WordCloudSlideProps {
   hideFooter?: boolean;
 }
 
-// Color palette – blue/purple and red/pink tones (like reference image)
-const WORD_COLORS = [
-  '#6366F1', // indigo
-  '#8B5CF6', // violet
-  '#3B82F6', // blue
-  '#7C3AED', // purple
-  '#EC4899', // pink
-  '#EF4444', // red
-  '#F97316', // orange-red
-  '#DB2777', // pink-rose
+/** Pastel palette inspired by clean word-cloud UIs (horizontal, readable) */
+const PASTEL_HEX = [
+  "#7c8fd9",
+  "#5eb8d4",
+  "#e07a8a",
+  "#c4a574",
+  "#9b8fd4",
+  "#6ba3c8",
+  "#d4a574",
+  "#8ec5a8",
 ];
 
-// Hash for stable color per word
-function getWordColor(text: string) {
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = text.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return WORD_COLORS[Math.abs(hash) % WORD_COLORS.length];
+function fontSizeForRank(rank: number, total: number, maxCount: number, count: number): number {
+  const rankFactor = total <= 1 ? 1 : 1 - rank / Math.max(total - 1, 1) * 0.45;
+  const weightFactor = 0.5 + (count / maxCount) * 0.5;
+  const base = 26;
+  const scale = base + rankFactor * 22 + weightFactor * 18;
+  return Math.round(Math.min(Math.max(scale, 22), 72));
 }
 
 export function WordCloudSlide({
@@ -42,161 +41,166 @@ export function WordCloudSlide({
   onUpdate,
   liveWords = [],
   totalResponses = 0,
-  themeId = 'neon-cyber',
+  themeId = "neon-cyber",
   hideFooter = false,
 }: WordCloudSlideProps) {
   const content = slide.content as WordCloudSlideContent;
+  const questionText =
+    typeof content.question === "string" ? content.question : "";
+  const theme = useMemo(() => getTheme(themeId), [themeId]);
   const hasResults = liveWords.length > 0;
-  const wordCloudStyleId = slide.design?.wordCloudStyleId || 'compact';
-  const isCompactStyle = wordCloudStyleId === 'compact';
 
   const handleQuestionChange = (question: string) => {
     onUpdate?.({ ...content, question });
   };
 
-  // Placeholder words for editor mode - shown clearly (not faded)
   const placeholderWords = [
-    { text: 'creativity', count: 5 },
-    { text: 'innovation', count: 4 },
-    { text: 'ideas', count: 3 },
-    { text: 'teamwork', count: 3 },
-    { text: 'learning', count: 2 },
-    { text: 'growth', count: 2 },
+    { text: "creative", count: 5 },
+    { text: "fast", count: 4 },
+    { text: "leader", count: 4 },
+    { text: "focus", count: 3 },
+    { text: "bold", count: 3 },
+    { text: "inspiration", count: 2 },
   ];
 
-  // Use live words in presentation, placeholder in editor
-  const displayWords = isEditing ? placeholderWords : liveWords;
-  const maxCount = Math.max(...displayWords.map(w => w.count), 1);
+  const displayWords = isEditing ? placeholderWords : [...liveWords];
+  const sorted = useMemo(() => {
+    return [...displayWords].sort((a, b) => b.count - a.count);
+  }, [displayWords]);
 
-  // Get text color from slide design
-  const textColor = slide.design?.textColor || '#ffffff';
+  const topFive = useMemo(() => sorted.slice(0, 5), [sorted]);
+
+  const maxCount = Math.max(...sorted.map((w) => w.count), 1);
+
+  const textColor = slide.design?.textColor || "#ffffff";
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
       <div className="flex flex-col h-full min-h-0 overflow-hidden">
-        {/* Header */}
         <QuestionHeader
-          question={content.question}
+          question={questionText}
           onEdit={handleQuestionChange}
           editable={isEditing}
-          subtitle={isEditing ? "Word Cloud: Participants submit words" : undefined}
+          subtitle={
+            isEditing
+              ? "Word Cloud: Participants submit words"
+              : hasResults
+                ? `${totalResponses} response${totalResponses === 1 ? "" : "s"} · ${sorted.length} unique word${sorted.length === 1 ? "" : "s"}`
+                : undefined
+          }
           textColor={textColor}
         />
 
-        {/* Word Cloud Display - IDENTICAL layout for both modes */}
-        <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 min-h-0 overflow-y-auto">
-          <div className="w-full max-w-4xl">
-            {/* Word cloud container – organic (scattered+rotate) or compact (rows, no rotate) */}
+        <div className="flex-1 flex items-center justify-center px-4 md:px-10 pb-3 min-h-0 overflow-hidden">
+          <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-4 lg:gap-6 items-stretch justify-center min-h-0">
             <motion.div
-              className={`relative min-h-[300px] flex flex-wrap items-center justify-center p-6 md:p-10 ${isCompactStyle ? 'gap-2' : 'gap-3 md:gap-5'}`}
+              className="flex flex-wrap items-center justify-center gap-x-4 gap-y-3 md:gap-x-6 md:gap-y-4 w-full min-w-0 flex-1 max-w-4xl px-2 py-4"
+              style={{ fontFamily: theme.tokens.fontFamily }}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
-              {displayWords.length > 0 ? (
-                displayWords
-                  .sort((a, b) => b.count - a.count)
-                  .slice(0, 40)
-                  .map((word, index) => {
-                    const ratio = maxCount > 0 ? (word.count - 1) / (maxCount - 1 || 1) : 0;
-                    const fontSize = isCompactStyle
-                      ? Math.min(Math.max(14, 14 + ratio * 12), 24)
-                      : Math.min(Math.max(16, 20 + ratio * 44), 72);
-                    const hash = word.text.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0);
-                    const color = WORD_COLORS[Math.abs(hash) % WORD_COLORS.length];
-                    const rotation = isCompactStyle ? 0 : (Math.sin(index * 1.3) * 8) + (hash % 3 - 1) * 4;
+              {sorted.length > 0 ? (
+                sorted.map((word, index) => {
+                  const size = fontSizeForRank(
+                    index,
+                    sorted.length,
+                    maxCount,
+                    word.count
+                  );
+                  const color = PASTEL_HEX[index % PASTEL_HEX.length];
 
-                    return (
-                      <motion.span
-                        key={`${word.text}-${index}`}
-                        className="font-bold inline-block"
-                        style={{ 
-                          fontSize: `${fontSize}px`, 
-                          color,
-                          transform: rotation ? `rotate(${rotation}deg)` : undefined,
-                        }}
-                        initial={{ opacity: 0, scale: 0.5 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ delay: index * 0.04, duration: 0.35 }}
-                        whileHover={{ scale: 1.08 }}
-                      >
-                        {word.text}
-                        {!isEditing && word.count > 1 && (
-                          <motion.sup
-                            className="opacity-70 ml-0.5"
-                            style={{ fontSize: '0.45em', color }}
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                          >
-                            ×{word.count}
-                          </motion.sup>
-                        )}
-                      </motion.span>
-                    );
-                  })
-              ) : (
-                /* Empty state placeholder circles */
-                <div className="flex flex-wrap items-center justify-center gap-4">
-                  {Array.from({ length: 8 }).map((_, i) => (
-                    <motion.div
-                      key={i}
-                      className="rounded-full bg-white/10"
+                  return (
+                    <motion.span
+                      key={`${word.text}-${index}`}
+                      className="inline-block font-semibold tracking-tight leading-none whitespace-nowrap"
                       style={{
-                        width: `${60 + Math.random() * 60}px`,
-                        height: `${30 + Math.random() * 20}px`,
+                        fontSize: `${size}px`,
+                        color,
                       }}
-                      animate={{ opacity: [0.1, 0.2, 0.1] }}
-                      transition={{ duration: 2, repeat: Infinity, delay: i * 0.2 }}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: index * 0.04, duration: 0.25 }}
+                    >
+                      {word.text}
+                      {!isEditing && (
+                        <sup
+                          className="ml-1 font-semibold tabular-nums text-white/70"
+                          style={{ fontSize: "0.45em" }}
+                        >
+                          ×{word.count}
+                        </sup>
+                      )}
+                    </motion.span>
+                  );
+                })
+              ) : (
+                <div className="flex flex-wrap items-center justify-center gap-3 opacity-30">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="rounded-full bg-white/20"
+                      style={{
+                        width: `${48 + i * 12}px`,
+                        height: `${20 + i * 4}px`,
+                      }}
                     />
                   ))}
                 </div>
               )}
             </motion.div>
 
-            {/* Zero-state waiting indicator - only in presentation mode with no results */}
+            {!isEditing && hasResults && topFive.length > 0 && (
+              <div className="w-full lg:w-56 shrink-0 rounded-xl border border-white/15 bg-black/25 px-3 py-3 max-h-[min(40vh,320px)] overflow-y-auto self-start">
+                <p className="text-white/60 text-xs font-semibold uppercase tracking-wide mb-2">
+                  Top 5
+                </p>
+                <ol className="space-y-2">
+                  {topFive.map((w, i) => (
+                    <li
+                      key={`${w.text}-${i}`}
+                      className="flex items-center justify-between gap-2 text-sm text-white/95"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="text-white/40 font-mono w-4">{i + 1}</span>
+                        <span className="truncate font-medium">{w.text}</span>
+                      </span>
+                      <span className="tabular-nums text-white/70 shrink-0">{w.count}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             {!isEditing && !hasResults && (
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="text-center"
+                className="text-center mt-4 w-full lg:col-span-2"
               >
                 <motion.div
-                  animate={{ 
-                    scale: [1, 1.03, 1],
-                    opacity: [0.6, 1, 0.6],
+                  animate={{
+                    scale: [1, 1.02, 1],
+                    opacity: [0.65, 1, 0.65],
                   }}
                   transition={{ duration: 2, repeat: Infinity }}
                   className="inline-flex items-center gap-3 px-5 py-3 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20"
                 >
                   <Users className="w-5 h-5 text-white/70" />
-                  <span className="text-white/70 text-base font-medium">Waiting for words...</span>
-                  <div className="flex gap-1">
-                    {[0, 1, 2].map((i) => (
-                      <motion.div
-                        key={i}
-                        className="w-2 h-2 rounded-full bg-white/50"
-                        animate={{ opacity: [0.3, 1, 0.3], y: [0, -4, 0] }}
-                        transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                      />
-                    ))}
-                  </div>
+                  <span className="text-white/70 text-base font-medium">
+                    Waiting for words...
+                  </span>
                 </motion.div>
               </motion.div>
             )}
 
-            {/* Editor hint */}
             {isEditing && (
-              <motion.p
-                className="text-center text-white/60 mt-4 text-sm"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-              >
-                Preview of how words will appear during the presentation
-              </motion.p>
+              <p className="text-center text-white/55 mt-3 text-xs md:text-sm">
+                Preview: words sort by frequency; larger = more responses
+              </p>
             )}
           </div>
         </div>
 
-        {/* Footer - only in non-editing mode */}
         {!isEditing && !hideFooter && (
           <ActivityFooter
             participantCount={totalResponses}

@@ -26,7 +26,6 @@ import { toast } from "sonner";
 import { pdfFileToPngDataUrls } from "@/lib/pdfToImages";
 import { svgToPng, resizeImage } from "@/lib/imageUtils";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
-import { SlideImage } from "@/components/editor/SlideImage";
 
 interface ImportedSlide {
   pageNumber: number;
@@ -165,7 +164,7 @@ export function ImportPresentationDialog({
         onProgress(30);
         const rawImageUrl = await readFileAsDataURL(file);
         onProgress(60);
-        const optimizedUrl = await resizeImage(rawImageUrl, 2560, 1440, 0.92);
+        const optimizedUrl = await resizeImage(rawImageUrl, 1920, 1080, 0.85);
         onProgress(100);
         return [{
           pageNumber: 1,
@@ -181,71 +180,58 @@ export function ImportPresentationDialog({
         const formData = new FormData();
         formData.append('file', file);
 
-        // Ensure we have a fresh session token (refreshSession is more reliable than getSession)
-        const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
-        const accessToken = session?.access_token ?? null;
-        if (sessionError || !accessToken) {
-          throw new Error("Please sign in to import presentations");
-        }
-        const { EDGE_FUNCTION_URLS, getFunctionsHeadersForFormData } = await import('@/lib/supabaseFunctions');
-        const headers = getFunctionsHeadersForFormData(accessToken);
-
+        const { data: { session } } = await supabase.auth.getSession();
+        
         const response = await fetch(
-          EDGE_FUNCTION_URLS['convert-to-images'],
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/convert-to-images`,
           {
             method: 'POST',
             body: formData,
-            headers,
+            headers: session?.access_token 
+              ? { 'Authorization': `Bearer ${session.access_token}` }
+              : {},
           }
         );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          let msg = typeof errorData?.error === 'string' ? errorData.error : response.statusText || 'Failed to convert PowerPoint';
-          if (response.status === 404) {
-            msg = 'PPTX conversion service not available. Deploy the convert-to-images Edge Function (see docs or run: npm run deploy:functions).';
-          } else           if (response.status === 401 || response.status === 403) {
-            msg = 'Session may have expired or the server rejected the request. Try signing out and back in, then import again. If the problem continues, ensure the convert-to-images function is deployed with verify_jwt = false.';
-          }
-          throw new Error(msg);
+          throw new Error(errorData.error || 'Failed to convert PowerPoint');
         }
 
         const result = await response.json();
         onProgress(90);
 
-        if (result.images && Array.isArray(result.images) && result.images.length > 0) {
-          setProgressMessage(`Preparing ${result.images.length} slides...`);
-          // Lighter processing: 1920x1080, 0.85 — faster and more stable
-          const targetW = 1920;
-          const targetH = 1080;
-          const quality = 0.85;
-          const optimizedImages: ImportedSlide[] = [];
-          for (let idx = 0; idx < result.images.length; idx++) {
-            const img = result.images[idx] as { pageNumber?: number; imageData?: string };
-            setProgressMessage(`Slide ${idx + 1} of ${result.images.length}`);
-            const data = img.imageData || '';
-            try {
-              const optimizedUrl = data.startsWith('data:image/svg')
-                ? await svgToPng(data, targetW, targetH, quality)
-                : await resizeImage(data, targetW, targetH, quality);
-              optimizedImages.push({
-                pageNumber: img.pageNumber ?? idx + 1,
-                imageUrl: optimizedUrl,
-                title: `Slide ${img.pageNumber ?? idx + 1}`,
-              });
-            } catch (e) {
-              console.warn(`Slide ${idx + 1} fallback:`, e);
-              optimizedImages.push({
-                pageNumber: img.pageNumber ?? idx + 1,
-                imageUrl: data,
-                title: `Slide ${img.pageNumber ?? idx + 1}`,
-              });
-            }
-          }
+        if (result.images && result.images.length > 0) {
+          toast.success(`Converting ${result.images.length} slides...`);
+          
+          const optimizedImages = await Promise.all(
+            result.images.map(async (img: { pageNumber: number; imageData: string }, idx: number) => {
+              try {
+                const optimizedUrl = img.imageData.startsWith('data:image/svg')
+                  ? await svgToPng(img.imageData, 1920, 1080, 0.85)
+                  : await resizeImage(img.imageData, 1920, 1080, 0.85);
+                
+                return {
+                  pageNumber: img.pageNumber,
+                  imageUrl: optimizedUrl,
+                  title: `Slide ${img.pageNumber}`,
+                };
+              } catch (e) {
+                console.error(`Error optimizing slide ${idx + 1}:`, e);
+                return {
+                  pageNumber: img.pageNumber,
+                  imageUrl: img.imageData,
+                  title: `Slide ${img.pageNumber}`,
+                };
+              }
+            })
+          );
+          
           toast.success(`Imported ${optimizedImages.length} slides`);
           return optimizedImages;
         }
-        toast.error(result?.error || 'No slides found in PowerPoint file');
+        
+        toast.error('No slides found in PowerPoint file');
         return [];
       }
 
@@ -269,11 +255,7 @@ export function ImportPresentationDialog({
       return [];
     } catch (error) {
       console.error('Error processing file:', error);
-      let message = error instanceof Error ? error.message : 'Failed to process file.';
-      if (message.includes('Failed to fetch') || message.includes('NetworkError')) {
-        message = 'Network error. Check connection and try again. For PPTX, ensure convert-to-images Edge Function is deployed.';
-      }
-      toast.error(message);
+      toast.error('Failed to process file. Please try again or use a different format.');
       return [];
     }
   };
@@ -329,14 +311,14 @@ export function ImportPresentationDialog({
             {!canImport && (
               <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-600 text-xs font-medium">
                 <Crown className="w-3 h-3" />
-                Standard or Pro
+                Pro
               </span>
             )}
           </DialogTitle>
           <DialogDescription>
             {canImport 
               ? "Upload a PDF or images - each slide becomes a pixel-perfect image"
-              : "Upgrade to Standard or Pro to import PowerPoint and PDF presentations"
+              : "Upgrade to Pro to import PowerPoint and PDF presentations"
             }
           </DialogDescription>
         </DialogHeader>
@@ -354,16 +336,16 @@ export function ImportPresentationDialog({
                 <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
                   <Lock className="w-8 h-8 text-yellow-500" />
                 </div>
-                <h3 className="text-lg font-semibold mb-2">Paid Feature</h3>
+                <h3 className="text-lg font-semibold mb-2">Pro Feature</h3>
                 <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-                  Import presentations from PowerPoint, PDF, and images with a Standard or Pro subscription.
+                  Import presentations from PowerPoint, PDF, and images with a Pro subscription.
                 </p>
                 <Button onClick={() => {
                   onOpenChange(false);
                   onUpgradeRequired?.();
                 }}>
                   <Crown className="w-4 h-4 mr-2" />
-                  Upgrade to unlock
+                  Upgrade to Pro
                 </Button>
               </motion.div>
             ) : importedSlides.length === 0 ? (
@@ -420,7 +402,7 @@ export function ImportPresentationDialog({
                         {isDragging ? 'Drop your file here' : 'Drag & drop or click to upload'}
                       </p>
                       <p className="text-sm text-muted-foreground">
-                        Supports PDF, PPTX, PNG, JPG (max 20MB). For fastest import use PDF or images.
+                        Supports PDF, PPTX, PNG, JPG (max 20MB)
                       </p>
                     </>
                   )}
@@ -466,7 +448,7 @@ export function ImportPresentationDialog({
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
                     >
-                      <SlideImage
+                      <img
                         src={slide.imageUrl}
                         alt={slide.title || `Slide ${slide.pageNumber}`}
                         className="w-full h-full object-contain bg-white"

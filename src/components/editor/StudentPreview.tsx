@@ -14,10 +14,10 @@ import {
   GripVertical
 } from "lucide-react";
 import { Slide, SLIDE_TYPES, QuizSlideContent, PollSlideContent, YesNoSlideContent, ScaleSlideContent, WordCloudSlideContent, GuessNumberSlideContent, RankingSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent, FinishSentenceSlideContent } from "@/types/slides";
-import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
+import { ThemeId, getTheme } from "@/types/themes";
 
 interface StudentPreviewProps {
-  slide: Slide | undefined;
+  slide: Slide;
   themeId: ThemeId;
 }
 
@@ -31,17 +31,7 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
   const [sentimentValue, setSentimentValue] = useState([50]);
   const [agreeValue, setAgreeValue] = useState([50]);
   const [sentenceInput, setSentenceInput] = useState("");
-
-  if (!slide) {
-    return (
-      <div className="flex flex-col h-full bg-background rounded-2xl overflow-hidden shadow-2xl border border-border items-center justify-center p-6 text-center text-muted-foreground">
-        <Presentation className="w-12 h-12 mb-3 opacity-50" />
-        <p className="text-sm font-medium">No slide selected</p>
-        <p className="text-xs mt-1">Select an interactive slide to preview the student view.</p>
-      </div>
-    );
-  }
-
+  
   const theme = getTheme(themeId);
   const slideType = SLIDE_TYPES.find(t => t.type === slide.type);
   const isInteractive = slideType?.category === 'interactive' || slideType?.category === 'quiz';
@@ -77,8 +67,10 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
   const content = slide.content;
   const question = (content as any)?.question || (content as any)?.statement || (content as any)?.sentenceStart || (content as any)?.title || "Question";
 
-  // Get option colors from theme (never white/light background)
-  const getOptionColor = (index: number) => getSafeOptionColor(theme, index);
+  // Get option colors from theme
+  const getOptionColor = (index: number) => {
+    return theme.optionColors[index % theme.optionColors.length];
+  };
 
   // Initialize ranking order if not set
   if (slide.type === 'ranking' && rankingOrder.length === 0) {
@@ -140,12 +132,9 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
               {question}
             </h2>
 
-            {/* Quiz/Poll Options - 2x2 grid for 4 options */}
+            {/* Quiz/Poll Options */}
             {(slide.type === 'quiz' || slide.type === 'poll') && (
-              <div className={((content as QuizSlideContent | PollSlideContent).options || []).length === 4
-                ? "grid grid-cols-2 gap-2"
-                : "space-y-2"
-              }>
+              <div className="space-y-2">
                 {((content as QuizSlideContent | PollSlideContent).options || []).map((option, index) => (
                   <motion.button
                     key={index}

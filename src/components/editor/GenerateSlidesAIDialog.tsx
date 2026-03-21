@@ -23,11 +23,7 @@ import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 import { GeneratedTheme } from "@/types/generatedTheme";
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
-import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
-import { Link } from "react-router-dom";
-import { AlertCircle } from "lucide-react";
 
 interface GenerateSlidesAIDialogProps {
   open: boolean;
@@ -35,14 +31,6 @@ interface GenerateSlidesAIDialogProps {
   onSlidesGenerated: (slides: Slide[], theme?: GeneratedTheme) => void;
   initialPrompt?: string;
 }
-
-const TARGET_AUDIENCES = [
-  { value: "middle_school", label: "Middle School Students" },
-  { value: "high_school", label: "High School Students" },
-  { value: "university", label: "University Students" },
-  { value: "professionals", label: "Professionals" },
-  { value: "general", label: "General Audience" },
-];
 
 const DIFFICULTY_LEVELS = [
   { value: "beginner", label: "Beginner" },
@@ -69,17 +57,21 @@ export default function GenerateSlidesAIDialog({
 }: GenerateSlidesAIDialogProps) {
   const [description, setDescription] = useState(initialPrompt);
   const [contentType, setContentType] = useState<"interactive" | "with_content">("interactive");
-  const [targetAudience, setTargetAudience] = useState("general");
   const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">("intermediate");
   const [isGenerating, setIsGenerating] = useState(false);
   const [loadingStageIndex, setLoadingStageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [generatedThemeName, setGeneratedThemeName] = useState<string | null>(null);
   
-  // Get subscription info for slide limits and credits
-  const { isFree, maxSlides, hasAITokens, credits, aiTokensRemaining } = useSubscriptionContext();
+  // Get subscription info for slide limits
+  const { isFree, maxSlides } = useSubscriptionContext();
   const planSlideLimit = isFree ? (maxSlides ?? 5) : 8;
-  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
+
+  /** Fresh ID each time the dialog opens — matches `builder_conversation` rows for this generation. */
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  useEffect(() => {
+    if (open) setSessionId(crypto.randomUUID());
+  }, [open]);
 
   // Update description when initialPrompt changes
   useEffect(() => {
@@ -114,19 +106,9 @@ export default function GenerateSlidesAIDialog({
     return planSlideLimit; // default to plan limit
   };
 
-  const expectedCount = getExpectedSlideCount();
-  // Only block when we KNOW user has insufficient credits. When credits is null (e.g. new user),
-  // let the server create the row via ensureUserCredits and validate.
-  const creditsKnown = credits != null;
-  const hasEnoughCredits = creditsKnown ? hasAITokens(expectedCount) : true;
-
   const handleGenerate = async () => {
     if (!description.trim()) {
       toast.error("Please describe your presentation topic");
-      return;
-    }
-    if (!hasEnoughCredits) {
-      setShowOutOfCreditsModal(true);
       return;
     }
 
@@ -136,39 +118,55 @@ export default function GenerateSlidesAIDialog({
     setGeneratedThemeName(null);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
-      if (sessionError || !session) {
+      // Get authenticated session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         throw new Error("Please sign in to generate presentations");
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("generate-slides", {
-        body: {
-          description,
-          contentType,
-          targetAudience,
-          difficulty,
-          slideCount: expectedCount,
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-
-      if (fnError) {
-        if (getEdgeFunctionStatus(fnError) === 402) {
-          setShowOutOfCreditsModal(true);
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-slides`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            description,
+            contentType,
+            difficulty,
+            slideCount: expectedCount,
+            sessionId,
+          }),
         }
-        const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate slides.");
-        throw new Error(msg);
-      }
-      const resData = data as { error?: string; slides?: unknown[]; theme?: unknown };
-      if (resData?.error) throw new Error(resData.error);
-      if (!resData?.slides?.length) throw new Error("No slides returned");
+      );
 
-      const generatedTheme: GeneratedTheme | undefined = resData.theme as GeneratedTheme | undefined;
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+        }
+        if (response.status === 402) {
+          throw new Error("AI credits exhausted. Please add credits to continue.");
+        }
+        throw new Error(errorData.error || "Failed to generate slides");
+      }
+
+      const data = await response.json();
+      
+      if (!data.slides || !Array.isArray(data.slides)) {
+        throw new Error("Invalid response from AI");
+      }
+
+      // Extract generated theme if present
+      const generatedTheme: GeneratedTheme | undefined = data.theme;
       if (generatedTheme) {
         setGeneratedThemeName(generatedTheme.themeName);
       }
 
-      const slides: Slide[] = (resData.slides as any[]).map((aiSlide: any, index: number) => {
+      // Transform AI response to proper Slide objects with theme applied
+      const slides: Slide[] = data.slides.map((aiSlide: any, index: number) => {
         const baseSlide = createNewSlide(aiSlide.type, index);
         
         // Apply generated theme styling if available
@@ -203,21 +201,13 @@ export default function GenerateSlidesAIDialog({
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to generate slides";
       setError(errorMessage);
-      const isSessionError = /sign out|session invalid|invalid jwt/i.test(errorMessage);
-      if (isSessionError) {
-        toast.error("נא להתנתק ולהתחבר מחדש", {
-          action: {
-            label: "התנתק והתחבר",
-            onClick: () => supabase.auth.signOut(),
-          },
-        });
-      } else {
-        toast.error(errorMessage);
-      }
+      toast.error(errorMessage);
     } finally {
       setIsGenerating(false);
     }
   };
+
+  const expectedCount = getExpectedSlideCount();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -299,20 +289,6 @@ export default function GenerateSlidesAIDialog({
                 </motion.div>
               )}
 
-              {/* Not enough credits */}
-              {!hasEnoughCredits && (
-                <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  <div className="text-sm">
-                    <p>This will use {expectedCount} credits. You have {aiTokensRemaining} remaining.</p>
-                    <p className="mt-1 flex flex-wrap gap-2">
-                      <Link to="/billing" className="underline font-medium">Buy credits</Link>
-                      <Link to="/pricing" className="underline font-medium">Upgrade plan</Link>
-                    </p>
-                  </div>
-                </div>
-              )}
-
               {/* Description */}
               <div className="space-y-2">
                 <Label htmlFor="description">Describe Your Presentation</Label>
@@ -384,39 +360,20 @@ export default function GenerateSlidesAIDialog({
                 </p>
               </div>
 
-              {/* Target Audience & Difficulty */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Target Audience</Label>
-                  <Select value={targetAudience} onValueChange={setTargetAudience}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TARGET_AUDIENCES.map((audience) => (
-                        <SelectItem key={audience.value} value={audience.value}>
-                          {audience.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Difficulty Level</Label>
-                  <Select value={difficulty} onValueChange={(v) => setDifficulty(v as any)}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DIFFICULTY_LEVELS.map((level) => (
-                        <SelectItem key={level.value} value={level.value}>
-                          {level.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-2">
+                <Label>Difficulty Level</Label>
+                <Select value={difficulty} onValueChange={(v) => setDifficulty(v as "beginner" | "intermediate" | "advanced")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DIFFICULTY_LEVELS.map((level) => (
+                      <SelectItem key={level.value} value={level.value}>
+                        {level.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Generate Button */}
@@ -427,7 +384,7 @@ export default function GenerateSlidesAIDialog({
                 <Button
                   variant="hero"
                   onClick={handleGenerate}
-                  disabled={!description.trim() || !hasEnoughCredits || isGenerating}
+                  disabled={!description.trim()}
                   className="px-8"
                 >
                   <Sparkles className="w-4 h-4" />
@@ -438,7 +395,6 @@ export default function GenerateSlidesAIDialog({
           )}
         </AnimatePresence>
       </DialogContent>
-      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </Dialog>
   );
 }

@@ -1,9 +1,14 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { ThumbsUp, ThumbsDown, Users, Heart, X, Smile, Frown, Check } from "lucide-react";
-import { SlideWrapper, QuestionHeader, ActivityFooter, CleanBarResults } from "./index";
+import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, YesNoSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
+import {
+  presenterShowCounts,
+  presenterShowPercentages,
+  presenterShowProgressBars,
+} from "@/lib/presenterSlideDisplay";
 
 export interface YesNoSlideProps {
   slide: Slide;
@@ -41,6 +46,10 @@ export function YesNoSlide({
   const theme = getTheme(themeId);
   const designStyle = getDesignStyle(designStyleId);
   const styleConfig = designStyle.config;
+
+  const showCounts = presenterShowCounts(isEditing, styleConfig.showCounts);
+  const showPercentages = presenterShowPercentages(isEditing, styleConfig.showPercentages);
+  const showProgressBars = presenterShowProgressBars(isEditing, styleConfig.showProgressBars);
 
   // Use live results if provided, otherwise use zeros
   const results = liveResults || { yes: 0, no: 0 };
@@ -81,9 +90,8 @@ export function YesNoSlide({
   const YesIcon = icons.yes;
   const NoIcon = icons.no;
 
+  // Dynamic vs Minimal style differences
   const isMinimal = designStyleId === 'minimal';
-  const isCompact = designStyleId === 'compact';
-  const isThumbsDynamic = slide.design?.yesNoVariant === 'thumbsDynamic';
 
   // Get text color from slide design
   const textColor = slide.design?.textColor || '#ffffff';
@@ -105,96 +113,25 @@ export function YesNoSlide({
           textColor={textColor}
         />
 
+        {!isEditing && hasResults && showCorrectAnswer && hasCorrectAnswer && (
+          <div className="px-4 pt-1 text-center shrink-0">
+            <p className="text-sm md:text-base font-semibold text-emerald-300/95">
+              Correct answer:{" "}
+              <span className="text-white">
+                {yesIsCorrect ? content.yesLabel || "Yes" : content.noLabel || "No"}
+              </span>
+            </p>
+          </div>
+        )}
+        {!isEditing && hasResults && !showCorrectAnswer && (
+          <p className="text-center text-xs md:text-sm text-white/55 px-4 pt-1 shrink-0">Live results</p>
+        )}
+
         {/* Content area */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 overflow-hidden min-h-0">
           <div className="w-full max-w-3xl">
-            {/* Clean bar results view - when resultVisualization is clean_bars */}
-            {!isEditing && showResults && slide.design?.resultVisualization === 'clean_bars' ? (
-              <CleanBarResults
-                options={[content.yesLabel || 'Yes', content.noLabel || 'No']}
-                results={[results.yes, results.no]}
-                totalResponses={totalResponses}
-                correctIsYes={content.correctAnswer}
-                isYesNo={true}
-                textColor={textColor}
-              />
-            ) : isThumbsDynamic ? (
-            /* thumbsDynamic: two big thumbs; selected (by results) grows and glows, other shrinks and grays */
-            <div className="relative flex flex-row items-center justify-center gap-8 md:gap-12">
-              <motion.div
-                className="flex flex-col items-center gap-2"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.1 }}
-              >
-                {isEditing && (
-                  <button
-                    onClick={() => handleCorrectAnswerChange(true)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${yesIsCorrect ? 'bg-white text-green-600' : 'bg-white/20 text-white'}`}
-                  >
-                    {yesIsCorrect ? '✓ Correct' : 'Set correct'}
-                  </button>
-                )}
-                <motion.div
-                  className="flex flex-col items-center cursor-default"
-                  animate={hasResults ? (yesPercentage >= noPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                >
-                  <div className={`p-4 md:p-6 rounded-full transition-all ${
-                    hasResults && yesPercentage >= noPercentage ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50 ring-4 ring-white/40' : 'bg-emerald-500/90'
-                  }`}>
-                    <ThumbsUp className="w-14 h-14 md:w-20 md:h-20 text-white" />
-                  </div>
-                  {(content.yesLabel || isEditing) && (
-                    <span className="text-white/90 text-sm mt-1 font-medium">{content.yesLabel || 'Yes'}</span>
-                  )}
-                  {!isEditing && hasResults && <span className="text-white/80 text-lg font-bold">{yesPercentage}%</span>}
-                </motion.div>
-              </motion.div>
-              <motion.div
-                className="flex flex-col items-center gap-2"
-                initial={{ opacity: 0, scale: 0.8 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: 0.2 }}
-              >
-                {isEditing && (
-                  <button
-                    onClick={() => handleCorrectAnswerChange(false)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold ${noIsCorrect ? 'bg-white text-green-600' : 'bg-white/20 text-white'}`}
-                  >
-                    {noIsCorrect ? '✓ Correct' : 'Set correct'}
-                  </button>
-                )}
-                <motion.div
-                  className="flex flex-col items-center cursor-default"
-                  animate={hasResults ? (noPercentage > yesPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                >
-                  <div className={`p-4 md:p-6 rounded-full transition-all ${
-                    hasResults && noPercentage > yesPercentage ? 'bg-rose-500 shadow-lg shadow-rose-500/50 ring-4 ring-white/40' : 'bg-rose-500/90'
-                  }`}>
-                    <ThumbsDown className="w-14 h-14 md:w-20 md:h-20 text-white" />
-                  </div>
-                  {(content.noLabel || isEditing) && (
-                    <span className="text-white/90 text-sm mt-1 font-medium">{content.noLabel || 'No'}</span>
-                  )}
-                  {!isEditing && hasResults && <span className="text-white/80 text-lg font-bold">{noPercentage}%</span>}
-                </motion.div>
-              </motion.div>
-              {!isEditing && !hasResults && (
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
-                  <Users className="w-4 h-4" />
-                  <span>Waiting for votes...</span>
-                </div>
-              )}
-            </div>
-            ) : (
-            <>
-            {/* Yes/No buttons - grid for minimal/dynamic, flex row for compact */}
-            <div className={isCompact 
-              ? 'flex flex-row flex-wrap justify-center gap-3 md:gap-4' 
-              : 'grid grid-cols-2 gap-4 md:gap-6'
-            }>
+            {/* Yes/No buttons grid */}
+            <div className="grid grid-cols-2 gap-4 md:gap-6">
               {/* Yes Button */}
               <motion.div 
                 className="relative group"
@@ -234,14 +171,12 @@ export function YesNoSlide({
                     relative p-4 md:p-6 rounded-2xl shadow-xl overflow-hidden
                     ${isMinimal 
                       ? 'bg-emerald-500/80 border-2 border-emerald-400' 
-                      : isCompact
-                      ? 'bg-emerald-500/90 border-2 border-emerald-400/80 shadow-md min-w-[120px] flex-1 max-w-[200px]'
                       : 'bg-gradient-to-br from-emerald-500 to-green-400'
                     }
                     ${showCorrectAnswer && yesIsCorrect ? 'ring-4 ring-white/80' : ''}
                   `}
-                  whileHover={!isEditing ? { scale: (styleConfig.animationIntensity === 'high' || isCompact) ? 1.03 : 1.01 } : undefined}
-                  animate={!isEditing && !isMinimal && !isCompact ? { y: [0, -3, 0] } : undefined}
+                  whileHover={!isEditing ? { scale: styleConfig.animationIntensity === 'high' ? 1.03 : 1.01 } : undefined}
+                  animate={!isEditing && !isMinimal ? { y: [0, -3, 0] } : undefined}
                   transition={{ duration: 2, repeat: Infinity }}
                   style={{ fontFamily: theme.tokens.fontFamily }}
                 >
@@ -261,22 +196,25 @@ export function YesNoSlide({
                     )}
                     
                     {/* Live count indicator */}
-                    {!isEditing && (styleConfig.showCounts || styleConfig.showPercentages) && (
+                    {!isEditing && (showCounts || showPercentages) && (
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={results.yes}
                           initial={styleConfig.showAnimatedNumbers ? { scale: 1.5, opacity: 0 } : { opacity: 1 }}
                           animate={{ scale: 1, opacity: 1 }}
                           exit={styleConfig.showAnimatedNumbers ? { scale: 0.5, opacity: 0 } : undefined}
-                          className="mt-2 flex items-center gap-2"
+                          className="mt-2 flex items-center gap-2 tabular-nums"
                         >
                           {hasResults ? (
                             <>
-                              {styleConfig.showCounts && (
+                              {showCounts && (
                                 <span className="text-2xl md:text-3xl font-bold">{results.yes}</span>
                               )}
-                              {styleConfig.showPercentages && (
-                                <span className="text-white/80 text-sm">({yesPercentage}%)</span>
+                              {showCounts && showPercentages && (
+                                <span className="text-white/60 text-lg font-normal">·</span>
+                              )}
+                              {showPercentages && (
+                                <span className="text-white/80 text-sm md:text-base">{yesPercentage}%</span>
                               )}
                             </>
                           ) : (
@@ -292,7 +230,7 @@ export function YesNoSlide({
                   </div>
 
                   {/* Progress bar */}
-                  {!isEditing && hasResults && styleConfig.showProgressBars && (
+                  {!isEditing && hasResults && showProgressBars && (
                     <motion.div
                       className="absolute bottom-0 left-0 h-1.5 bg-white/30 rounded-b-2xl"
                       initial={{ width: 0 }}
@@ -345,14 +283,12 @@ export function YesNoSlide({
                     relative p-4 md:p-6 rounded-2xl shadow-xl overflow-hidden
                     ${isMinimal 
                       ? 'bg-rose-500/80 border-2 border-rose-400' 
-                      : isCompact
-                      ? 'bg-rose-500/90 border-2 border-rose-400/80 shadow-md min-w-[120px] flex-1 max-w-[200px]'
                       : 'bg-gradient-to-br from-rose-500 to-red-500'
                     }
                     ${showCorrectAnswer && noIsCorrect ? 'ring-4 ring-white/80' : ''}
                   `}
-                  whileHover={!isEditing ? { scale: (styleConfig.animationIntensity === 'high' || isCompact) ? 1.03 : 1.01 } : undefined}
-                  animate={!isEditing && !isMinimal && !isCompact ? { y: [0, -3, 0] } : undefined}
+                  whileHover={!isEditing ? { scale: styleConfig.animationIntensity === 'high' ? 1.03 : 1.01 } : undefined}
+                  animate={!isEditing && !isMinimal ? { y: [0, -3, 0] } : undefined}
                   transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
                   style={{ fontFamily: theme.tokens.fontFamily }}
                 >
@@ -372,22 +308,25 @@ export function YesNoSlide({
                     )}
                     
                     {/* Live count indicator */}
-                    {!isEditing && (styleConfig.showCounts || styleConfig.showPercentages) && (
+                    {!isEditing && (showCounts || showPercentages) && (
                       <AnimatePresence mode="wait">
                         <motion.div
                           key={results.no}
                           initial={styleConfig.showAnimatedNumbers ? { scale: 1.5, opacity: 0 } : { opacity: 1 }}
                           animate={{ scale: 1, opacity: 1 }}
                           exit={styleConfig.showAnimatedNumbers ? { scale: 0.5, opacity: 0 } : undefined}
-                          className="mt-2 flex items-center gap-2"
+                          className="mt-2 flex items-center gap-2 tabular-nums"
                         >
                           {hasResults ? (
                             <>
-                              {styleConfig.showCounts && (
+                              {showCounts && (
                                 <span className="text-2xl md:text-3xl font-bold">{results.no}</span>
                               )}
-                              {styleConfig.showPercentages && (
-                                <span className="text-white/80 text-sm">({noPercentage}%)</span>
+                              {showCounts && showPercentages && (
+                                <span className="text-white/60 text-lg font-normal">·</span>
+                              )}
+                              {showPercentages && (
+                                <span className="text-white/80 text-sm md:text-base">{noPercentage}%</span>
                               )}
                             </>
                           ) : (
@@ -403,7 +342,7 @@ export function YesNoSlide({
                   </div>
 
                   {/* Progress bar */}
-                  {!isEditing && hasResults && styleConfig.showProgressBars && (
+                  {!isEditing && hasResults && showProgressBars && (
                     <motion.div
                       className="absolute bottom-0 left-0 h-1.5 bg-white/30 rounded-b-2xl"
                       initial={{ width: 0 }}
@@ -418,8 +357,8 @@ export function YesNoSlide({
               </motion.div>
             </div>
 
-            {/* Zero-state waiting indicator - only for non-thumbsDynamic */}
-            {!isThumbsDynamic && !isEditing && !hasResults && (
+            {/* Zero-state waiting indicator */}
+            {!isEditing && !hasResults && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -449,9 +388,6 @@ export function YesNoSlide({
                   )}
                 </motion.div>
               </motion.div>
-            )}
-
-            </>
             )}
 
             {/* Editor hint - show if no correct answer set */}

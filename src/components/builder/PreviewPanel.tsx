@@ -1,82 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React from 'react';
+import { motion } from 'framer-motion';
 import { Loader2, Eye } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversationalBuilder } from '@/hooks/useConversationalBuilder';
 import { SlideRenderer } from '@/components/editor/SlideRenderer';
-import { SlideLayoutProvider } from '@/contexts/SlideLayoutContext';
-import { BuilderPreviewProvider } from '@/contexts/BuilderPreviewContext';
-
-const BUILDER_TIPS = [
-  'Students join with a QR code—no app download needed.',
-  'Add quizzes and polls to boost engagement during your lecture.',
-  'Change slide themes anytime—each presentation can have its own style.',
-  'AI can refine your slides—describe changes in the chat to apply them instantly.',
-  'Export your presentation to images or PDF when you\'re done.',
-  'Present live—students answer in real time on their phones.',
-  'Try the mobile preview to see how your slides look on small screens.',
-];
 
 interface PreviewPanelProps {
   isInitialLoading?: boolean;
-  initialPrompt?: string;
 }
 
-const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading, initialPrompt }) => {
-  const {
-    sandboxSlides,
-    currentPreviewIndex,
+const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading }) => {
+  const { 
+    sandboxSlides, 
+    currentPreviewIndex, 
     setCurrentPreviewIndex,
     isGenerating,
   } = useConversationalBuilder();
-
-  const [tipIndex, setTipIndex] = useState(0);
-  useEffect(() => {
-    if (!isInitialLoading) return;
-    const t = setInterval(() => {
-      setTipIndex((i) => (i + 1) % BUILDER_TIPS.length);
-    }, 4500);
-    return () => clearInterval(t);
-  }, [isInitialLoading]);
-
+  
   if (isInitialLoading) {
     return (
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center p-6">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.4 }}
-          className="flex flex-col items-center text-center max-w-md"
-        >
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-            className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6"
-          >
-            <Loader2 className="w-8 h-8 text-primary" />
-          </motion.div>
-          <p className="text-sm text-muted-foreground mb-4">Building your presentation</p>
-          {initialPrompt && (
-            <p className="text-xs text-foreground/60 mb-6 line-clamp-2">
-              &ldquo;{initialPrompt}&rdquo;
-            </p>
-          )}
-          <div className="w-full max-w-xs rounded-xl bg-muted/40 border border-border/50 px-4 py-4 min-h-[72px] flex items-center justify-center">
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={tipIndex}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.35 }}
-                className="text-sm text-muted-foreground text-center leading-relaxed"
-              >
-                {BUILDER_TIPS[tipIndex]}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-          <p className="text-[10px] text-muted-foreground/60 mt-3">Tip {tipIndex + 1} of {BUILDER_TIPS.length}</p>
-        </motion.div>
+      <div className="flex-1 flex items-center justify-center bg-muted/20">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-lg font-medium">Creating your presentation...</p>
+          <p className="text-sm text-muted-foreground mt-2">This may take a moment</p>
+        </div>
       </div>
     );
   }
@@ -149,19 +97,12 @@ const PreviewPanel: React.FC<PreviewPanelProps> = ({ isInitialLoading, initialPr
                 )}
               </div>
               
-              {/* Full-size slide preview - scrollable when content overflows */}
-              <div className="w-full aspect-video rounded-xl overflow-hidden shadow-lg border border-border min-h-0 flex flex-col">
-                <BuilderPreviewProvider allowContentScroll>
-                  <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-                    <SlideLayoutProvider slide={slide}>
-                      <SlideRenderer
-                        slide={slide}
-                        isEditing={false}
-                        showCorrectAnswer
-                      />
-                    </SlideLayoutProvider>
-                  </div>
-                </BuilderPreviewProvider>
+              {/* Full-size slide preview */}
+              <div className="w-full aspect-video rounded-xl overflow-hidden shadow-lg border border-border">
+                <SlideRenderer
+                  slide={slide}
+                  isEditing={false}
+                />
               </div>
               
               {/* Slide title/question preview */}

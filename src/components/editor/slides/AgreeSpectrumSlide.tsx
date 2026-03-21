@@ -40,24 +40,14 @@ export function AgreeSpectrumSlide({
   const content = slide.content as AgreeSpectrumSlideContent;
   const designStyle = getDesignStyle(designStyleId);
   const styleConfig = designStyle.config;
-  
+  const statement = typeof content.statement === "string" ? content.statement : "";
+
   const hasResults = totalResponses > 0;
   const isMinimal = designStyleId === 'minimal';
-  const isCompact = designStyleId === 'compact';
-  const isSteps = slide.design?.agreeSpectrumVariant === 'steps';
   const textColor = slide.design?.textColor || '#ffffff';
 
   const leftLabel = content.leftLabel || 'Strongly Disagree';
   const rightLabel = content.rightLabel || 'Strongly Agree';
-  const stepLabels = [leftLabel, 'Disagree', 'Neutral', 'Agree', rightLabel];
-  const stepBuckets = isSteps && hasResults
-    ? [0, 1, 2, 3, 4].map((i) => {
-        const low = i * 4;
-        const high = (i + 1) * 4;
-        return buckets.slice(low, high).reduce((a, b) => a + b, 0);
-      })
-    : [];
-  const maxStepCount = Math.max(...stepBuckets, 1);
   
   // Use clusters for visualization or individual dots
   const positions = liveResults?.positions || [];
@@ -78,7 +68,7 @@ export function AgreeSpectrumSlide({
         <div className="px-6 md:px-10 py-3 md:py-4 text-center">
           {isEditing ? (
             <textarea
-              value={content.statement}
+              value={statement}
               onChange={(e) => onUpdate?.({ ...content, statement: e.target.value })}
               className="text-xl md:text-2xl font-bold bg-transparent border-0 outline-none text-center w-full resize-none placeholder:opacity-50"
               style={{ color: textColor }}
@@ -86,73 +76,25 @@ export function AgreeSpectrumSlide({
               rows={2}
             />
           ) : (
-            <h2 
-              className="text-xl md:text-2xl font-bold"
-              style={{ color: textColor }}
-            >
-              "{content.statement}"
-            </h2>
+            <div className="space-y-2">
+              <h2 
+                className="text-xl md:text-2xl font-bold"
+                style={{ color: textColor }}
+              >
+                "{statement}"
+              </h2>
+              {hasResults && (
+                <p className="text-sm md:text-base text-white/70 font-medium tabular-nums">
+                  {totalResponses} response{totalResponses === 1 ? "" : "s"} · average {Math.round(average)}/100
+                </p>
+              )}
+            </div>
           )}
         </div>
 
         {/* Content area */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 overflow-hidden min-h-0">
           <div className="w-full max-w-3xl">
-            {isSteps ? (
-            /* steps: 5 discrete buttons */
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-between">
-                {stepLabels.map((label, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="flex flex-col items-center gap-2 flex-1 min-w-0"
-                  >
-                    <div
-                      className={`w-full py-3 px-2 rounded-xl text-center text-sm font-medium border-2 cursor-default ${
-                        i === 0 ? 'bg-red-500/20 border-red-500/40' :
-                        i === 4 ? 'bg-green-500/20 border-green-500/40' :
-                        'bg-white/10 border-white/20'
-                      }`}
-                      style={{ color: textColor }}
-                    >
-                      {isEditing && (i === 0 || i === 4) ? (
-                        <input
-                          value={i === 0 ? leftLabel : rightLabel}
-                          onChange={(e) => onUpdate?.({ ...content, ...(i === 0 ? { leftLabel: e.target.value } : { rightLabel: e.target.value }) })}
-                          className="bg-transparent outline-none w-full text-center text-sm"
-                          style={{ color: textColor }}
-                        />
-                      ) : label}
-                    </div>
-                    {hasResults && (
-                      <motion.div
-                        className="w-full bg-white/30 rounded max-h-12 min-h-[4px]"
-                        initial={{ height: 0 }}
-                        animate={{ height: `${(stepBuckets[i] / maxStepCount) * 100}%` }}
-                        transition={{ type: 'spring', stiffness: 150 }}
-                      />
-                    )}
-                    {hasResults && <span className="text-white/70 text-xs">{stepBuckets[i]}</span>}
-                  </motion.div>
-                ))}
-              </div>
-              {hasResults && (
-                <div className="text-center text-white/80 text-sm">Average: {Math.round(average)}%</div>
-              )}
-              {!hasResults && (
-                <div className="text-center">
-                  <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
-                    <Users className="w-4 h-4" />
-                    <span>Tap a level – waiting for responses...</span>
-                  </div>
-                </div>
-              )}
-            </div>
-            ) : (
-            <>
             {/* Labels - editable */}
             <motion.div
               className="flex items-end justify-between mb-4"
@@ -189,7 +131,7 @@ export function AgreeSpectrumSlide({
               className="relative mb-6"
             >
               {/* Track */}
-              <div className={`rounded-2xl bg-gradient-to-r from-red-500/20 via-neutral-500/20 to-green-500/20 border-2 border-white/20 relative overflow-hidden ${isCompact ? 'h-14 md:h-16' : 'h-20 md:h-24'}`}>
+              <div className="h-20 md:h-24 rounded-2xl bg-gradient-to-r from-red-500/20 via-neutral-500/20 to-green-500/20 border-2 border-white/20 relative overflow-hidden">
                 {/* Distribution bars */}
                 {hasResults && (
                   <div className="absolute inset-0 flex items-end px-1">
@@ -218,17 +160,17 @@ export function AgreeSpectrumSlide({
                 )}
 
                 {/* Individual dot markers for positions */}
-                {hasResults && positions.slice(0, 30).map((pos, i) => (
+                {hasResults && positions.slice(0, 40).map((pos, i) => (
                   <motion.div
                     key={i}
-                    className="absolute top-1/2 w-3 h-3 rounded-full border-2 border-white shadow-lg"
+                    className="absolute top-1/2 w-3.5 h-3.5 rounded-full border-2 border-white shadow-md"
                     style={{ 
                       left: `${pos}%`,
                       transform: 'translate(-50%, -50%)',
                       backgroundColor: `hsl(${(pos / 100) * 120}, 70%, 50%)`,
                     }}
                     initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 0.8 }}
+                    animate={{ scale: 1, opacity: 0.92 }}
                     transition={{ delay: i * 0.03 }}
                   />
                 ))}
@@ -256,29 +198,29 @@ export function AgreeSpectrumSlide({
             </motion.div>
 
             {/* Stats */}
-            {hasResults && (
+            {hasResults && positions.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="flex items-center justify-center gap-6 mt-12"
               >
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-red-400">
-                    {Math.round((positions.filter(p => p < 40).length / positions.length) * 100) || 0}%
+                  <div className="text-2xl font-bold text-red-400 tabular-nums">
+                    {Math.round((positions.filter(p => p < 40).length / positions.length) * 100)}%
                   </div>
                   <div className="text-white/60 text-sm">Disagree</div>
                 </div>
                 <div className="w-px h-10 bg-white/20" />
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-white/80">
-                    {Math.round((positions.filter(p => p >= 40 && p <= 60).length / positions.length) * 100) || 0}%
+                  <div className="text-2xl font-bold text-white/80 tabular-nums">
+                    {Math.round((positions.filter(p => p >= 40 && p <= 60).length / positions.length) * 100)}%
                   </div>
                   <div className="text-white/60 text-sm">Neutral</div>
                 </div>
                 <div className="w-px h-10 bg-white/20" />
                 <div className="text-center">
-                  <div className="text-2xl font-bold text-green-400">
-                    {Math.round((positions.filter(p => p > 60).length / positions.length) * 100) || 0}%
+                  <div className="text-2xl font-bold text-green-400 tabular-nums">
+                    {Math.round((positions.filter(p => p > 60).length / positions.length) * 100)}%
                   </div>
                   <div className="text-white/60 text-sm">Agree</div>
                 </div>
@@ -288,7 +230,7 @@ export function AgreeSpectrumSlide({
             {/* Zero state */}
             {!isEditing && !hasResults && (
               <motion.div
-                animate={!isMinimal ? { opacity: isCompact ? [0.6, 0.9, 0.6] : [0.5, 1, 0.5] } : undefined}
+                animate={!isMinimal ? { opacity: [0.5, 1, 0.5] } : undefined}
                 transition={{ duration: 2, repeat: Infinity }}
                 className="text-center mt-8"
               >
@@ -299,8 +241,8 @@ export function AgreeSpectrumSlide({
               </motion.div>
             )}
 
-            {/* Editor hint - only when not steps */}
-            {isEditing && !isSteps && (
+            {/* Editor hint */}
+            {isEditing && (
               <motion.p
                 className="text-center text-white/50 mt-6 text-xs md:text-sm"
                 animate={{ opacity: [0.4, 0.7, 0.4] }}
@@ -308,8 +250,6 @@ export function AgreeSpectrumSlide({
               >
                 Participants position themselves on the spectrum
               </motion.p>
-            )}
-            </>
             )}
           </div>
         </div>

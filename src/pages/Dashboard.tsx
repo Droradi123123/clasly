@@ -1,20 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Dialog,
   DialogContent,
@@ -37,14 +29,9 @@ import {
   FileText,
   Wand2,
   ArrowLeft,
-  BarChart3,
-  Copy,
-  Settings2,
 } from "lucide-react";
-import { AISettingsModal } from "@/components/dashboard/AISettingsModal";
-import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { supabase } from "@/integrations/supabase/client";
-import { createLecture, duplicateLecture } from "@/lib/lectureService";
+import { createLecture } from "@/lib/lectureService";
 import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 
@@ -53,127 +40,61 @@ interface Lecture {
   title: string;
   status: string;
   lecture_code: string;
-  slides?: Slide[];
+  slides: Slide[];
   created_at: string;
   updated_at: string;
 }
 
 type CreateMode = 'choose' | 'regular' | 'ai';
 
-const TARGET_AUDIENCES = [
-  { value: "middle_school", label: "Middle School" },
-  { value: "high_school", label: "High School" },
-  { value: "university", label: "University" },
-  { value: "professionals", label: "Professionals" },
-  { value: "general", label: "General" },
-];
-
-const LECTURES_PAGE_SIZE = 20;
-
-const LectureCardSkeleton = () => (
-  <Card className="bg-card border-border/50">
-    <CardContent className="p-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex-1 space-y-3">
-          <div className="h-5 bg-muted rounded w-3/4 animate-pulse" />
-          <div className="h-4 bg-muted rounded w-24 animate-pulse" />
-          <div className="flex gap-4">
-            <div className="h-4 bg-muted rounded w-24 animate-pulse" />
-            <div className="h-4 bg-muted rounded w-16 animate-pulse" />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <div className="h-9 w-9 bg-muted rounded animate-pulse" />
-          <div className="h-9 w-20 bg-muted rounded animate-pulse" />
-          <div className="h-9 w-16 bg-muted rounded animate-pulse" />
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
 const Dashboard = () => {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
-  const isMobile = useIsMobile();
-  const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
+  const [lectures, setLectures] = useState<Lecture[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [newLectureTitle, setNewLectureTitle] = useState("");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
   
   // AI generation state
   const [createMode, setCreateMode] = useState<CreateMode>('choose');
   const [aiDescription, setAiDescription] = useState("");
-  const [targetAudience, setTargetAudience] = useState("general");
+  const [aiContentType, setAiContentType] = useState<"interactive" | "with_content">("interactive");
 
-  const queryClient = useQueryClient();
-  const isGlobalLecturesAdmin =
-    user?.email?.toLowerCase() === "droradi55@gmail.com";
+  // No auth redirect - dashboard is open to all users
 
-  const {
-    data,
-    isPending: lecturesPending,
-    isError: lecturesError,
-    error: lecturesQueryError,
-    refetch: refetchLectures,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
-  } = useInfiniteQuery({
-    queryKey: ["lectures", user?.id, isGlobalLecturesAdmin ? "all" : "own"],
-    queryFn: async ({ pageParam = 0 }) => {
-      if (!user?.id) return [];
-      const from = pageParam * LECTURES_PAGE_SIZE;
-      const to = from + LECTURES_PAGE_SIZE - 1;
-      let query = supabase
-        .from("lectures")
-        .select("id, title, status, lecture_code, created_at, updated_at, user_id")
-        .order("updated_at", { ascending: false })
-        .range(from, to);
-      if (!isGlobalLecturesAdmin) {
-        query = query.eq("user_id", user.id);
-      }
-      const { data: pageData, error } = await query;
-      if (error) {
-        console.error("[Dashboard] lectures query error:", error);
-        throw error;
-      }
-      return (pageData as unknown as Lecture[]) || [];
-    },
-    getNextPageParam: (lastPage, allPages) =>
-      lastPage.length >= LECTURES_PAGE_SIZE
-        ? allPages.length
-        : undefined,
-    initialPageParam: 0,
-    enabled: !!user?.id,
-    staleTime: 60 * 1000,
-    retry: 2,
-    retryDelay: (attempt) => Math.min(2500, 400 * (attempt + 1)),
-    refetchOnWindowFocus: true,
-  });
-
-  const lectures = useMemo(
-    () => data?.pages.flat() ?? [],
-    [data]
-  );
-
-  // Redirect mobile users to continue-on-desktop (building is desktop-only)
+  // Load lectures from database
   useEffect(() => {
-    if (isMobile) {
-      navigate("/continue-on-desktop", { replace: true });
-    }
-  }, [isMobile, navigate]);
+    const loadLectures = async () => {
+      if (!user) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('lectures')
+          .select('*')
+          .order('updated_at', { ascending: false });
 
-  useEffect(() => {
+        if (error) throw error;
+        setLectures((data as unknown as Lecture[]) || []);
+      } catch (error) {
+        console.error('Error loading lectures:', error);
+        toast.error('Failed to load lectures');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadLectures();
+
+    // Check for AI prompt from home page
     const aiPrompt = localStorage.getItem("clasly_ai_prompt");
     if (aiPrompt) {
       localStorage.removeItem("clasly_ai_prompt");
       setNewLectureTitle(aiPrompt);
       setIsCreateOpen(true);
     }
-  }, []);
+  }, [user]);
 
   const resetCreateDialog = () => {
     setCreateMode('choose');
@@ -195,10 +116,10 @@ const Dashboard = () => {
     setIsCreating(true);
     try {
       const newLecture = await createLecture(newLectureTitle, [createNewSlide('title', 0)]);
-      queryClient.invalidateQueries({ queryKey: ["lectures"] });
+      setLectures([newLecture as unknown as Lecture, ...lectures]);
       resetCreateDialog();
       setIsCreateOpen(false);
-      navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
+      navigate(`/editor/${newLecture.id}`);
     } catch (error) {
       console.error('Error creating lecture:', error);
       toast.error('Failed to create lecture');
@@ -216,29 +137,12 @@ const Dashboard = () => {
     // Navigate to the conversational builder with the prompt
     const params = new URLSearchParams({
       prompt: aiDescription,
-      audience: targetAudience,
+      contentType: aiContentType,
     });
     
     resetCreateDialog();
     setIsCreateOpen(false);
     navigate(`/builder?${params.toString()}`);
-  };
-
-  const handleDuplicateLecture = async (lectureId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (duplicatingId) return;
-    setDuplicatingId(lectureId);
-    try {
-      const newLecture = await duplicateLecture(lectureId);
-      queryClient.invalidateQueries({ queryKey: ["lectures"] });
-      toast.success("Lecture duplicated. Only content was copied; analytics are not included.");
-      navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
-    } catch (error) {
-      console.error("Duplicate failed:", error);
-      toast.error("Failed to duplicate lecture");
-    } finally {
-      setDuplicatingId(null);
-    }
   };
 
   const handleDeleteLecture = async (lectureId: string, e: React.MouseEvent) => {
@@ -250,11 +154,11 @@ const Dashboard = () => {
       const { error } = await supabase
         .from('lectures')
         .delete()
-        .eq('id', lectureId)
-        .eq('user_id', user!.id);
+        .eq('id', lectureId);
 
       if (error) throw error;
-      queryClient.invalidateQueries({ queryKey: ["lectures"] });
+      
+      setLectures(lectures.filter(l => l.id !== lectureId));
       toast.success('Lecture deleted');
     } catch (error) {
       console.error('Error deleting lecture:', error);
@@ -304,22 +208,6 @@ const Dashboard = () => {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <main className="pt-32 pb-20 px-4">
-          <div className="container mx-auto max-w-4xl text-center">
-            <h1 className="text-2xl font-display font-bold mb-4">
-              Please sign in to view your lectures
-            </h1>
-            <Button onClick={() => navigate("/")}>Go Home</Button>
-          </div>
-        </main>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -337,19 +225,7 @@ const Dashboard = () => {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
-              {user && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setAiSettingsOpen(true)}
-                  className="gap-2"
-                >
-                  <Settings2 className="w-4 h-4" />
-                  AI Profile
-                </Button>
-              )}
-              <Dialog open={isCreateOpen} onOpenChange={handleDialogOpenChange}>
+            <Dialog open={isCreateOpen} onOpenChange={handleDialogOpenChange}>
               <DialogTrigger asChild>
                 <Button variant="hero" size="lg">
                   <Plus className="w-5 h-5" />
@@ -466,22 +342,42 @@ const Dashboard = () => {
                           autoFocus
                         />
                       </div>
-                      <div>
-                        <Label className="text-sm font-medium mb-2 block">
-                          Target Audience
-                        </Label>
-                        <Select value={targetAudience} onValueChange={setTargetAudience}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {TARGET_AUDIENCES.map((audience) => (
-                              <SelectItem key={audience.value} value={audience.value}>
-                                {audience.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium block">Presentation style</Label>
+                        <RadioGroup
+                          value={aiContentType}
+                          onValueChange={(v) => setAiContentType(v as "interactive" | "with_content")}
+                          className="grid grid-cols-1 gap-2"
+                        >
+                          <Label
+                            htmlFor="dash-ai-interactive"
+                            className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
+                              aiContentType === "interactive"
+                                ? "border-primary bg-primary/5"
+                                : "border-border"
+                            }`}
+                          >
+                            <RadioGroupItem value="interactive" id="dash-ai-interactive" className="mt-0.5" />
+                            <div>
+                              <div className="font-medium">Interactive only</div>
+                              <div className="text-muted-foreground text-xs">Title + interactive slides</div>
+                            </div>
+                          </Label>
+                          <Label
+                            htmlFor="dash-ai-mixed"
+                            className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
+                              aiContentType === "with_content"
+                                ? "border-primary bg-primary/5"
+                                : "border-border"
+                            }`}
+                          >
+                            <RadioGroupItem value="with_content" id="dash-ai-mixed" className="mt-0.5" />
+                            <div>
+                              <div className="font-medium">Content + interactive</div>
+                              <div className="text-muted-foreground text-xs">Teaching slides and activities</div>
+                            </div>
+                          </Label>
+                        </RadioGroup>
                       </div>
                       <div className="flex gap-3">
                         <Button
@@ -506,16 +402,7 @@ const Dashboard = () => {
                 )}
               </DialogContent>
             </Dialog>
-            </div>
           </div>
-
-          {user && (
-            <AISettingsModal
-              open={aiSettingsOpen}
-              onOpenChange={setAiSettingsOpen}
-              userId={user.id}
-            />
-          )}
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
@@ -582,35 +469,6 @@ const Dashboard = () => {
           </div>
 
           {/* Lectures Grid */}
-          {user && lecturesPending ? (
-            <div className="grid gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <LectureCardSkeleton key={i} />
-              ))}
-            </div>
-          ) : !user ? (
-            <div className="text-center py-12 rounded-xl border border-dashed border-border bg-muted/30">
-              <Presentation className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">Sign in to see your lectures</h3>
-              <p className="text-muted-foreground mb-4">Your presentations will appear here once you sign in.</p>
-              <Button variant="hero" onClick={() => navigate("/")}>
-                Get Started
-              </Button>
-            </div>
-          ) : lecturesError ? (
-            <div className="text-center py-12 rounded-xl border border-destructive/30 bg-destructive/5">
-              <Presentation className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">Couldn&apos;t load lectures</h3>
-              <p className="text-muted-foreground mb-4 max-w-md mx-auto">
-                {lecturesQueryError instanceof Error
-                  ? lecturesQueryError.message
-                  : "Network or permission error. Check your connection or sign out and sign in again."}
-              </p>
-              <Button variant="hero" onClick={() => refetchLectures()}>
-                Retry
-              </Button>
-            </div>
-          ) : (
           <div className="grid gap-4">
             {filteredLectures.map((lecture) => (
               <Card 
@@ -639,9 +497,7 @@ const Dashboard = () => {
                         </span>
                         <span className="flex items-center gap-1">
                           <Presentation className="w-4 h-4" />
-                          {lecture.slides != null
-                            ? `${(lecture.slides as unknown as Slide[]).length} slides`
-                            : '—'}
+                          {(lecture.slides as unknown as Slide[])?.length || 0} slides
                         </span>
                         <span className="font-mono text-xs bg-muted px-2 py-0.5 rounded">
                           {lecture.lecture_code}
@@ -649,7 +505,7 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -657,32 +513,6 @@ const Dashboard = () => {
                         onClick={(e) => handleDeleteLecture(lecture.id, e)}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </Button>
-                      {lecture.status === "ended" && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/lecture/${lecture.id}/analytics`)}
-                        >
-                          <BarChart3 className="w-4 h-4" />
-                          Analytics
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => handleDuplicateLecture(lecture.id, e)}
-                        disabled={duplicatingId === lecture.id}
-                        title="Duplicate lecture (content only; analytics are not copied)"
-                      >
-                        {duplicatingId === lecture.id ? (
-                          <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin block" />
-                        ) : (
-                          <>
-                            <Copy className="w-4 h-4 sm:mr-1" />
-                            <span className="hidden sm:inline">Duplicate</span>
-                          </>
-                        )}
                       </Button>
                       <Button
                         variant="outline"
@@ -719,26 +549,7 @@ const Dashboard = () => {
                 </Button>
               </div>
             )}
-
-            {hasNextPage && filteredLectures.length > 0 && (
-              <div className="flex justify-center pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => fetchNextPage()}
-                  disabled={isFetchingNextPage}
-                  className="gap-2"
-                >
-                  {isFetchingNextPage ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Plus className="w-4 h-4" />
-                  )}
-                  Load more
-                </Button>
-              </div>
-            )}
           </div>
-          )}
         </div>
       </main>
     </div>

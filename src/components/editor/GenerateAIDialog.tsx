@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, AlertCircle, X, ImageIcon, Type } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,9 +23,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Slide, SlideContent } from "@/types/slides";
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
-import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
-import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
 
 interface GenerateAIDialogProps {
   open: boolean;
@@ -90,10 +87,11 @@ export default function GenerateAIDialog({
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
-  const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
-  const { hasAITokens, aiTokensRemaining } = useSubscriptionContext();
-  const creditsNeededContent = 1;
-  const creditsNeededImage = 1;
+
+  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
+  useEffect(() => {
+    if (open) setSessionId(crypto.randomUUID());
+  }, [open]);
 
   const getSlideTypeLabel = () => {
     const labels: Record<string, string> = {
@@ -127,10 +125,6 @@ export default function GenerateAIDialog({
       toast.error("Please describe what content you want");
       return;
     }
-    if (!hasAITokens(creditsNeededContent)) {
-      setShowOutOfCreditsModal(true);
-      return;
-    }
 
     setIsGenerating(true);
     setError(null);
@@ -141,37 +135,53 @@ export default function GenerateAIDialog({
     }, 1200);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
-      if (sessionError || !session) {
+      // Get authenticated session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         throw new Error("Please sign in to generate content");
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("generate-slides", {
-        body: {
-          singleSlide: {
-            type: slide.type,
-            prompt,
-            style,
-            includeImage: supportsImage && includeImage,
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-slides`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
           },
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+          body: JSON.stringify({
+            sessionId,
+            singleSlide: {
+              type: slide.type,
+              prompt,
+              style,
+              includeImage: supportsImage && includeImage,
+            },
+          }),
+        }
+      );
 
       clearInterval(messageInterval);
 
-      if (fnError) {
-        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
-        const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate content.");
-        throw new Error(msg);
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+        }
+        if (response.status === 402) {
+          throw new Error("AI credits exhausted. Please add credits to continue.");
+        }
+        throw new Error(errorData.error || "Failed to generate content");
       }
-      const resData = data as { error?: string; slides?: any[] };
-      if (resData?.error) throw new Error(resData.error);
-      if (!resData?.slides?.length || !resData.slides[0]) {
+
+      const data = await response.json();
+      
+      if (!data.slides || !data.slides[0]) {
         throw new Error("Invalid response from AI");
       }
 
-      const generatedSlide = resData.slides[0];
+      // Extract the content and design from the generated slide
+      const generatedSlide = data.slides[0];
       const generatedContent = generatedSlide.content;
       const generatedDesign = generatedSlide.design;
 
@@ -216,10 +226,6 @@ export default function GenerateAIDialog({
       toast.error("Please describe the image you want");
       return;
     }
-    if (!hasAITokens(creditsNeededImage)) {
-      setShowOutOfCreditsModal(true);
-      return;
-    }
 
     setIsGenerating(true);
     setError(null);
@@ -230,30 +236,50 @@ export default function GenerateAIDialog({
     }, 1500);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
-      if (sessionError || !session) {
+      // Get authenticated session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
         throw new Error("Please sign in to generate images");
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("generate-image", {
-        body: { prompt: imagePrompt, style: imageStyle },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            prompt: imagePrompt,
+            style: imageStyle,
+          }),
+        }
+      );
 
       clearInterval(messageInterval);
 
-      if (fnError) {
-        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
-        const msg = await getEdgeFunctionErrorMessage(fnError, "Failed to generate image.");
-        throw new Error(msg);
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait a moment and try again.");
+        }
+        if (response.status === 402) {
+          throw new Error("AI credits exhausted. Please add credits to continue.");
+        }
+        throw new Error(errorData.error || "Failed to generate image");
       }
-      const resData = data as { error?: string; imageUrl?: string };
-      if (resData?.error) throw new Error(resData.error);
-      if (!resData?.imageUrl) throw new Error("No image returned from AI");
 
+      const data = await response.json();
+      
+      if (!data.imageUrl) {
+        throw new Error("No image returned from AI");
+      }
+
+      // Update the slide content with the new image
       const updatedContent = {
         ...slide.content,
-        imageUrl: resData.imageUrl,
+        imageUrl: data.imageUrl,
       };
 
       toast.success("Image generated successfully!");
@@ -559,7 +585,6 @@ export default function GenerateAIDialog({
           )}
         </AnimatePresence>
       </DialogContent>
-      <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </Dialog>
   );
 }

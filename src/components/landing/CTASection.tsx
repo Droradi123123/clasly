@@ -1,21 +1,10 @@
-import { useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { Sparkles, ArrowRight } from "lucide-react";
+import { Sparkles, ArrowRight, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import AuthModal from "@/components/auth/AuthModal";
-import { webinarCTAContent } from "@/content/webinarLandingContent";
 
-interface CTASectionProps {
-  variant?: "default" | "webinar";
-}
-
-export default function CTASection({ variant = "default" }: CTASectionProps) {
-  const content = variant === "webinar" ? webinarCTAContent : null;
-  const title = content?.title ?? "Ready to Create Something Amazing?";
-  const description = content?.description ?? "Your first AI-generated presentation is just one prompt away. No signup required to try.";
+export default function CTASection() {
   const navigate = useNavigate();
-  const [showAuthModal, setShowAuthModal] = useState(false);
 
   return (
     <section className="py-20 px-4">
@@ -44,17 +33,18 @@ export default function CTASection({ variant = "default" }: CTASectionProps) {
             </motion.div>
 
             <h2 className="text-2xl md:text-4xl font-display font-bold text-primary-foreground mb-4">
-              {title}
+              Ready to Create Something Amazing?
             </h2>
             <p className="text-primary-foreground/80 mb-8 max-w-xl mx-auto">
-              {description}
+              Your first AI-generated presentation is just one prompt away. 
+              No signup required to try.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button 
                 size="xl" 
                 variant="glass"
-                onClick={() => setShowAuthModal(true)}
+                onClick={() => navigate("/dashboard")}
                 className="bg-white/90 text-primary hover:bg-white"
               >
                 <Sparkles className="w-5 h-5" />
@@ -62,7 +52,8 @@ export default function CTASection({ variant = "default" }: CTASectionProps) {
               </Button>
               <Button 
                 size="xl" 
-                className="bg-white/95 text-primary hover:bg-white border-2 border-white font-medium"
+                variant="outline"
+                className="border-white/30 text-primary-foreground hover:bg-white/10"
                 onClick={() => navigate("/pricing")}
               >
                 View Plans
@@ -72,10 +63,6 @@ export default function CTASection({ variant = "default" }: CTASectionProps) {
           </div>
         </motion.div>
       </div>
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)} 
-      />
     </section>
   );
 }

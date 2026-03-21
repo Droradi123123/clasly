@@ -1,10 +1,5 @@
 import { motion } from "framer-motion";
 import { Shield, Zap, Users, Lock } from "lucide-react";
-import { webinarTrustContent } from "@/content/webinarLandingContent";
-
-interface TrustSectionProps {
-  variant?: "default" | "webinar";
-}
 
 const trustPoints = [
   {
@@ -29,17 +24,12 @@ const trustPoints = [
   },
 ];
 
-const TRUST_ICONS = [Shield, Zap, Users, Lock];
-
-export default function TrustSection({ variant = "default" }: TrustSectionProps) {
-  const points = variant === "webinar"
-    ? webinarTrustContent.points.map((p, i) => ({ ...p, icon: TRUST_ICONS[i] }))
-    : trustPoints;
+export default function TrustSection() {
   return (
     <section className="py-16 px-4 border-t border-border/50">
       <div className="container mx-auto max-w-6xl">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {points.map((point, index) => (
+          {trustPoints.map((point, index) => (
             <motion.div
               key={point.title}
               initial={{ opacity: 0, y: 20 }}

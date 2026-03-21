@@ -1,7 +1,6 @@
-import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Users, Check } from "lucide-react";
-import { SlideWrapper, ActivityFooter, CleanBarResults } from "./index";
+import { Plus, Trash2, Users } from "lucide-react";
+import { SlideWrapper, ActivityFooter } from "./index";
 import { Slide, PollSlideContent } from "@/types/slides";
 import { Button } from "@/components/ui/button";
 import { ThemeId, getTheme } from "@/types/themes";
@@ -13,8 +12,7 @@ import {
   getShadowClasses,
 } from "@/types/designStyles";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
-import { FormattedText } from "@/components/editor/FormattedText";
-import { useSlideLayout } from "@/contexts/SlideLayoutContext";
+import { inferDirectionFromSlide } from "@/lib/textDirection";
 
 interface PollSlideProps {
   slide: Slide;
@@ -26,9 +24,6 @@ interface PollSlideProps {
   themeId?: ThemeId;
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
-  /** For poll_quiz: show which option is correct */
-  showCorrectAnswer?: boolean;
-  correctAnswerIndex?: number;
 }
 
 export function PollSlide({
@@ -41,17 +36,19 @@ export function PollSlide({
   themeId = 'neon-cyber',
   designStyleId = 'dynamic',
   hideFooter = false,
-  showCorrectAnswer = false,
-  correctAnswerIndex,
 }: PollSlideProps) {
-  const content = slide.content as PollSlideContent & { correctAnswer?: number };
+  const content = slide.content as PollSlideContent;
+  const options =
+    Array.isArray(content.options) && content.options.length > 0
+      ? content.options
+      : ["Option 1", "Option 2", "Option 3", "Option 4"];
+  const question = typeof content.question === "string" ? content.question : "";
   const theme = getTheme(themeId);
   const designStyle = getDesignStyle(designStyleId);
   const styleConfig = designStyle.config;
   const animations = getAnimationVariants(designStyle);
 
-  // Use live results if provided, otherwise use zeros
-  const results = liveResults || content.options.map(() => 0);
+  const results = liveResults || options.map(() => 0);
   const hasResults = totalResponses > 0;
 
   // Animation entrance config based on style
@@ -65,45 +62,37 @@ export function PollSlide({
     };
   };
 
-  const handleQuestionChange = (question: string) => {
-    onUpdate?.({ ...content, question });
+  const handleQuestionChange = (next: string) => {
+    onUpdate?.({ ...content, question: next });
   };
 
   const handleOptionChange = (index: number, value: string) => {
-    const newOptions = [...content.options];
+    const newOptions = [...options];
     newOptions[index] = value;
     onUpdate?.({ ...content, options: newOptions });
   };
 
-  const handleSetCorrectAnswer = (index: number) => {
-    if (slide.type === 'poll_quiz' && onUpdate) {
-      onUpdate?.({ ...content, correctAnswer: index });
-    }
-  };
-
   const addOption = () => {
-    if (content.options.length < 6) {
-      onUpdate?.({ ...content, options: [...content.options, `Option ${content.options.length + 1}`] });
+    if (options.length < 6) {
+      onUpdate?.({ ...content, options: [...options, `Option ${options.length + 1}`] });
     }
   };
 
   const removeOption = (index: number) => {
-    if (content.options.length > 2) {
-      const newOptions = content.options.filter((_, i) => i !== index);
+    if (options.length > 2) {
+      const newOptions = options.filter((_, i) => i !== index);
       onUpdate?.({ ...content, options: newOptions });
     }
   };
 
-  const isCompact = designStyleId === 'compact';
-  const isRankedBars = slide.design?.pollVariant === 'rankedBars';
-  const correctIdx = correctAnswerIndex ?? content.correctAnswer;
-  const showCorrect = showCorrectAnswer && typeof correctIdx === 'number' && correctIdx >= 0;
-
   // Get text color from slide design
   const textColor = slide.design?.textColor || "#ffffff";
 
-  // Use stable direction/textAlign - no inference for visual stability
-  const { direction, textAlign } = useSlideLayout();
+  // Get text alignment from slide design
+  const textAlign = slide.design?.textAlign || "center";
+
+  // Determine text direction (explicit toggle wins)
+  const direction = slide.design?.direction || inferDirectionFromSlide(slide);
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
@@ -113,7 +102,7 @@ export function PollSlide({
           {/* Question */}
           {isEditing ? (
             <AutoResizeTextarea
-              value={content.question}
+              value={question}
               onChange={(e) => handleQuestionChange(e.target.value)}
               className="text-xl md:text-2xl font-semibold bg-transparent border-0 outline-none w-full placeholder:opacity-40"
               style={{ color: textColor, textAlign }}
@@ -121,71 +110,32 @@ export function PollSlide({
               minRows={1}
             />
           ) : (
-            <h2
-              className="text-xl md:text-2xl font-semibold break-words"
-              style={{ color: textColor, textAlign }}
-            >
-              <FormattedText>{String(content.question || "")}</FormattedText>
-            </h2>
+            <div className="space-y-1">
+              <h2
+                className="text-xl md:text-2xl font-semibold break-words"
+                style={{ color: textColor, textAlign }}
+              >
+                {question}
+              </h2>
+              {hasResults && (
+                <p
+                  className="text-sm text-white/60 tabular-nums"
+                  style={{ textAlign }}
+                >
+                  {totalResponses} vote{totalResponses === 1 ? "" : "s"} total
+                </p>
+              )}
+            </div>
           )}
         </div>
 
-        {/* Clean bar results view - when resultVisualization is clean_bars */}
-        {!isEditing && showResults && slide.design?.resultVisualization === 'clean_bars' ? (
-          <div className="flex-1 flex items-center justify-center min-h-0 overflow-y-auto py-4">
-            <CleanBarResults
-              options={content.options}
-              results={results}
-              totalResponses={totalResponses}
-              textColor={textColor}
-              correctIndex={showCorrect ? correctIdx : undefined}
-            />
-          </div>
-        ) : !isEditing && showResults && isRankedBars ? (
-        /* rankedBars: sort by popularity (most first), bar + bold % at end, smooth reorder animation */
-        <div className="flex-1 flex flex-col gap-3 min-h-0 overflow-y-auto py-2">
-          {content.options
-            .map((option, i) => ({ option, count: results[i] || 0, index: i }))
-            .sort((a, b) => b.count - a.count)
-            .map(({ option, count, index }) => {
-              const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-              const barColors = ['bg-[#F97066]', 'bg-[#4ADE9F]', 'bg-[#67D4E5]', 'bg-[#9B87F5]', 'bg-[#FACC15]', 'bg-[#F472B6]'];
-              return (
-                <motion.div
-                  key={index}
-                  layout
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="flex items-center gap-3"
-                >
-                  <span className="font-medium text-sm md:text-base w-32 md:w-40 shrink-0 truncate" style={{ color: textColor }}>
-                    <FormattedText>{String(option || "")}</FormattedText>
-                  </span>
-                  <div className="flex-1 min-w-0 h-8 md:h-10 rounded-lg bg-white/20 overflow-hidden flex items-center">
-                    <motion.div
-                      layout
-                      className={`h-full rounded-lg ${barColors[index % barColors.length]}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${percentage}%` }}
-                      transition={{ type: 'spring', stiffness: 150, damping: 25 }}
-                    />
-                  </div>
-                  <span className="text-lg md:text-xl font-bold shrink-0 min-w-[3ch]" style={{ color: textColor }}>
-                    {percentage}%
-                  </span>
-                </motion.div>
-              );
-            })}
-        </div>
-        ) : (
-        <>
-        {/* Options - vertical stack (default) or horizontal row (compact) */}
-        <div className={`flex-1 flex min-h-0 overflow-y-auto ${isCompact ? 'flex-row flex-wrap justify-center gap-3 md:gap-4' : 'flex-col gap-2'}`}>
-          {content.options.map((option, index) => {
+        {/* Options List - Stacked Label + Bar Style - More compact */}
+        <div className="flex-1 flex flex-col gap-2 min-h-0 overflow-y-auto">
+          {options.map((option, index) => {
             const count = results[index] || 0;
             const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-            const barWidth = totalResponses > 0 ? percentage : (hasResults ? 0 : 25 + index * 15);
+            const barWidth =
+              totalResponses > 0 ? percentage : hasResults ? 0 : 25 + index * 15;
             const entranceAnim = getEntranceAnimation(index);
             
             // Progress bar colors
@@ -201,39 +151,24 @@ export function PollSlide({
             return (
               <motion.div 
                 key={index} 
-                className={`relative group ${isCompact ? 'min-w-[140px] flex-1 max-w-[220px]' : ''}`}
+                className="relative group"
                 initial={entranceAnim.initial}
                 animate={entranceAnim.animate}
                 transition={entranceAnim.transition}
               >
                 {/* Label row with percentage */}
-                <div className="flex items-center justify-between gap-2 mb-1 min-w-0 overflow-hidden">
+                <div className="flex items-center justify-between mb-1">
                   {isEditing ? (
-                    <div className="flex items-start gap-2 flex-1 min-w-0 overflow-hidden">
-                      {slide.type === 'poll_quiz' && (
-                        <button
-                          type="button"
-                          onClick={() => handleSetCorrectAnswer(index)}
-                          className={cn(
-                            "shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors",
-                            correctIdx === index
-                              ? "bg-green-500/40 text-green-300 ring-1 ring-green-400/50"
-                              : "bg-white/10 text-white/50 hover:bg-white/20 hover:text-white/70"
-                          )}
-                          title={correctIdx === index ? "Correct answer" : "Set as correct answer"}
-                        >
-                          <Check className="w-4 h-4" />
-                        </button>
-                      )}
+                    <div className="flex items-start gap-2 flex-1 min-w-0">
                       <AutoResizeTextarea
                         value={option}
                         onChange={(e) => handleOptionChange(index, e.target.value)}
-                        className="bg-transparent font-medium outline-none text-sm md:text-base flex-1 min-w-0 break-words"
+                        className="bg-transparent font-medium outline-none text-sm md:text-base flex-1"
                         style={{ color: textColor, textAlign }}
                         placeholder={`Option ${index + 1}`}
                         minRows={1}
                       />
-                      {content.options.length > 2 && (
+                      {options.length > 2 && (
                         <button
                           onClick={() => removeOption(index)}
                           className="p-1 rounded-md opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-opacity"
@@ -244,37 +179,35 @@ export function PollSlide({
                       )}
                     </div>
                   ) : (
-                    <span className="font-medium text-sm md:text-base break-words min-w-0 flex-1" style={{ color: textColor }}>
-                      <FormattedText>{String(option || "")}</FormattedText>
+                    <span className="font-medium text-sm md:text-base" style={{ color: textColor }}>
+                      {option}
                     </span>
                   )}
                   
-                  {/* Count + Percentage + Correct badge - only in presentation mode */}
-                  {!isEditing && (
-                    <div className="flex items-center gap-2 shrink-0" style={{ marginInlineStart: '1rem' }}>
-                      {showCorrect && index === correctIdx && (
-                        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/30 text-green-300 text-xs font-semibold">
-                          <Check className="w-3 h-3" /> Correct
-                        </span>
-                      )}
-                      <AnimatePresence mode="wait">
-                        <motion.span
-                          key={`${count}-${percentage}`}
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          className="text-sm md:text-base font-bold"
-                          style={{ color: textColor }}
-                        >
-                          {hasResults ? `${count} (${percentage}%)` : '0%'}
-                        </motion.span>
-                      </AnimatePresence>
-                    </div>
+                  {/* Count + percentage - presentation */}
+                  {!isEditing && hasResults && (
+                    <AnimatePresence mode="wait">
+                      <motion.span
+                        key={`${count}-${percentage}`}
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-sm md:text-base font-bold tabular-nums shrink-0"
+                        style={{ color: textColor, marginInlineStart: "1rem" }}
+                      >
+                        <span className="opacity-90">{count}</span>
+                        <span className="mx-1 opacity-50">·</span>
+                        <span>{percentage}%</span>
+                      </motion.span>
+                    </AnimatePresence>
+                  )}
+                  {!isEditing && !hasResults && (
+                    <span className="text-sm opacity-40" style={{ color: textColor }}>
+                      —
+                    </span>
                   )}
                 </div>
                 
-                {/* Progress bar track - smaller height */}
                 <div className="relative h-6 md:h-7 rounded-md bg-white/20 overflow-hidden">
-                  {/* Filled bar - respect RTL direction */}
                   <motion.div
                     className={`absolute inset-y-0 rounded-md ${barColors[index % barColors.length]}`}
                     style={{ 
@@ -296,7 +229,7 @@ export function PollSlide({
         </div>
 
         {/* Add option button - only in editor */}
-        {isEditing && content.options.length < 6 && (
+        {isEditing && options.length < 6 && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -316,7 +249,7 @@ export function PollSlide({
         )}
 
         {/* Zero-state waiting indicator - only in presentation mode with no results */}
-        {!isEditing && !hasResults && !(showResults && (slide.design?.resultVisualization === 'clean_bars' || isRankedBars)) && (
+        {!isEditing && !hasResults && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -344,8 +277,6 @@ export function PollSlide({
               </div>
             </motion.div>
           </motion.div>
-        )}
-        </>
         )}
 
         {/* Footer - based on style config */}

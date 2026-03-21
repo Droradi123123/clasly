@@ -23,11 +23,11 @@ export interface SubscriptionHelpers {
   isPro: boolean;
   canUse: (feature: FeatureKey) => boolean;
   hasAITokens: (amount?: number) => boolean;
+  hasVibeCredits: (amount?: number) => boolean;
   maxSlides: number | null;
   aiTokensRemaining: number;
+  vibeCreditsRemaining: number;
   planName: string;
-  /** True while subscription/credits are loading - use to avoid showing "0 remaining" during fetch */
-  isSubLoading: boolean;
 }
 
 export type FeatureKey =
@@ -44,7 +44,7 @@ export type FeatureKey =
 // Feature matrix - what each plan unlocks
 export const PLAN_FEATURES: Record<string, FeatureKey[]> = {
   Free: [],
-  Standard: ["import", "quiz_slides", "timeline_slides", "agree_disagree_slides"],
+  Standard: ["quiz_slides", "timeline_slides", "agree_disagree_slides"],
   Pro: [
     "import",
     "premium_themes",
@@ -58,24 +58,37 @@ export const PLAN_FEATURES: Record<string, FeatureKey[]> = {
   ],
 };
 
-// Slide types locked for Free plan (2-3 best per category)
-export const PREMIUM_SLIDE_TYPES: string[] = [
-  "split_content", "timeline", "bar_chart",  // content
-  "poll", "wordcloud", "agree_spectrum",      // interactive
-  "quiz", "ranking", "guess_number",          // quiz
-];
-
-// Credit packs for top-up purchases – AI credits only (single credit type)
+// Credit packs for top-up purchases
 export interface CreditPack {
   id: string;
   name: string;
   ai_tokens: number;
+  vibe_credits: number;
   price_usd: number;
   popular?: boolean;
 }
 
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: "small", name: "Starter Pack", ai_tokens: 100, price_usd: 3 },
-  { id: "medium", name: "Growth Pack", ai_tokens: 500, price_usd: 12, popular: true },
-  { id: "large", name: "Power Pack", ai_tokens: 2000, price_usd: 40 },
+  {
+    id: "small",
+    name: "Starter Pack",
+    ai_tokens: 100,
+    vibe_credits: 50,
+    price_usd: 3,
+  },
+  {
+    id: "medium",
+    name: "Growth Pack",
+    ai_tokens: 500,
+    vibe_credits: 250,
+    price_usd: 12,
+    popular: true,
+  },
+  {
+    id: "large",
+    name: "Power Pack",
+    ai_tokens: 2000,
+    vibe_credits: 1000,
+    price_usd: 40,
+  },
 ];

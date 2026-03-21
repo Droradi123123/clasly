@@ -15,21 +15,19 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "Missing authorization header" };
 
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return { user: null, error: "Missing token" };
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!supabaseUrl || !supabaseAnonKey) return { user: null, error: "Server configuration error" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
-  if (error || !user) {
-    return { user: null, error: error?.message || "Invalid or expired authentication token" };
-  }
+  } = await supabase.auth.getUser();
+  if (error || !user) return { user: null, error: "Invalid or expired authentication token" };
   return { user, error: null };
 }
 
@@ -72,7 +70,6 @@ interface SlideDesign {
   fontFamily?: string;
   fontSize?: string;
   textAlign?: "left" | "center" | "right";
-  direction?: "ltr" | "rtl";
 }
 
 interface Slide {
@@ -95,96 +92,21 @@ function detectLanguage(text: string): "he" | "en" {
   return hebrewChars > latinChars * 0.3 ? "he" : "en";
 }
 
-/** Infer direction from slide content (Hebrew → rtl). Matches frontend designDefaults logic. */
-function isSlideContentHebrew(slide: Slide): boolean {
-  const c = slide.content as Record<string, unknown> | undefined;
-  if (!c) return false;
-  const texts: string[] = [];
-  if (typeof c.title === "string") texts.push(c.title);
-  if (typeof c.subtitle === "string") texts.push(c.subtitle);
-  if (typeof c.text === "string") texts.push(c.text);
-  if (typeof c.question === "string") texts.push(c.question);
-  if (Array.isArray(c.options)) c.options.forEach((o: unknown) => texts.push(String(o)));
-  if (Array.isArray(c.items)) c.items.forEach((i: unknown) => texts.push(String(i)));
-  if (Array.isArray(c.bulletPoints)) c.bulletPoints.forEach((p: unknown) => texts.push(String(p)));
-  const pts = c.points as { title?: string; description?: string }[] | undefined;
-  if (Array.isArray(pts)) pts.forEach((p) => { if (p?.title) texts.push(p.title); if (p?.description) texts.push(p.description); });
-  const combined = texts.join(" ");
-  const hebrew = (combined.match(/[\u0590-\u05FF]/g) || []).length;
-  const latin = (combined.match(/[a-zA-Z]/g) || []).length;
-  return hebrew > latin;
-}
-
-function ensureDesignDefaults(slide: Slide): Slide {
-  const design = slide.design || {};
-  const direction = (design.direction as "ltr" | "rtl") ?? (isSlideContentHebrew(slide) ? "rtl" : "ltr");
-  const textAlign = (design.textAlign as "left" | "center" | "right") ?? (direction === "rtl" ? "right" : "center");
-  if (design.textAlign === textAlign && design.direction === direction) return slide;
-  return { ...slide, design: { ...design, textAlign, direction } };
-}
-
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-}
-
-/** Detect when user asks to change something IN the image (not just add a new image). */
-function shouldIncludeImageForVision(message: string): boolean {
-  const m = message.toLowerCase();
-  const hebrew = message;
-  const patterns = [
-    /change\s+(the|this|that)\s+(man|person|woman|guy|image|photo|picture)/i,
-    /שנה\s+(את\s+)?(האיש|האישה|הבחור|התמונה|הדמות)/,
-    /תחליף\s+(את\s+)?(האיש|האישה|התמונה)/,
-    /החלף\s+(את\s+)?(האיש|האישה|התמונה)/,
-    /in\s+the\s+(image|picture|photo)/i,
-    /בתמונה|בתמונה\s+הזו|בתמונה\s+הנוכחית/,
-    /(old|young)\s+(man|woman|person)/i,
-    /איש\s+זקן|אישה\s+זקנה|איש\s+צעיר|אישה\s+צעירה/,
-  ];
-  return patterns.some((p) => p.test(m) || p.test(hebrew));
-}
-
-/** Get base64 + mime from slide image if it's a data URL. */
-function getSlideImageBase64(slide: Slide): { data: string; mimeType: string } | null {
-  const imgUrl = slide.content?.imageUrl || slide.design?.overlayImageUrl;
-  if (!imgUrl || typeof imgUrl !== "string" || !imgUrl.startsWith("data:")) return null;
-  const match = imgUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) return null;
-  return { mimeType: match[1] || "image/png", data: match[2] };
-}
-
-/** Slides with images to include for Vision when message suggests image-internal edits. */
-function getSlidesWithImagesForVision(
-  slides: Slide[],
-  message: string
-): { slideIndex: number; base64: string; mimeType: string }[] {
-  if (!shouldIncludeImageForVision(message)) return [];
-
-  const explicitSlides = extractExplicitSlideNumbers(message);
-  const result: { slideIndex: number; base64: string; mimeType: string }[] = [];
-
-  for (let i = 0; i < slides.length; i++) {
-    const slide = slides[i];
-    const img = getSlideImageBase64(slide);
-    if (!img) continue;
-    if (explicitSlides.length > 0 && !explicitSlides.includes(i + 1)) continue;
-    result.push({ slideIndex: i, base64: img.data, mimeType: img.mimeType });
-    if (result.length >= 2) break; // Limit to 2 images to control token usage
-  }
-
-  return result;
 }
 
 function stripBase64ForContext(slides: Slide[]): any[] {
   return slides.map((s, i) => {
     const c = s.content;
     const title = c.title || c.question || c.statement || "";
-    const hasImg = !!(c.imageUrl || s.design?.overlayImageUrl);
+    const hasImg =
+      !!(c.imageUrl && !c.imageUrl.startsWith("data:")) ||
+      !!(s.design?.overlayImageUrl && !s.design.overlayImageUrl.startsWith("data:"));
 
     // Build a concise but complete representation
     const summary: any = {
       index: i,
-      slideNumber: i + 1, // Human-readable: "slide 5" = slideNumber 5, slideIndex 4
       type: s.type,
       hasImage: hasImg,
     };
@@ -194,14 +116,11 @@ function stripBase64ForContext(slides: Slide[]): any[] {
       case "title":
         summary.title = c.title || "";
         summary.subtitle = c.subtitle || "";
-        summary.imageDescription = (c as any).imagePrompt || "";
         break;
       case "split_content":
         summary.title = c.title || "";
         summary.bulletPoints = c.bulletPoints || (c.text ? c.text.split("\n") : []);
-        summary.text = (c.text || "").slice(0, 400);
-        summary.hasImage = !!c.imageUrl || !!s.design?.overlayImageUrl;
-        summary.imageDescription = (c as any).imagePrompt || "";
+        summary.hasImage = !!c.imageUrl;
         break;
       case "content":
         summary.title = c.title || "";
@@ -263,9 +182,8 @@ function stripBase64ForContext(slides: Slide[]): any[] {
         if (c.text) summary.text = c.text.slice(0, 200);
     }
 
-    // Include design info and image context for edits
+    // Include design info
     summary.gradient = s.design?.gradientPreset || "unknown";
-    if (hasImg && (c as any).imagePrompt) summary.imageDescription = (c as any).imagePrompt;
 
     return summary;
   });
@@ -276,9 +194,9 @@ function stripBase64ForContext(slides: Slide[]): any[] {
 // =============================================================================
 
 async function generateImage(prompt: string): Promise<string | null> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
   if (!apiKey) {
-    console.error("GEMINI_API_KEY not configured for image generation");
+    console.error("LOVABLE_API_KEY not configured for image generation");
     return null;
   }
 
@@ -292,14 +210,13 @@ STRICT: No text, no typography, no labels, no watermarks.`;
 
   try {
     console.log(`🖼️ Generating image: "${prompt.slice(0, 60)}..."`);
-    const model = "gemini-2.5-flash-image";
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-    const res = await fetch(apiUrl, {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
+        model: "google/gemini-2.5-flash-image",
+        messages: [{ role: "user", content: enhancedPrompt }],
+        modalities: ["image", "text"],
       }),
     });
 
@@ -309,16 +226,10 @@ STRICT: No text, no typography, no labels, no watermarks.`;
     }
 
     const data = await res.json();
-    const partWithImage = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) || null;
-    const inlineData = partWithImage?.inlineData;
-    if (inlineData?.data) {
-      const mimeType = inlineData.mimeType || "image/png";
-      const url = `data:${mimeType};base64,${inlineData.data}`;
-      console.log("✅ Image generated successfully");
-      return url;
-    }
-    console.log("⚠️ No image data in Gemini response");
-    return null;
+    const url = data.choices?.[0]?.message?.images?.[0]?.image_url?.url || null;
+    if (url) console.log("✅ Image generated successfully");
+    else console.log("⚠️ No image URL in response");
+    return url;
   } catch (e) {
     console.error("Image generation exception:", e);
     return null;
@@ -329,20 +240,11 @@ STRICT: No text, no typography, no labels, no watermarks.`;
 // AI SYSTEM PROMPT - Clear, aligned with tool schema
 // =============================================================================
 
-function buildSystemPrompt(
-  slides: Slide[],
-  currentSlideIndex: number,
-  language: "he" | "en",
-  userAiContext?: string,
-  originalPrompt?: string,
-  hasVisionImages?: boolean
-): string {
+function buildSystemPrompt(slides: Slide[], currentSlideIndex: number, language: "he" | "en"): string {
   const isHe = language === "he";
   const slidesData = stripBase64ForContext(slides);
 
   return `You are a presentation editing assistant. You receive user requests and return structured commands to modify their presentation.
-${userAiContext ? `\n## INSTRUCTOR CONTEXT (use to personalize edits)\n${userAiContext}\n` : ""}
-${originalPrompt ? `\n## PRESENTATION CONTEXT\nThis presentation was created from: "${originalPrompt}"\nUse this to understand topic, tone, and theme when making edits. When the user refers to "the presentation about X" or similar, this is the topic.\n` : ""}
 
 ## CURRENT PRESENTATION STATE
 Total slides: ${slides.length}
@@ -393,9 +295,7 @@ Example: Change timeline events on slide 4:
 
 ### 2. insert_slide - Add a new slide
 Required: "slideType" and "content" object with appropriate fields for that type.
-DEFAULT: when adding new slides without explicit position, use slideIndex: slides.length (append at end). Only use a specific slideIndex when user explicitly says "after slide X".
 Supported types: title, split_content, content, bullet_points, timeline, bar_chart, quiz, poll, wordcloud, scale, yesno, ranking, guess_number, sentiment_meter
-When adding multiple slides (e.g. 4 quiz slides), add them at the end: slideIndex = slides.length for first, slides.length+1 for second, etc.
 
 Example: Add a poll after slide 3:
 {"action":"insert_slide","slideIndex":3,"slideType":"poll","content":{"question":"Do you agree?","options":["Strongly agree","Agree","Disagree","Strongly disagree"]}}
@@ -410,41 +310,19 @@ Example: Add a quiz after slide 5:
 {"action":"duplicate_slide","slideIndex":1,"targetIndex":3}
 
 ### 5. reorder_slide - Move a slide
-targetIndex is REQUIRED. To move a slide to the end: use targetIndex: slides.length - 1.
-Example: {"action":"reorder_slide","slideIndex":1,"targetIndex":4}
-When user asks to move MULTIPLE slides (e.g. "move the 4 quiz slides to the end"), return multiple reorder_slide commands. Process from the FIRST slide: e.g. to move slides 0,1,2,3 to end of 8 slides, return: reorder 0→7, 0→6, 0→5, 0→4 (each time move the first of the remaining to end).
-
-### COMPOSITE REQUESTS - One message, multiple actions
-Parse the user message for multiple distinct requests (e.g. "slide X do A, slide Y do B, create slide about Z"). Return one command per distinct request. You can return up to 10 commands.
-Example - User: "בשקופית 2 שנה את התמונה, בשקופית 4 הוסף תמונה של כריש מימין, וצור לי שקופית חדשה על מלחמת האזרחים"
-→ Return 3 commands: update_slide slideIndex 1 (imagePrompt), update_slide slideIndex 3 (imagePrompt + imagePosition), insert_slide slideIndex slides.length (content about Civil War).
-
-## SLIDE NUMBER MAPPING (CRITICAL)
-- Each slide has "slideNumber" (1-based) and "index" (0-based). User says "slide 5" / "שקופית 5" / "בשקופית מספר 5" → Find slide with slideNumber: 5 → use slideIndex: 4 (slideIndex = slideNumber - 1).
-- NEVER guess. If user says "slide 5", slideIndex MUST be 4. If user says "שקופית 6", slideIndex MUST be 5.
-- In responseMessage: When confirming, use the SAME slide number the user used (e.g. "שקופית 5" not "שקופית 6", "slide 5" not "slide 6").
+{"action":"reorder_slide","slideIndex":1,"targetIndex":4}
 
 ## CRITICAL RULES
-1. slideIndex is ALWAYS 0-based. slideNumber in the slide list is 1-based. slideIndex = slideNumber - 1.
+1. slideIndex is ALWAYS 0-based. When user says "slide 1", use slideIndex: 0. "slide 3" = slideIndex: 2.
 2. For update_slide, put content fields DIRECTLY on the command object (title, question, etc.) - NOT nested inside another object.
 3. For imagePrompt: describe the visual scene in detail. NEVER include text/words/letters in the description.
-4. Parse multiple distinct requests in one message. Return one command per request. You can return up to 10 commands for composite requests.
+4. You can return up to 5 commands to handle complex requests.
 5. ${isHe ? "Write responseMessage in Hebrew. Use natural, friendly Hebrew." : "Write responseMessage in English."}
 6. Match the language of NEW content to the presentation language (${isHe ? "Hebrew" : "English"}).
 7. When user says "this slide" or "current slide" or "הזו" or "הנוכחית", use slideIndex: ${currentSlideIndex}.
 8. For "last slide" or "אחרונה", use slideIndex: ${slides.length - 1}.
 9. When generating images, be specific and vivid in the imagePrompt description.
-10. NEVER return empty commands array unless the user is just chatting/asking a question.
-11. IMAGE CONTEXT: Each slide summary includes title, text/bulletPoints, and imageDescription (the original image prompt if stored). When the user asks to change an image on a specific slide (e.g. "בשקופית 2 אני רוצה שהבחור שמציץ יהיה יותר עבריין"), FIRST identify what that slide shows from its title, text, bulletPoints, and imageDescription. Then create imagePrompt that KEEPS the same scene but APPLIES the user's modification (e.g. same person peeking at ATM, but looking more sinister/criminal). Never invent a different scene.
-12. When user says "slide 2" or "שקופית 2" or "the second slide", use slideIndex: 1 (0-based). Match visual references (person, guy, image) to slide content.
-13. CONTEXT: When user says "those 4 slides" or "the slides you just added" or "move them to the end", look at the slide list. Recently added slides are often consecutive and of the same type (e.g. 4 quiz slides). Identify them by index from the current slides array and return reorder_slide for each, moving from smallest index first to end (targetIndex: slides.length-1, then slides.length-2, etc.).
-14. IMAGE CHANGES: When user asks to change an image on a slide, use the slide's imageDescription (or title/text) to understand the current scene, then create imagePrompt that keeps the scene but applies the modification.
-15. CONVERSATION CONTEXT: Use the full conversation history to understand references: "the slide you just added", "the presentation about X", "change the old man to young man" (referring to a person in an image from a prior message). When user refers to "the image" or "the person" without a slide number, infer from recent messages and slide content.
-16. REASONING SCOPE (CRITICAL): The "reasoning" field (shown as "What I understood") must describe ONLY what you understood from the CURRENT user message (the latest request) and what you will do for THIS request. Do NOT include tasks or interpretations from previous messages. Conversation history is for resolving references (e.g. "the slide you just added")—not for re-stating or re-executing old requests. If the user only says "התמונה בשקף 3 לא עובדת", your reasoning must mention only fixing the image on slide 3.
-17. CONCISE CONTENT: For quiz, poll, scale, yesno, ranking, guess_number, wordcloud - keep options and answers SHORT (1-2 lines max). Avoid long paragraphs. For content slides - keep text concise. Prefer brief bullet points over long paragraphs.
-18. PRESENTATION SCOPE: This chat is for ONE presentation only. Never reference or mix content from other presentations.
-${hasVisionImages ? `
-19. VISION - ACTUAL IMAGES INCLUDED: We have included the actual slide image(s) below. You MUST analyze the image to understand its current content (people, objects, composition, style). Then create imagePrompt that KEEPS the same scene/structure but APPLIES the user's modification (e.g. same composition, but "old man" → "young man", or change a specific element). Describe what you see and produce the modified imagePrompt accordingly.` : ""}`;
+10. NEVER return empty commands array unless the user is just chatting/asking a question.`;
 }
 
 // =============================================================================
@@ -456,21 +334,17 @@ function buildToolDefinition() {
     type: "function",
     function: {
       name: "edit_presentation",
-      description: "Execute presentation edit commands. Return 1-10 commands based on user request. For composite requests (multiple actions in one message), return one command per distinct request.",
+      description: "Execute presentation edit commands. Return 1-5 commands based on user request.",
       parameters: {
         type: "object",
         properties: {
-          reasoning: {
-            type: "string",
-            description: "1-2 sentences: what you understood from the request and what you will do. Show reasoning before the result.",
-          },
           responseMessage: {
             type: "string",
             description: "Friendly message confirming what was done, in the user's language",
           },
           commands: {
             type: "array",
-            maxItems: 10,
+            maxItems: 5,
             items: {
               type: "object",
               properties: {
@@ -580,94 +454,33 @@ function buildToolDefinition() {
 // AI CALL WITH ROBUST PARSING
 // =============================================================================
 
-interface HistoryTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-interface VisionImage {
-  slideIndex: number;
-  base64: string;
-  mimeType: string;
-}
-
 async function callAI(
   message: string,
   slides: Slide[],
   currentSlideIndex: number,
   language: "he" | "en",
-  conversationHistory: HistoryTurn[] = [],
-  userAiContext?: string,
-  originalPrompt?: string,
-  visionImages: VisionImage[] = []
-): Promise<{ responseMessage: string; commands: any[]; reasoning?: string }> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+): Promise<{ responseMessage: string; commands: any[] }> {
+  const apiKey = Deno.env.get("LOVABLE_API_KEY");
+  if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
 
-  const systemPrompt = buildSystemPrompt(slides, currentSlideIndex, language, userAiContext, originalPrompt, visionImages.length > 0);
+  const systemPrompt = buildSystemPrompt(slides, currentSlideIndex, language);
   const isHe = language === "he";
 
-  console.log(`🤖 Calling AI with message: "${message.slice(0, 100)}..." | History: ${conversationHistory.length} turns | Vision images: ${visionImages.length}`);
-
-  const jsonInstruction = `You must respond with a single JSON object matching this TypeScript type:
-{
-  "reasoning": string;  // REQUIRED: 1-2 sentences based ONLY on the CURRENT user message (the latest request)—what you understood and what you will do. Do NOT include tasks from previous messages.
-  "responseMessage": string;
-  "commands": {
-    "action": "update_slide" | "insert_slide" | "delete_slide" | "duplicate_slide" | "reorder_slide";
-    "slideIndex": number;
-  }[];
-}
-Do not include any markdown, commentary, or extra text. Return ONLY the JSON.`;
-
-  const contents: { role: string; parts: { text: string }[] }[] = [];
-
-  contents.push({
-    role: "user",
-    parts: [{ text: systemPrompt }],
-  });
-  contents.push({
-    role: "model",
-    parts: [{ text: isHe ? "הבנתי את מבנה המצגת. אני מוכן לעזור." : "I understand the presentation structure. Ready to help." }],
-  });
-
-  for (const turn of conversationHistory) {
-    contents.push({
-      role: turn.role === "assistant" ? "model" : "user",
-      parts: [{ text: turn.content }],
-    });
-  }
-
-  const lastMessageParts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [];
-  let requestText = `User request:\n${message}\n\n`;
-  if (visionImages.length > 0) {
-    requestText += `[We've included the actual image(s) for the slide(s) you need to edit. Analyze each image and create imagePrompt that applies the user's requested change while keeping the scene/structure.]\n\n`;
-  }
-  requestText += jsonInstruction;
-  lastMessageParts.push({ text: requestText });
-  for (const img of visionImages) {
-    lastMessageParts.push({
-      inlineData: { mimeType: img.mimeType, data: img.base64 },
-    });
-  }
-  contents.push({
-    role: "user",
-    parts: lastMessageParts,
-  });
+  console.log(`🤖 Calling AI with message: "${message.slice(0, 100)}..."`);
 
   try {
-    const geminiModel = "gemini-2.5-flash";
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
-
-    const res = await fetch(geminiUrl, {
+    const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents,
-        generationConfig: {
-          temperature: 0.3,
-          responseMimeType: "application/json",
-        },
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: message },
+        ],
+        tools: [buildToolDefinition()],
+        tool_choice: { type: "function", function: { name: "edit_presentation" } },
+        temperature: 0.3,
       }),
     });
 
@@ -682,25 +495,72 @@ Do not include any markdown, commentary, or extra text. Return ONLY the JSON.`;
     }
 
     const data = await res.json();
-    const contentText = data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("").trim() || "";
 
-    if (contentText) {
+    // Strategy 1: Parse from tool_calls
+    const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
+    if (toolCall?.function?.arguments) {
       try {
-        const parsed = JSON.parse(contentText);
+        const parsed = JSON.parse(toolCall.function.arguments);
         if (parsed.commands && Array.isArray(parsed.commands)) {
-          console.log(`✅ Parsed ${parsed.commands.length} commands from Gemini JSON`);
+          console.log(`✅ Parsed ${parsed.commands.length} commands from tool_calls`);
           return {
             responseMessage: parsed.responseMessage || (isHe ? "בוצע ✅" : "Done ✅"),
             commands: parsed.commands,
-            reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning.trim() : undefined,
           };
         }
       } catch (e) {
-        console.error("Failed to parse Gemini JSON:", e);
+        console.error("Failed to parse tool_calls arguments:", e);
       }
     }
 
-    console.error("Could not parse Gemini response. Raw:", JSON.stringify(data).slice(0, 500));
+    // Strategy 2: Parse from message content (fallback)
+    const content = data.choices?.[0]?.message?.content;
+    if (content) {
+      console.log("Trying to parse from content:", content.slice(0, 300));
+      try {
+        // Try direct JSON parse
+        const parsed = JSON.parse(content);
+        if (parsed.commands && Array.isArray(parsed.commands)) {
+          console.log(`✅ Parsed ${parsed.commands.length} commands from content`);
+          return {
+            responseMessage: parsed.responseMessage || (isHe ? "בוצע ✅" : "Done ✅"),
+            commands: parsed.commands,
+          };
+        }
+      } catch {
+        // Try extracting JSON from markdown
+        const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[1]);
+            if (parsed.commands && Array.isArray(parsed.commands)) {
+              console.log(`✅ Parsed ${parsed.commands.length} commands from markdown block`);
+              return {
+                responseMessage: parsed.responseMessage || (isHe ? "בוצע ✅" : "Done ✅"),
+                commands: parsed.commands,
+              };
+            }
+          } catch {}
+        }
+
+        // Try finding JSON object in text
+        const objMatch = content.match(/\{[\s\S]*"commands"[\s\S]*\}/);
+        if (objMatch) {
+          try {
+            const parsed = JSON.parse(objMatch[0]);
+            if (parsed.commands && Array.isArray(parsed.commands)) {
+              console.log(`✅ Parsed ${parsed.commands.length} commands from extracted JSON`);
+              return {
+                responseMessage: parsed.responseMessage || (isHe ? "בוצע ✅" : "Done ✅"),
+                commands: parsed.commands,
+              };
+            }
+          } catch {}
+        }
+      }
+    }
+
+    console.error("Could not parse AI response. Raw:", JSON.stringify(data.choices?.[0]?.message).slice(0, 500));
     return {
       responseMessage: isHe
         ? "לא הצלחתי להבין את הבקשה. אפשר לנסח אחרת? 🤔"
@@ -839,7 +699,6 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
         // Build proper content based on slide type
         const newContent = buildNewSlideContent(slideType, slideContent);
 
-        const lang = detectLanguage(JSON.stringify(newContent));
         const newSlide: Slide = {
           id: generateId(),
           type: slideType,
@@ -850,8 +709,7 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
             fontFamily: cmd.fontFamily || "Inter",
             textColor: "#ffffff",
             fontSize: "medium",
-            textAlign: lang === "he" ? "right" : "left",
-            direction: lang === "he" ? "rtl" : "ltr",
+            textAlign: detectLanguage(JSON.stringify(newContent)) === "he" ? "right" : "left",
           },
           layout: "centered",
           activitySettings: { duration: 60, showResults: true, interactionStyle: "bar_chart" },
@@ -898,12 +756,9 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
       }
 
       case "reorder_slide": {
-        if (cmd.targetIndex === undefined) {
-          console.warn(`reorder_slide: targetIndex is REQUIRED, skipping slide ${idx}`);
-          break;
-        }
         if (
           idx !== undefined &&
+          cmd.targetIndex !== undefined &&
           idx >= 0 &&
           idx < result.length &&
           cmd.targetIndex >= 0 &&
@@ -912,7 +767,6 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
           const [moved] = result.splice(idx, 1);
           result.splice(cmd.targetIndex, 0, moved);
           result = result.map((s, i) => ({ ...s, order: i }));
-          console.log(`  Reordered slide from index ${idx} to ${cmd.targetIndex}`);
         }
         break;
       }
@@ -953,7 +807,7 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
     }
   }
 
-  return result.map(ensureDesignDefaults);
+  return result;
 }
 
 // =============================================================================
@@ -1046,50 +900,31 @@ function buildNewSlideContent(slideType: string, raw: any): SlideContent {
 }
 
 // =============================================================================
-// USER PLAN: MAX SLIDES
+// BUILDER CONVERSATION LOG
 // =============================================================================
 
-async function getUserMaxSlides(userId: string): Promise<number> {
+async function appendBuilderConversation(
+  userId: string,
+  sessionId: string,
+  rows: { role: string; content: string; metadata?: Record<string, unknown> }[],
+): Promise<void> {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) return 5;
+  if (!supabaseUrl || !supabaseServiceKey || !sessionId || rows.length === 0) return;
 
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data: sub } = await supabase
-    .from("user_subscriptions")
-    .select("plan_id")
-    .eq("user_id", userId)
-    .single();
-
-  if (!sub?.plan_id) return 5;
-
-  const { data: plan } = await supabase
-    .from("subscription_plans")
-    .select("max_slides")
-    .eq("id", sub.plan_id)
-    .single();
-
-  const max = plan?.max_slides;
-  return typeof max === "number" ? max : 5;
-}
-
-async function getUserAiSettings(userId: string): Promise<{
-  who_am_i?: string;
-  what_i_lecture?: string;
-  teaching_style?: string;
-  additional_context?: string;
-} | null> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) return null;
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data } = await supabase
-    .from("user_ai_settings")
-    .select("who_am_i, what_i_lecture, teaching_style, additional_context")
-    .eq("user_id", userId)
-    .maybeSingle();
-  return data;
+  const { error } = await supabase.from("builder_conversation").insert(
+    rows.map((r) => ({
+      user_id: userId,
+      session_id: sessionId,
+      role: r.role,
+      content: r.content,
+      metadata: r.metadata ?? {},
+    })),
+  );
+  if (error) {
+    console.error("builder_conversation insert failed:", error);
+  }
 }
 
 // =============================================================================
@@ -1156,53 +991,6 @@ async function consumeCredits(
 }
 
 // =============================================================================
-// SLIDE NUMBER VALIDATION - Correct off-by-one when user explicitly says "slide X"
-// =============================================================================
-
-/** Extract explicit 1-based slide numbers from user message (e.g. "slide 5", "שקופית 5"). */
-function extractExplicitSlideNumbers(message: string): number[] {
-  const nums: number[] = [];
-  const normalized = message.toLowerCase();
-  // "slide 5", "slide5", "שקופית 5", "בשקופית מספר 5", "בשקופית 5"
-  const patterns = [
-    /\b(?:slide|שקופית)\s*(?:מספר\s*)?(\d+)/gi,
-    /(?:slide|שקופית)(\d+)/gi,
-    /\b(?:the\s+)?(\d+)(?:st|nd|rd|th)\s+slide/gi,
-  ];
-  for (const p of patterns) {
-    let m;
-    while ((m = p.exec(normalized)) !== null) {
-      const n = parseInt(m[1], 10);
-      if (n >= 1 && n <= 50 && !nums.includes(n)) nums.push(n);
-    }
-  }
-  return nums;
-}
-
-/** When user explicitly says "slide X" and we have one slide-modifying command with wrong slideIndex, correct it. */
-function correctSlideIndexIfMismatch(commands: any[], message: string, totalSlides: number): any[] {
-  const explicit = extractExplicitSlideNumbers(message);
-  if (explicit.length !== 1) return commands;
-
-  const expectedSlideIndex = explicit[0] - 1;
-  const slideModifyingActions = new Set(["update_slide", "delete_slide", "duplicate_slide", "reorder_slide"]);
-
-  const cmds = commands.filter((c: any) => slideModifyingActions.has(c.action) && typeof c.slideIndex === "number");
-  if (cmds.length !== 1) return commands;
-
-  const cmd = cmds[0];
-  if (cmd.slideIndex !== expectedSlideIndex && expectedSlideIndex >= 0 && expectedSlideIndex < totalSlides) {
-    console.log(
-      `⚠️ Slide number correction: user said "slide ${explicit[0]}", AI used slideIndex ${cmd.slideIndex}. Correcting to slideIndex ${expectedSlideIndex}.`
-    );
-    return commands.map((c: any) =>
-      c === cmd ? { ...c, slideIndex: expectedSlideIndex } : c
-    );
-  }
-  return commands;
-}
-
-// =============================================================================
 // MAIN HANDLER
 // =============================================================================
 
@@ -1224,7 +1012,9 @@ serve(async (req) => {
 
     // Parse body
     const body = await req.json();
-    const { message, slides = [], currentSlideIndex = 0, originalPrompt, targetAudience, conversationHistory = [] } = body;
+    const sessionId =
+      typeof body.sessionId === "string" && body.sessionId.length >= 8 ? body.sessionId : undefined;
+    const { message, slides = [], currentSlideIndex = 0, originalPrompt, contentType } = body;
 
     // Validate
     if (!message || typeof message !== "string") {
@@ -1248,55 +1038,8 @@ serve(async (req) => {
       `📝 Message: "${message.slice(0, 80)}..." | Slides: ${safeSlides.length} | Viewing: ${safeIndex + 1} | Lang: ${language}`,
     );
 
-    const safeHistory: HistoryTurn[] = Array.isArray(conversationHistory)
-      ? conversationHistory
-        .filter((t: any) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
-        .slice(-20)
-        .map((t: any) => ({ role: t.role, content: t.content }))
-      : [];
-
-    // Early check BEFORE AI call: do not waste tokens if user has no credits
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (supabaseUrl && supabaseServiceKey) {
-      const checkSupabase = createClient(supabaseUrl, supabaseServiceKey);
-      const { data: credits } = await checkSupabase
-        .from("user_credits")
-        .select("ai_tokens_balance")
-        .eq("user_id", user.id)
-        .single();
-      if (!credits || (credits.ai_tokens_balance ?? 0) < 1) {
-        const msgHe = "אין לך מספיק קרדיטים. שדרג את התוכנית שלך או רכוש קרדיטים נוספים כדי להמשיך.";
-        const msgEn = "You don't have enough credits. Upgrade your plan or purchase more credits to continue.";
-        return new Response(
-          JSON.stringify({
-            message: language === "he" ? msgHe : msgEn,
-            updatedSlides: safeSlides,
-            creditsConsumed: 0,
-            error: "Insufficient credits",
-          }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
-      }
-    }
-
-    const userAiSettings = await getUserAiSettings(user.id);
-    const userAiContext = userAiSettings
-      ? [
-          userAiSettings.who_am_i && `Instructor: ${userAiSettings.who_am_i}`,
-          userAiSettings.what_i_lecture && `Typically lectures on: ${userAiSettings.what_i_lecture}`,
-          userAiSettings.teaching_style && `Teaching style: ${userAiSettings.teaching_style}`,
-          userAiSettings.additional_context && `Additional context: ${userAiSettings.additional_context}`,
-        ]
-          .filter(Boolean)
-          .join("\n")
-      : undefined;
-
-    // Vision: include slide images when user asks to change something IN the image
-    const visionImages = getSlidesWithImagesForVision(safeSlides, message);
-
     // Call AI
-    const aiResult = await callAI(message, safeSlides, safeIndex, language, safeHistory, userAiContext, originalPrompt, visionImages);
+    const aiResult = await callAI(message, safeSlides, safeIndex, language);
 
     console.log(
       `🤖 AI response: "${aiResult.responseMessage.slice(0, 60)}..." | Commands: ${aiResult.commands.length}`,
@@ -1305,16 +1048,10 @@ serve(async (req) => {
     // Execute commands if any
     let updatedSlides: Slide[] | null = null;
     let creditsConsumed = 0;
-    let outputMessage = aiResult.reasoning
-      ? `**What I understood:** ${aiResult.reasoning}\n\n${aiResult.responseMessage}`
-      : aiResult.responseMessage;
-
+    
     if (aiResult.commands.length > 0) {
-      // Apply slide number correction when user explicitly said "slide X" and AI used wrong index
-      let commandsToUse = correctSlideIndexIfMismatch(aiResult.commands, message, safeSlides.length);
-
       // Filter out any invalid commands
-      let validCommands = commandsToUse.filter((cmd: any) => {
+      const validCommands = aiResult.commands.filter((cmd: any) => {
         if (!cmd.action) {
           console.warn("Skipping command without action:", cmd);
           return false;
@@ -1322,31 +1059,6 @@ serve(async (req) => {
         if (cmd.action === "no_change") return false;
         return true;
       });
-
-      // Enforce subscription slide limit: filter out insert_slide/duplicate_slide that would exceed max
-      const maxSlides = await getUserMaxSlides(user.id);
-      let slideLimitMessage = "";
-      let slideCount = safeSlides.length;
-
-      validCommands = validCommands.filter((cmd: any) => {
-        if (cmd.action === "insert_slide" || cmd.action === "duplicate_slide") {
-          slideCount += 1;
-          if (slideCount > maxSlides) {
-            slideLimitMessage = language === "he"
-              ? "מגבלת השקופיות הגיעה. שדרג את התוכנית כדי להוסיף עוד שקופיות."
-              : "Slide limit reached. Upgrade your plan to add more slides.";
-            console.log(`⛔ Skipping ${cmd.action}: would exceed max_slides (${maxSlides})`);
-            return false;
-          }
-        } else if (cmd.action === "delete_slide") {
-          slideCount = Math.max(0, slideCount - 1);
-        }
-        return true;
-      });
-
-      if (slideLimitMessage) {
-        outputMessage = `${aiResult.responseMessage}\n\n${slideLimitMessage}`;
-      }
 
       if (validCommands.length > 0) {
         // Calculate credits: 1 token per AFFECTED SLIDE (not per command)
@@ -1406,9 +1118,33 @@ serve(async (req) => {
       }
     }
 
+    if (sessionId) {
+      await appendBuilderConversation(user.id, sessionId, [
+        {
+          role: "user",
+          content: message,
+          metadata: {
+            kind: "chat_turn",
+            currentSlideIndex: safeIndex,
+            slideCount: safeSlides.length,
+            contentType: contentType ?? null,
+          },
+        },
+        {
+          role: "assistant",
+          content: aiResult.responseMessage,
+          metadata: {
+            kind: "chat_turn",
+            creditsConsumed,
+            commandsExecuted: aiResult.commands?.length ?? 0,
+          },
+        },
+      ]);
+    }
+
     return new Response(
       JSON.stringify({
-        message: outputMessage,
+        message: aiResult.responseMessage,
         updatedSlides,
         creditsConsumed,
       }),

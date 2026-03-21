@@ -20,7 +20,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { CREDIT_PACKS, type CreditPack } from "@/types/subscription";
 import { format } from "date-fns";
-import { CONTACT_EMAIL } from "@/lib/constants";
 
 const Billing = () => {
   const [searchParams] = useSearchParams();
@@ -33,6 +32,7 @@ const Billing = () => {
     isLoading,
     planName,
     aiTokensRemaining,
+    vibeCreditsRemaining,
   } = useSubscriptionContext();
   const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
 
@@ -68,7 +68,7 @@ const Billing = () => {
         } catch (error) {
           toast.dismiss();
           console.error("Payment capture error:", error);
-          toast.error(`Failed to process payment. Please contact us at ${CONTACT_EMAIL}.`);
+          toast.error("Failed to process payment. Please contact support.");
         }
       }
 
@@ -134,9 +134,13 @@ const Billing = () => {
     );
   }
 
-  // Free plan has 0 monthly refill; show balance vs 15 (one-time signup grant)
-  const aiTokensMax = (plan?.monthly_ai_tokens ?? 0) || (planName === "Free" ? 15 : (planName === "Standard" ? 100 : 250));
-  const aiTokensPercent = aiTokensMax > 0 ? Math.min((aiTokensRemaining / aiTokensMax) * 100, 100) : 0;
+  const aiTokensMax = plan?.monthly_ai_tokens ?? 50;
+  const vibeCreditsMax = plan?.monthly_vibe_credits ?? 20;
+  const aiTokensPercent = Math.min((aiTokensRemaining / aiTokensMax) * 100, 100);
+  const vibeCreditsPercent = Math.min(
+    (vibeCreditsRemaining / vibeCreditsMax) * 100,
+    100
+  );
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -226,7 +230,7 @@ const Billing = () => {
                   <CardHeader>
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Sparkles className="w-5 h-5 text-primary" />
-                      AI credits
+                      AI Tokens
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -234,7 +238,7 @@ const Billing = () => {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Remaining</span>
                         <span className="font-medium">
-                          {aiTokensRemaining.toLocaleString()} / {planName === "Free" ? "15 (one-time)" : aiTokensMax.toLocaleString() + "/mo"}
+                          {aiTokensRemaining.toLocaleString()} / {aiTokensMax.toLocaleString()}
                         </span>
                       </div>
                       <Progress value={aiTokensPercent} className="h-2" />
@@ -246,72 +250,101 @@ const Billing = () => {
                 </Card>
               </motion.div>
 
-              </div>
-
-            {/* Credit packs – one-time purchase (all plans) */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Plus className="w-5 h-5" />
-                    {planName === "Free" ? "Buy credits" : "Buy more credits"}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {planName === "Free"
-                      ? "One-time purchase – get AI credits now (no subscription)."
-                      : "Top up your balance – get credits now, in addition to your monthly plan."}
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid sm:grid-cols-3 gap-4">
-                    {CREDIT_PACKS.map((pack) => (
-                      <div
-                        key={pack.id}
-                        className={`relative p-4 rounded-xl border ${
-                          pack.popular
-                            ? "border-primary bg-primary/5"
-                            : "border-border"
-                        }`}
-                      >
-                        {pack.popular && (
-                          <div className="absolute -top-2 right-2">
-                            <span className="bg-primary text-primary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
-                              Popular
-                            </span>
-                          </div>
-                        )}
-                        <h3 className="font-semibold mb-1">{pack.name}</h3>
-                        <p className="text-2xl font-bold mb-2">
-                          ${pack.price_usd}
-                        </p>
-                        <ul className="text-sm text-muted-foreground space-y-1 mb-4">
-                          <li>{pack.ai_tokens} AI credits</li>
-                        </ul>
-                        <Button
-                          variant={pack.popular ? "default" : "outline"}
-                          size="sm"
-                          className="w-full"
-                          onClick={() => handleBuyCredits(pack)}
-                          disabled={purchaseLoading === pack.id}
-                        >
-                          {purchaseLoading === pack.id ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            "Buy now"
-                          )}
-                        </Button>
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Zap className="w-5 h-5 text-accent" />
+                      Vibe Credits
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Remaining</span>
+                        <span className="font-medium">
+                          {vibeCreditsRemaining.toLocaleString()} / {vibeCreditsMax.toLocaleString()}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
+                      <Progress value={vibeCreditsPercent} className="h-2" />
+                      <p className="text-xs text-muted-foreground">
+                        Used for VibeCoding refinements
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            </div>
 
-            {/* Free Plan: also show upgrade CTA */}
+            {/* Top Up Section */}
+            {planName !== "Free" && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+              >
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Plus className="w-5 h-5" />
+                      Buy More Credits
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Top up your balance with additional credits
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid sm:grid-cols-3 gap-4">
+                      {CREDIT_PACKS.map((pack) => (
+                        <div
+                          key={pack.id}
+                          className={`relative p-4 rounded-xl border ${
+                            pack.popular
+                              ? "border-primary bg-primary/5"
+                              : "border-border"
+                          }`}
+                        >
+                          {pack.popular && (
+                            <div className="absolute -top-2 right-2">
+                              <span className="bg-primary text-primary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
+                                Popular
+                              </span>
+                            </div>
+                          )}
+                          <h3 className="font-semibold mb-1">{pack.name}</h3>
+                          <p className="text-2xl font-bold mb-2">
+                            ${pack.price_usd}
+                          </p>
+                          <ul className="text-sm text-muted-foreground space-y-1 mb-4">
+                            <li>{pack.ai_tokens} AI Tokens</li>
+                            <li>{pack.vibe_credits} Vibe Credits</li>
+                          </ul>
+                          <Button
+                            variant={pack.popular ? "default" : "outline"}
+                            size="sm"
+                            className="w-full"
+                            onClick={() => handleBuyCredits(pack)}
+                            disabled={purchaseLoading === pack.id}
+                          >
+                            {purchaseLoading === pack.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              "Buy Now"
+                            )}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Free Plan Upgrade Prompt */}
             {planName === "Free" && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}

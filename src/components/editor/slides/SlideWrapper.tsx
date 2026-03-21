@@ -1,10 +1,9 @@
 import { ReactNode, useMemo } from "react";
 import { motion } from "framer-motion";
 import { Slide, GRADIENT_PRESETS } from "@/types/slides";
-import { ThemeId, getTheme, DEFAULT_THEME_ID } from "@/types/themes";
+import { ThemeId, getTheme } from "@/types/themes";
 import { ThemedDecorations } from "@/components/effects/ThemedDecorations";
-import { getEffectiveDirection, getEffectiveTextAlign } from "@/lib/designDefaults";
-import { useBuilderPreview } from "@/contexts/BuilderPreviewContext";
+import { inferDirectionFromSlide } from "@/lib/textDirection";
 
 interface SlideWrapperProps {
   slide: Slide;
@@ -19,15 +18,16 @@ export function SlideWrapper({
   children, 
   isPreview = false, 
   showEffects = true,
-  themeId = DEFAULT_THEME_ID
+  themeId = 'neon-cyber'
 }: SlideWrapperProps) {
-  const { allowContentScroll } = useBuilderPreview();
   const design = slide.design || {};
   const theme = useMemo(() => getTheme(themeId), [themeId]);
 
-  const direction = getEffectiveDirection(slide);
-  const effectiveTextAlign = getEffectiveTextAlign(slide, direction);
-
+  const direction = useMemo<"rtl" | "ltr">(
+    () => design.direction || inferDirectionFromSlide(slide),
+    [design.direction, slide]
+  );
+  
   // Get gradient background - prioritize design preset, then theme
   const getBackground = () => {
     if (design.gradientPreset) {
@@ -42,13 +42,21 @@ export function SlideWrapper({
     return theme.preview.gradient;
   };
 
-  // Get font size class - use responsive scaling (stable default)
+  // Get font size class - use responsive scaling
   const getFontSizeClass = () => {
-    const fontSize = design.fontSize ?? 'medium';
-    switch (fontSize) {
+    switch (design.fontSize) {
       case 'small': return 'slide-text-small';
       case 'large': return 'slide-text-large';
       default: return 'slide-text-medium';
+    }
+  };
+
+  // Get text align class
+  const getTextAlignClass = () => {
+    switch (design.textAlign) {
+      case 'left': return 'text-left';
+      case 'right': return 'text-right';
+      default: return 'text-center';
     }
   };
 
@@ -71,27 +79,16 @@ export function SlideWrapper({
     '--theme-shadow-color': theme.tokens.shadowColor,
     '--theme-letter-spacing': theme.tokens.letterSpacing,
     // Pass text alignment as CSS variable for child components to use
-    '--slide-text-align': effectiveTextAlign,
+    '--slide-text-align': design.textAlign || 'center',
     '--slide-dir': direction,
-  } as React.CSSProperties), [theme, design, direction, effectiveTextAlign]);
+  } as React.CSSProperties), [theme, design.textAlign, direction]);
 
-  const getTextAlignClass = () => {
-    switch (effectiveTextAlign) {
-      case "left": return "text-left";
-      case "right": return "text-right";
-      default: return "text-center";
-    }
-  };
-
-  // Get theme-specific border radius (each theme has distinct shape)
+  // Get theme-specific border radius
   const getThemeBorderRadius = () => {
     switch (themeId) {
       case 'swiss-minimal': return 'rounded-none';
       case 'soft-pop': return 'rounded-3xl';
       case 'academic-pro': return 'rounded-lg';
-      case 'sunset-warmth': return 'rounded-xl md:rounded-2xl';
-      case 'ocean-breeze': return 'rounded-xl md:rounded-2xl';
-      case 'neon-cyber': return 'rounded-xl md:rounded-2xl';
       default: return 'rounded-xl md:rounded-2xl';
     }
   };
@@ -110,12 +107,29 @@ export function SlideWrapper({
     }
   };
 
-  // Determine text color – each theme defines its own text primary
+  // Determine text color
   const getTextColor = () => {
     if (design.textColor) {
       return design.textColor;
     }
-    return `hsl(${theme.tokens.textPrimary})`;
+    if (themeId === 'soft-pop' || themeId === 'swiss-minimal') {
+      return `hsl(${theme.tokens.textPrimary})`;
+    }
+    return '#ffffff';
+  };
+
+  // Get animation config based on theme
+  const getAnimationConfig = () => {
+    switch (theme.tokens.animationStyle) {
+      case 'bouncy':
+        return { type: 'spring' as const, stiffness: 300, damping: 15 };
+      case 'snappy':
+        return { type: 'spring' as const, stiffness: 500, damping: 30 };
+      case 'smooth':
+        return { type: 'tween' as const, duration: 0.4, ease: 'easeOut' as const };
+      default:
+        return { type: 'spring' as const, stiffness: 300, damping: 25 };
+    }
   };
 
   // Overlay image rendering
@@ -125,9 +139,10 @@ export function SlideWrapper({
 
   return (
     <motion.div
-      initial={false}
+      initial={{ opacity: 0, scale: 0.98 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.15 }}
+      exit={{ opacity: 0, scale: 0.98 }}
+      transition={getAnimationConfig()}
       className={`
         w-full h-full overflow-hidden relative
         ${getThemeBorderRadius()}
@@ -146,23 +161,17 @@ export function SlideWrapper({
       dir={direction}
       data-theme={themeId}
     >
-      {/* Background overlay image - dimmed so text/components stay readable */}
+      {/* Background overlay image */}
       {overlayImage && isBackgroundImage && (
-        <div className="absolute inset-0 z-0" key={`bg-${design.overlayImageUrl}`}>
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage: `url(${design.overlayImageUrl})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-              opacity: 0.25,
-            }}
-          />
-          <div
-            className="absolute inset-0 bg-black/20"
-            aria-hidden
-          />
-        </div>
+        <div 
+          className="absolute inset-0 z-0"
+          style={{
+            backgroundImage: `url(${design.overlayImageUrl})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            opacity: 0.3,
+          }}
+        />
       )}
 
       {/* Theme-specific decorations */}
@@ -171,47 +180,22 @@ export function SlideWrapper({
       {/* Content with side image */}
       <div 
         className={`relative z-10 h-full flex ${isSideImage ? 'flex-row' : 'flex-col'} ${getFontSizeClass()} ${getTextAlignClass()}`}
-        style={{ textAlign: effectiveTextAlign }}
+        style={{ textAlign: design.textAlign || 'center' }}
       >
         {overlayImage && design.overlayImagePosition === 'left' && (
-          <div className="w-1/2 h-full flex-shrink-0">
-            <img key={design.overlayImageUrl} src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" loading="eager" />
+          <div className="w-1/3 h-full flex-shrink-0">
+            <img src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" />
           </div>
         )}
-        <div
-          data-slide-scroll
-          className={`${isSideImage ? 'flex-1' : 'h-full'} flex flex-col ${
-            allowContentScroll ? 'min-h-0 overflow-y-auto overflow-x-hidden' : ''
-          }`}
-        >
+        <div className={`${isSideImage ? 'flex-1' : 'h-full'} flex flex-col`}>
           {children}
         </div>
         {overlayImage && design.overlayImagePosition === 'right' && (
-          <div className="w-1/2 h-full flex-shrink-0">
-            <img key={design.overlayImageUrl} src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" loading="eager" />
+          <div className="w-1/3 h-full flex-shrink-0">
+            <img src={design.overlayImageUrl} alt="" className="w-full h-full object-cover" />
           </div>
         )}
       </div>
-
-      {/* Logo - compact size, positioned by logoPosition */}
-      {design.logoUrl && (
-        <div
-          key={design.logoUrl}
-          className={`absolute z-20 pointer-events-none w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 ${
-            design.logoPosition === 'top-left' ? 'top-2 left-2' :
-            design.logoPosition === 'top-right' ? 'top-2 right-2' :
-            design.logoPosition === 'bottom-left' ? 'bottom-2 left-2' :
-            'bottom-2 right-2'
-          }`}
-        >
-          <img
-            src={design.logoUrl}
-            alt=""
-            className="w-full h-full object-contain"
-            style={{ imageRendering: '-webkit-optimize-contrast' }}
-          />
-        </div>
-      )}
     </motion.div>
   );
 }

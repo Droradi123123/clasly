@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -7,30 +7,6 @@ import { Presentation, ArrowRight, Sparkles, AlertCircle } from "lucide-react";
 import { getLectureByCode, joinLecture } from "@/lib/lectureService";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
-
-const JOIN_RETRY_MAX = 3;
-const JOIN_RETRY_BASE_DELAY_MS = 800;
-
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxAttempts: number = JOIN_RETRY_MAX,
-  onRetry?: () => void
-): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      if (attempt < maxAttempts - 1) {
-        onRetry?.();
-        const delay = JOIN_RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-  }
-  throw lastError;
-}
 
 const Join = () => {
   const navigate = useNavigate();
@@ -43,16 +19,18 @@ const Join = () => {
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
-  /** Code that passed validation — used for /student/:code navigation (state can lag behind URL/QR flow). */
-  const [sessionJoinCode, setSessionJoinCode] = useState("");
-  /** Only set on success; reset on failure so user/effect can retry. */
-  const processedUrlCodeRef = useRef<string | null>(null);
 
-  const normalizeCode = (raw: string) => raw.replace(/\D/g, "").slice(0, 6);
+  // Check for code in URL params
+  useEffect(() => {
+    const codeFromUrl = searchParams.get("code");
+    if (codeFromUrl && codeFromUrl.length === 6) {
+      setLectureCode(codeFromUrl);
+      handleCodeSubmit(codeFromUrl);
+    }
+  }, [searchParams]);
 
-  const handleCodeSubmit = useCallback(async (codeToCheck?: string) => {
-    const code = normalizeCode(codeToCheck ?? lectureCode);
+  const handleCodeSubmit = async (codeToCheck?: string) => {
+    const code = codeToCheck || lectureCode;
     if (code.length !== 6) {
       setError("Please enter a valid 6-digit code");
       return;
@@ -60,78 +38,43 @@ const Join = () => {
 
     setIsLoading(true);
     setError("");
-    setIsRetrying(false);
 
     try {
-      const lecture = await withRetry(
-        async () => {
-          const result = await getLectureByCode(code);
-          if (!result) throw new Error("Lecture not found");
-          return result;
-        },
-        JOIN_RETRY_MAX,
-        () => setIsRetrying(true)
-      );
+      const lecture = await getLectureByCode(code);
       
-      if (lecture.status === 'ended') {
-        setError("This lecture has ended.");
-        processedUrlCodeRef.current = null;
+      if (!lecture) {
+        setError("Lecture not found. Please check the code and try again.");
         return;
       }
 
-      processedUrlCodeRef.current = code;
-      setSessionJoinCode(String(lecture.lecture_code ?? code).replace(/\D/g, "").slice(0, 6));
+      if (lecture.status === 'ended') {
+        setError("This lecture has ended.");
+        return;
+      }
+
       setLectureId(lecture.id);
       setLectureName(lecture.title);
       setStep("profile");
     } catch (err) {
       setError("Something went wrong. Please try again.");
-      setIsRetrying(true);
-      processedUrlCodeRef.current = null;
       console.error(err);
     } finally {
       setIsLoading(false);
     }
-  }, [lectureCode]);
-
-  // Check for code in URL params - fill field and auto-submit when length is 6 (QR scan)
-  useEffect(() => {
-    const codeFromUrl = normalizeCode(searchParams.get("code")?.trim() || "");
-    if (codeFromUrl.length === 6) {
-      setLectureCode(codeFromUrl);
-      if (processedUrlCodeRef.current !== codeFromUrl) {
-        void handleCodeSubmit(codeFromUrl);
-      }
-    } else {
-      processedUrlCodeRef.current = null;
-    }
-  }, [searchParams, handleCodeSubmit]);
+  };
 
   const handleJoin = async () => {
     if (!name.trim()) return;
 
-    const codeForStudent = sessionJoinCode || normalizeCode(lectureCode);
-    if (codeForStudent.length !== 6 || !lectureId) {
-      setError("Session expired. Go back and enter the lecture code again.");
-      setStep("code");
-      return;
-    }
-
     setIsLoading(true);
     setError("");
-    setIsRetrying(false);
 
     try {
-      const student = await withRetry(
-        () => joinLecture(lectureId, name.trim(), selectedEmoji),
-        JOIN_RETRY_MAX,
-        () => setIsRetrying(true)
-      );
+      const student = await joinLecture(lectureId, name.trim(), selectedEmoji);
       
       if (student) {
-        navigate(`/student/${codeForStudent}?studentId=${student.id}`, { replace: true });
-      } else {
-        setError("Failed to join lecture. Please try again.");
+        // Navigate to student view with student ID
+        navigate(`/student/${lectureCode}?studentId=${student.id}`);
       }
     } catch (err) {
       setError("Failed to join lecture. Please try again.");
@@ -207,10 +150,7 @@ const Join = () => {
                   disabled={lectureCode.length !== 6 || isLoading}
                 >
                   {isLoading ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {isRetrying ? "Reconnecting…" : "Connecting…"}
-                    </span>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   ) : (
                     <>
                       Continue
@@ -296,7 +236,6 @@ const Join = () => {
                     className="flex-1"
                     onClick={() => {
                       setStep("code");
-                      setSessionJoinCode("");
                       setError("");
                     }}
                   >
@@ -310,10 +249,7 @@ const Join = () => {
                     disabled={!name.trim() || isLoading}
                   >
                     {isLoading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        {isRetrying ? "Reconnecting…" : "Joining…"}
-                      </span>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />

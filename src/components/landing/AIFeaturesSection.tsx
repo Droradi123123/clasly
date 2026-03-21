@@ -1,10 +1,5 @@
 import { motion } from "framer-motion";
 import { Sparkles, Zap, Palette, LayoutGrid, Users, Clock } from "lucide-react";
-import { webinarAIFeaturesContent } from "@/content/webinarLandingContent";
-
-interface AIFeaturesSectionProps {
-  variant?: "default" | "webinar";
-}
 
 const features = [
   {
@@ -51,28 +46,7 @@ const features = [
   },
 ];
 
-export default function AIFeaturesSection({ variant = "default" }: AIFeaturesSectionProps) {
-  const isWebinar = variant === "webinar";
-  const content = isWebinar ? webinarAIFeaturesContent : null;
-  const badge = content?.badge ?? "Why AI-Powered?";
-  const title = content?.title ?? "Let AI Do the Heavy Lifting";
-  const description = content?.description ?? "Stop spending hours on slide design. Our AI understands your content and creates engaging presentations that actually work.";
-  const featuresList = content?.features ?? features;
-  const traditionalItems = content?.traditionalItems ?? [
-    "Research and write content manually",
-    "Design each slide from scratch",
-    "Create quiz questions separately",
-    "No real-time audience feedback",
-    "Takes 2-4 hours per presentation",
-  ];
-  const claslyItems = content?.claslyItems ?? [
-    "AI generates content from your topic",
-    "Professional design applied instantly",
-    "Interactive elements built-in",
-    "Live responses and engagement",
-    "Ready in under 30 seconds",
-  ];
-
+export default function AIFeaturesSection() {
   return (
     <section className="py-20 px-4 bg-card/50">
       <div className="container mx-auto max-w-6xl">
@@ -84,18 +58,19 @@ export default function AIFeaturesSection({ variant = "default" }: AIFeaturesSec
         >
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-4">
             <Sparkles className="w-4 h-4" />
-            {badge}
+            Why AI-Powered?
           </div>
           <h2 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-4">
-            {title}
+            Let AI Do the Heavy Lifting
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            {description}
+            Stop spending hours on slide design. Our AI understands your content and creates 
+            engaging presentations that actually work.
           </p>
         </motion.div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {featuresList.map((feature, index) => (
+          {features.map((feature, index) => (
             <motion.div
               key={feature.title}
               initial={{ opacity: 0, y: 30 }}
@@ -124,7 +99,13 @@ export default function AIFeaturesSection({ variant = "default" }: AIFeaturesSec
           <div className="bg-muted/30 rounded-2xl p-8 border border-border/50">
             <h3 className="text-lg font-semibold text-muted-foreground mb-6">Traditional Way</h3>
             <ul className="space-y-4">
-              {traditionalItems.map((item, i) => (
+              {[
+                "Research and write content manually",
+                "Design each slide from scratch",
+                "Create quiz questions separately",
+                "No real-time audience feedback",
+                "Takes 2-4 hours per presentation",
+              ].map((item, i) => (
                 <li key={i} className="flex items-start gap-3 text-muted-foreground">
                   <span className="text-destructive">✗</span>
                   {item}
@@ -140,7 +121,13 @@ export default function AIFeaturesSection({ variant = "default" }: AIFeaturesSec
               With Clasly
             </h3>
             <ul className="space-y-4">
-              {claslyItems.map((item, i) => (
+              {[
+                "AI generates content from your topic",
+                "Professional design applied instantly",
+                "Interactive elements built-in",
+                "Live responses and engagement",
+                "Ready in under 30 seconds",
+              ].map((item, i) => (
                 <li key={i} className="flex items-start gap-3 text-foreground">
                   <span className="text-success">✓</span>
                   {item}

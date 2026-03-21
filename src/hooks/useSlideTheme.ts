@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { ThemeId, getTheme, Theme, getSafeOptionColor } from '@/types/themes';
+import { ThemeId, getTheme, Theme } from '@/types/themes';
 
-export function useSlideTheme(themeId: ThemeId = 'academic-pro') {
+export function useSlideTheme(themeId: ThemeId = 'neon-cyber') {
   const theme = useMemo(() => getTheme(themeId), [themeId]);
   
   // Generate CSS variables object for inline styles
@@ -60,8 +60,8 @@ export function useSlideTheme(themeId: ThemeId = 'academic-pro') {
       return `${baseClasses} ${getButtonRadius()} ring-4 ring-white/50`;
     }
     
-    // Use theme-specific option colors (never white/light background)
-    const colorClass = getSafeOptionColor(theme, index);
+    // Use theme-specific option colors
+    const colorClass = theme.optionColors[index % theme.optionColors.length];
     return `${baseClasses} ${getButtonRadius()} ${colorClass} text-white`;
   };
   

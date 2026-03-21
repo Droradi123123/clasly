@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Users } from "lucide-react";
 import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
@@ -51,6 +51,42 @@ export function GuessNumberSlide({
       )
     : 0;
 
+  const minR = content.minRange ?? 1;
+  const maxR = content.maxRange ?? 100;
+
+  const histogram = useMemo(() => {
+    const span = maxR - minR + 1;
+    if (span <= 0) return { kind: "empty" as const, counts: [] as number[], labels: [] as string[] };
+    if (span <= 28) {
+      const counts = Array.from({ length: span }, () => 0);
+      guesses.forEach((g) => {
+        if (g >= minR && g <= maxR) counts[g - minR]++;
+      });
+      return {
+        kind: "discrete" as const,
+        counts,
+        labels: Array.from({ length: span }, (_, i) => String(minR + i)),
+      };
+    }
+    const binCount = 12;
+    const counts = Array.from({ length: binCount }, () => 0);
+    const w = span / binCount;
+    guesses.forEach((g) => {
+      if (g < minR || g > maxR) return;
+      const i = Math.min(Math.floor((g - minR) / w), binCount - 1);
+      counts[i]++;
+    });
+    return {
+      kind: "binned" as const,
+      counts,
+      labels: Array.from({ length: binCount }, (_, i) => {
+        const lo = Math.round(minR + i * w);
+        const hi = Math.round(minR + (i + 1) * w - 1);
+        return `${lo}–${hi}`;
+      }),
+    };
+  }, [guesses, minR, maxR]);
+
   // Trigger celebration when answer is revealed
   useEffect(() => {
     if (showAnswer && !prevShowAnswer && hasResults && styleConfig.celebrationOnResults) {
@@ -62,13 +98,6 @@ export function GuessNumberSlide({
   }, [showAnswer, prevShowAnswer, hasResults, styleConfig.celebrationOnResults]);
 
   const isMinimal = designStyleId === 'minimal';
-  const isCompact = designStyleId === 'compact';
-  const isThermometer = slide.design?.guessNumberVariant === 'thermometer';
-
-  const minR = content.minRange ?? 0;
-  const maxR = content.maxRange ?? 100;
-  const rangeSpan = maxR - minR || 1;
-  const toPercent = (v: number) => Math.max(0, Math.min(100, ((v - minR) / rangeSpan) * 100));
 
   // Get text color from slide design
   const textColor = slide.design?.textColor || '#ffffff';
@@ -84,84 +113,37 @@ export function GuessNumberSlide({
             question={content.question} 
             onEdit={(q) => onUpdate?.({ ...content, question: q })} 
             editable={isEditing} 
-            subtitle={`Range: ${content.minRange || 1} - ${content.maxRange || 100}`} 
+            subtitle={
+              isEditing
+                ? `Range: ${minR} - ${maxR}`
+                : hasResults
+                  ? `${totalResponses} guess${totalResponses === 1 ? "" : "es"} · range ${minR}–${maxR}`
+                  : `Range: ${minR} - ${maxR}`
+            }
             textColor={textColor}
           />
           
           {/* Content area */}
           <div className="flex-1 flex items-center justify-center px-4 md:px-6 pb-4 min-h-0 overflow-y-auto">
             <div className="w-full max-w-xl flex flex-col items-center">
-              {isThermometer ? (
-              /* Thermometer: visual scale min–max; markers for average and correct when revealed */
-              <>
-                <div className="w-full max-w-md mt-4">
-                  <div className="flex justify-between text-sm text-white/70 mb-2">
-                    <span>{minR}</span>
-                    <span>{maxR}</span>
-                  </div>
-                  <div className="relative h-12 rounded-full bg-white/20 overflow-hidden">
-                    <div className="absolute inset-y-0 left-0 right-0 bg-gradient-to-r from-amber-500 via-orange-400 to-emerald-500 opacity-40" />
-                    {hasResults && (
-                      <motion.div
-                        className="absolute top-0 bottom-0 w-2 bg-white/90 rounded-full shadow-lg"
-                        initial={{ left: '50%' }}
-                        animate={{ left: `${toPercent(averageGuess)}%` }}
-                        transition={{ type: 'spring', stiffness: 150 }}
-                        style={{ transform: 'translateX(-50%)' }}
-                      >
-                        <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-white whitespace-nowrap">Avg: {averageGuess.toFixed(0)}</span>
-                      </motion.div>
-                    )}
-                    {(showAnswer || isEditing) && (
-                      <motion.div
-                        className="absolute top-0 bottom-0 w-3 bg-green-400 rounded-full shadow-lg border-2 border-white"
-                        initial={{ left: '50%' }}
-                        animate={{ left: `${toPercent(content.correctNumber)}%` }}
-                        transition={{ type: 'spring', stiffness: 200 }}
-                        style={{ transform: 'translateX(-50%)' }}
-                      >
-                        <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-xs font-bold text-white whitespace-nowrap">{content.correctNumber}</span>
-                      </motion.div>
-                    )}
-                  </div>
-                </div>
-                {isEditing && (
-                  <div className="mt-6 space-y-2 text-center">
-                    <Input type="number" value={content.correctNumber} onChange={(e) => onUpdate?.({ ...content, correctNumber: parseInt(e.target.value) || 0 })} className="w-28 mx-auto text-center bg-white/20 border-white/30 text-white" />
-                    <div className="flex gap-4 justify-center">
-                      <div><label className="text-white/60 text-xs">Min</label><Input type="number" value={content.minRange ?? 0} onChange={(e) => onUpdate?.({ ...content, minRange: parseInt(e.target.value) ?? 0 })} className="w-20 text-center bg-white/20 border-white/30 text-white text-sm" /></div>
-                      <div><label className="text-white/60 text-xs">Max</label><Input type="number" value={content.maxRange ?? 100} onChange={(e) => onUpdate?.({ ...content, maxRange: parseInt(e.target.value) ?? 100 })} className="w-20 text-center bg-white/20 border-white/30 text-white text-sm" /></div>
-                    </div>
-                  </div>
-                )}
-                {!isEditing && hasResults && (
-                  <div className="mt-4 flex justify-center gap-4 text-white/80 text-sm">
-                    <span>Guesses: {totalResponses}</span>
-                    <span>Average: {averageGuess.toFixed(0)}</span>
-                    {showAnswer && <span className="text-green-300 font-bold">Answer: {content.correctNumber}</span>}
-                  </div>
-                )}
-              </>
-              ) : (
-              <>
               {/* Mystery box / Answer display */}
               <motion.div 
                 className="relative w-24 h-24 md:w-32 md:h-32 mx-auto mb-6"
                 animate={!showAnswer && !isMinimal ? { 
-                  rotate: isCompact ? [0, 1, -1, 0] : [0, 2, -2, 0],
-                  scale: isCompact ? [1, 1.01, 1] : [1, 1.02, 1],
+                  rotate: [0, 2, -2, 0],
+                  scale: [1, 1.02, 1],
                 } : undefined}
                 transition={{ repeat: Infinity, duration: 2 }}
               >
-                {/* Glow effect - moderate for compact, full for dynamic, none for minimal */}
+                {/* Glow effect */}
                 {!isMinimal && (
                   <motion.div
                     className={`absolute inset-0 rounded-2xl md:rounded-3xl blur-xl ${showAnswer ? 'bg-green-400' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}
                     animate={{ 
-                      opacity: isCompact ? [0.35, 0.5, 0.35] : [0.4, 0.7, 0.4],
-                      scale: isCompact ? [0.95, 1.05, 0.95] : [0.9, 1.1, 0.9],
+                      opacity: [0.4, 0.7, 0.4],
+                      scale: [0.9, 1.1, 0.9],
                     }}
-                    transition={{ duration: isCompact ? 2.5 : 2, repeat: Infinity }}
+                    transition={{ duration: 2, repeat: Infinity }}
                   />
                 )}
                 
@@ -261,6 +243,7 @@ export function GuessNumberSlide({
 
               {/* Live statistics */}
               {!isEditing && (
+                <>
                 <div className="grid grid-cols-3 gap-2 md:gap-3 mt-4 md:mt-6">
                   {/* Guesses count */}
                   <motion.div
@@ -307,6 +290,53 @@ export function GuessNumberSlide({
                     </p>
                   </motion.div>
                 </div>
+
+                {hasResults && histogram.kind !== "empty" && histogram.counts.length > 0 && (
+                  <div className="mt-6 w-full">
+                    <p className="text-center text-white/60 text-xs mb-2">Guess distribution</p>
+                    <div className="flex items-end justify-between gap-0.5 md:gap-1 px-1">
+                      {histogram.counts.map((c, i) => {
+                        const maxC = Math.max(...histogram.counts, 1);
+                        const barPx = Math.max(Math.round((c / maxC) * 88), c > 0 ? 6 : 0);
+                        return (
+                          <div
+                            key={i}
+                            className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1"
+                          >
+                            <span className="min-h-[1rem] text-[10px] font-bold tabular-nums text-white/90 md:text-xs">
+                              {c > 0 ? c : ""}
+                            </span>
+                            <div className="flex h-24 w-full items-end justify-center">
+                              <motion.div
+                                className="w-[82%] rounded-t bg-gradient-to-t from-violet-600/90 to-cyan-500/80"
+                                initial={{ height: 0 }}
+                                animate={{ height: barPx }}
+                                transition={{ type: "spring", stiffness: 120, damping: 18, delay: i * 0.02 }}
+                              />
+                            </div>
+                            <span className="line-clamp-2 w-full text-center text-[9px] leading-tight text-white/45 md:text-[10px]">
+                              {histogram.labels[i]}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {showAnswer && hasResults && (
+                  <div className="mt-4 text-center space-y-1 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
+                    <p className="text-emerald-200/95 text-sm font-semibold">
+                      Correct answer:{" "}
+                      <span className="text-white tabular-nums text-lg">{content.correctNumber}</span>
+                    </p>
+                    <p className="text-white/80 text-sm">
+                      Closest guess:{" "}
+                      <span className="font-bold text-white tabular-nums">{closestGuess}</span>
+                    </p>
+                  </div>
+                )}
+                </>
               )}
 
               {/* Zero-state waiting indicator */}
@@ -340,8 +370,6 @@ export function GuessNumberSlide({
                     )}
                   </motion.div>
                 </motion.div>
-              )}
-              </>
               )}
             </div>
           </div>

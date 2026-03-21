@@ -18,75 +18,23 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
     return { user: null, error: "Missing authorization header" };
   }
 
-  const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  if (!token) return { user: null, error: "Missing token" };
-
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  
   if (!supabaseUrl || !supabaseAnonKey) {
     return { user: null, error: "Server configuration error" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+
+  const { data: { user }, error } = await supabase.auth.getUser();
   if (error || !user) {
-    return { user: null, error: error?.message || "Invalid or expired authentication token" };
+    return { user: null, error: "Invalid or expired authentication token" };
   }
 
   return { user, error: null };
-}
-
-const CREDITS_PER_IMAGE = 1;
-
-async function checkCredits(userId: string, amount: number): Promise<{ allowed: boolean; error?: string }> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) {
-    return { allowed: false, error: "Server configuration error" };
-  }
-  const supabase = createClient(supabaseUrl, serviceKey);
-  const { data: credits, error: fetchError } = await supabase
-    .from("user_credits")
-    .select("ai_tokens_balance")
-    .eq("user_id", userId)
-    .single();
-  if (fetchError || !credits) {
-    return { allowed: false, error: "Could not fetch credits" };
-  }
-  if (credits.ai_tokens_balance < amount) {
-    return { allowed: false, error: "Insufficient credits" };
-  }
-  return { allowed: true };
-}
-
-async function consumeCredits(userId: string, amount: number, description: string): Promise<boolean> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) return false;
-  const supabase = createClient(supabaseUrl, serviceKey);
-  const { data: credits, error: fetchError } = await supabase
-    .from("user_credits")
-    .select("ai_tokens_balance, ai_tokens_consumed")
-    .eq("user_id", userId)
-    .single();
-  if (fetchError || !credits || credits.ai_tokens_balance < amount) return false;
-  const { error: updateError } = await supabase
-    .from("user_credits")
-    .update({
-      ai_tokens_balance: credits.ai_tokens_balance - amount,
-      ai_tokens_consumed: (credits.ai_tokens_consumed || 0) + amount,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
-  if (updateError) return false;
-  await supabase.from("credit_transactions").insert({
-    user_id: userId,
-    credit_type: "ai_tokens",
-    transaction_type: "consume",
-    amount: -amount,
-    description,
-  });
-  return true;
 }
 
 serve(async (req) => {
@@ -107,7 +55,7 @@ serve(async (req) => {
 
   try {
     const { prompt, style = "vibrant and modern" }: GenerateImageRequest = await req.json();
-
+    
     // Input validation
     if (!prompt || typeof prompt !== "string") {
       return new Response(
@@ -115,7 +63,7 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
+    
     // Limit prompt length to prevent abuse
     if (prompt.length > 1000) {
       return new Response(
@@ -123,19 +71,10 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Credit check: 1 AI credit per image (deduct after success)
-    const creditCheck = await checkCredits(user.id, CREDITS_PER_IMAGE);
-    if (!creditCheck.allowed) {
-      return new Response(
-        JSON.stringify({ error: creditCheck.error || "Insufficient credits" }),
-        { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured");
+    
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured");
     }
 
     console.log("Generating image for prompt:", prompt.substring(0, 50));
@@ -145,14 +84,18 @@ Style: ${style}.
 Requirements: Clean, high-quality, suitable for educational or professional presentations. 
 The image should be visually striking and work well as a slide background or visual element.`;
 
-    const model = "gemini-2.5-flash-image";
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
-
-    const response = await fetch(apiUrl, {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: enhancedPrompt }] }],
+        model: "google/gemini-2.5-flash-image-preview",
+        messages: [
+          { role: "user", content: enhancedPrompt }
+        ],
+        modalities: ["image", "text"],
       }),
     });
 
@@ -163,29 +106,31 @@ The image should be visually striking and work well as a slide background or vis
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "AI credits exhausted. Please add credits to continue." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
       const errorText = await response.text();
-      console.error("Gemini API error:", response.status, errorText);
-      throw new Error(`Gemini API error: ${response.status}`);
+      console.error("AI gateway error:", response.status, errorText);
+      throw new Error(`AI gateway error: ${response.status}`);
     }
 
     const data = await response.json();
-    const partWithImage = data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData) || null;
-    const inlineData = partWithImage?.inlineData;
+    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const textContent = data.choices?.[0]?.message?.content;
 
-    if (!inlineData?.data) {
-      throw new Error("No image returned from Gemini");
+    if (!imageUrl) {
+      throw new Error("No image returned from AI");
     }
 
-    const mimeType = inlineData.mimeType || "image/png";
-    const imageUrl = `data:${mimeType};base64,${inlineData.data}`;
-
-    await consumeCredits(user.id, CREDITS_PER_IMAGE, "Generate image");
     console.log("Image generated successfully");
 
     return new Response(
       JSON.stringify({ 
         imageUrl,
-        description: "Generated image"
+        description: textContent || "Generated image"
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

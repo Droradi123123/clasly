@@ -24,6 +24,7 @@ export function LiveScaleResults({
   const stepCounts = Array.from({ length: steps }, (_, i) => {
     return distribution.filter(v => v === i + 1).length;
   });
+  const maxCount = Math.max(...stepCounts, 1);
 
   // Get color for step based on position
   const getStepColor = (index: number, total: number) => {
@@ -91,11 +92,10 @@ export function LiveScaleResults({
           <span className="text-white/60 text-sm font-medium">{maxLabel}</span>
         </div>
 
-        {/* Bars - absolute % of total (not relative to max) */}
+        {/* Bars */}
         <div className="flex items-end gap-2 h-40 mb-4">
           {stepCounts.map((count, index) => {
-            const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-            const heightPercent = hasResults ? Math.max((count / totalResponses) * 100, 2) : 0;
+            const heightPercent = hasResults ? (count / maxCount) * 100 : 0;
             const colorGradient = getStepColor(index, steps);
 
             return (
@@ -106,17 +106,17 @@ export function LiveScaleResults({
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
               >
-                {/* Count + percentage label */}
+                {/* Count label */}
                 <AnimatePresence mode="wait">
-                  {(count > 0 || hasResults) && (
+                  {count > 0 && (
                     <motion.span
-                      key={`${count}-${percentage}`}
+                      key={count}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
                       className="text-white font-bold text-sm mb-2"
                     >
-                      {hasResults ? `${count} (${percentage}%)` : count}
+                      {count}
                     </motion.span>
                   )}
                 </AnimatePresence>

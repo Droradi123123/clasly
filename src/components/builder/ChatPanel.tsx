@@ -1,23 +1,17 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Sparkles, Loader2, Zap, AlertCircle, Pencil } from 'lucide-react';
+import { Send, Sparkles, Loader2, Zap, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversationalBuilder, ChatMessage } from '@/hooks/useConversationalBuilder';
 import { useCredits, useFeatureAccess } from '@/contexts/SubscriptionContext';
-import { useConstrainedViewport } from '@/hooks/use-constrained-viewport';
 import { Progress } from '@/components/ui/progress';
 import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 
 interface ChatPanelProps {
   onSendMessage: (message: string) => void;
-  /** When set, show a "Continue to Edit" button in the chat (after messages) when user can proceed to editor */
-  onContinueToEdit?: () => void;
-  canContinueToEdit?: boolean;
-  /** When true, hide "Continue to Edit" (already inside Editor) */
-  embeddedInEditor?: boolean;
 }
 
 const MessageBubble = ({ message }: { message: ChatMessage }) => {
@@ -37,9 +31,9 @@ const MessageBubble = ({ message }: { message: ChatMessage }) => {
         }`}
       >
         {message.isLoading ? (
-          <div className="flex items-center gap-3 py-1">
-            <Loader2 className="w-5 h-5 animate-spin text-primary shrink-0" />
-            <span className="text-sm font-medium">Building your slides...</span>
+          <div className="flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Thinking...</span>
           </div>
         ) : (
           <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -61,45 +55,25 @@ const MessageBubble = ({ message }: { message: ChatMessage }) => {
   );
 };
 
-const CreditStatus: React.FC<{ compact?: boolean }> = ({ compact: forceCompact }) => {
-  const { aiTokensRemaining, isSubLoading } = useCredits();
+const CreditStatus: React.FC = () => {
+  const { aiTokensRemaining, credits } = useCredits();
   const { isFree } = useFeatureAccess();
   
+  // Estimate based on plan (Free = 50, Standard = 500, Pro = 2000)
   const estimatedMonthly = isFree ? 50 : 500;
   const percentage = Math.min(100, (aiTokensRemaining / estimatedMonthly) * 100);
   const isLow = percentage < 20;
-  const isEmpty = aiTokensRemaining <= 0 && !isSubLoading;
+  const isEmpty = aiTokensRemaining <= 0;
   
-  if (forceCompact) {
-    return (
-      <div className="px-2 py-1.5 border-b border-border bg-muted/20 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Zap className="w-3 h-3" />
-          <span className="font-medium text-foreground">{isSubLoading ? "..." : aiTokensRemaining}</span>
-          <span>tokens</span>
-        </span>
-        {isEmpty ? (
-          <Button variant="hero" size="sm" className="h-6 text-xs px-2" asChild>
-            <Link to="/pricing">Upgrade</Link>
-          </Button>
-        ) : isLow ? (
-          <Button variant="link" size="sm" className="h-auto p-0 text-xs" asChild>
-            <Link to="/pricing">Buy more</Link>
-          </Button>
-        ) : null}
-      </div>
-    );
-  }
-
   return (
-    <div className="p-2.5 border-b border-border bg-muted/20">
+    <div className="p-3 border-b border-border bg-muted/20">
       <div className="flex items-center justify-between text-xs mb-1.5">
         <span className="flex items-center gap-1.5 text-muted-foreground">
           <Zap className="w-3.5 h-3.5" />
           AI Tokens
         </span>
         <span className={`font-medium ${isLow ? 'text-destructive' : 'text-foreground'}`}>
-          {isSubLoading ? "..." : aiTokensRemaining}
+          {aiTokensRemaining}
         </span>
       </div>
       <Progress 
@@ -148,15 +122,14 @@ const CreditStatus: React.FC<{ compact?: boolean }> = ({ compact: forceCompact }
   );
 };
 
-const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, canContinueToEdit, embeddedInEditor }) => {
+const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage }) => {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   const { messages, isGenerating } = useConversationalBuilder();
-  const { aiTokensRemaining, isSubLoading } = useCredits();
+  const { aiTokensRemaining } = useCredits();
   const hasCredits = aiTokensRemaining > 0;
-  const showContinueCta = !embeddedInEditor && Boolean(onContinueToEdit && canContinueToEdit);
   
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -190,99 +163,79 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ onSendMessage, onContinueToEdit, 
     setInput(e.target.value);
     const textarea = e.target;
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 150)}px`;
   };
   
-  const isConstrainedViewport = useConstrainedViewport();
-  const compact = embeddedInEditor;
-  const superCompact = compact && isConstrainedViewport;
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full bg-background border-r border-border">
+      {/* Header */}
+      <div className="p-4 border-b border-border bg-muted/30">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-primary" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-sm">AI Assistant</h3>
+            <p className="text-xs text-muted-foreground">Refine your presentation</p>
+          </div>
+        </div>
+      </div>
+      
       {/* Credit Status */}
-      <CreditStatus compact={superCompact} />
+      <CreditStatus />
       
       {/* Messages */}
-      <ScrollArea className={`flex-1 min-h-0 ${superCompact ? 'min-h-[180px] p-2' : compact ? 'p-3' : 'p-4'}`} ref={scrollRef}>
+      <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <AnimatePresence mode="popLayout">
           {messages.length === 0 ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className={`text-center text-muted-foreground ${superCompact ? 'py-3 px-2' : compact ? 'py-6 px-3' : 'py-10 px-4'}`}
+              className="text-center text-muted-foreground py-8"
             >
-              <Sparkles className={`mx-auto text-primary/60 ${superCompact ? 'w-8 h-8 mb-2' : compact ? 'w-10 h-10 mb-3' : 'w-12 h-12 mb-5'}`} />
-              <p className={`font-semibold text-foreground mb-2 ${superCompact ? 'text-sm' : compact ? 'text-base' : 'text-lg'}`}>Edit your presentation here</p>
-              <p className={`max-w-[360px] mx-auto ${superCompact ? 'mb-2 text-xs' : compact ? 'mb-5 text-sm' : 'mb-5 text-base'}`}>
-                Use the <strong className="text-foreground">box below</strong> to type what you want to change.
+              <Sparkles className="w-8 h-8 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">Ask me to refine your slides</p>
+              <p className="text-xs mt-2 opacity-70">
+                Try: "Make slide 3 more engaging" or "Add a quiz about..."
               </p>
-              {!superCompact && (
-                <>
-                  <p className={`opacity-90 mb-1 ${compact ? 'text-xs' : 'text-sm'}`}>Examples:</p>
-                  <p className={`opacity-80 ${compact ? 'text-xs' : 'text-sm'}`}>
-                    &quot;Make slide 3 more engaging&quot; · &quot;Add a quiz&quot; · &quot;Change the tone to professional&quot;
-                  </p>
-                </>
-              )}
             </motion.div>
           ) : (
-            <>
-              {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
-              ))}
-              {showContinueCta && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mt-4 p-4 rounded-xl border-2 border-primary/30 bg-primary/5"
-                >
-                  <p className="text-base font-medium text-foreground mb-3">
-                    Keep editing by typing in the box below, or click the button to open the full editor.
-                  </p>
-                  <Button
-                    variant="hero"
-                    className="w-full"
-                    onClick={onContinueToEdit}
-                  >
-                    <Pencil className="w-4 h-4 mr-2" />
-                    Continue to Edit
-                  </Button>
-                </motion.div>
-              )}
-            </>
+            messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
+            ))
           )}
         </AnimatePresence>
       </ScrollArea>
       
-      {/* Input - enlarged and emphasized. Send button inside for space saving */}
-      <div className={`shrink-0 border-t border-border bg-muted/30 ${superCompact ? 'p-2' : compact ? 'p-3' : 'p-4'}`}>
-        <div className={`relative rounded-xl border-2 bg-background shadow-sm focus-within:shadow-md focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25 transition-all ${
-          isGenerating ? 'border-primary/60 animate-pulse ring-2 ring-primary/20' : 'border-primary/50'
-        }`}>
+      {/* Input */}
+      <div className="p-4 border-t border-border bg-muted/20">
+        <div className="flex gap-2 items-end">
           <Textarea
             ref={textareaRef}
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={isSubLoading ? "Loading..." : hasCredits ? "Type what you want to change… (e.g. Add a quiz, Make slide 3 shorter)" : "No credits remaining..."}
-            disabled={isGenerating || (!hasCredits && !isSubLoading)}
-            className={`max-h-[140px] resize-none text-base placeholder:text-muted-foreground border-0 focus-visible:ring-0 focus-visible:ring-offset-0 pr-14 font-medium ${
-              superCompact ? 'min-h-[56px] py-2 pl-4' : compact ? 'min-h-[72px] py-3 pl-4' : 'min-h-[88px] py-3.5 pl-4'
-            }`}
-            rows={3}
+            placeholder={hasCredits ? "Type your message..." : "No credits remaining..."}
+            disabled={isGenerating || !hasCredits}
+            className="min-h-[44px] max-h-[150px] resize-none"
+            rows={1}
           />
-          <button
-            type="button"
+          <Button
             onClick={handleSend}
-            disabled={!input.trim() || isGenerating || (!hasCredits && !isSubLoading)}
-            className="absolute bottom-3 right-3 flex items-center justify-center w-9 h-9 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none transition-colors shrink-0 shadow-md"
+            disabled={!input.trim() || isGenerating || !hasCredits}
+            size="icon"
+            className="shrink-0 h-11 w-11"
           >
             {isGenerating ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Send className="w-4 h-4" />
             )}
-          </button>
+          </Button>
         </div>
+        <p className="text-xs text-muted-foreground mt-2 text-center">
+          AI can make mistakes. Always verify important details.
+        </p>
       </div>
     </div>
   );

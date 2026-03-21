@@ -37,12 +37,9 @@ import {
   TimelineSlide,
   BarChartSlide,
 } from "./slides";
+import { motion } from "framer-motion";
 import { Image } from "lucide-react";
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
-import { ImageUploader } from "@/components/editor/ImageUploader";
-import { SlideImage } from "@/components/editor/SlideImage";
-import { FormattedText } from "@/components/editor/FormattedText";
-import { useSlideLayout } from "@/contexts/SlideLayoutContext";
 
 interface SlideRendererProps {
   slide: Slide;
@@ -74,7 +71,7 @@ export function SlideRenderer({
   hideFooter = false,
   showCorrectAnswer = false,
 }: SlideRendererProps) {
-  const { direction, textAlign } = useSlideLayout();
+  // Get designStyleId from slide design or use prop
   const effectiveDesignStyleId =
     (slide.design?.designStyleId as DesignStyleId) || designStyleId;
 
@@ -107,23 +104,6 @@ export function SlideRenderer({
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
-        />
-      );
-
-    case "poll_quiz":
-      return (
-        <PollSlide
-          slide={slide}
-          isEditing={isEditing}
-          showResults={showResults}
-          onUpdate={(content) => onUpdateContent?.(content)}
-          liveResults={liveResults?.results}
-          totalResponses={totalResponses}
-          themeId={themeId}
-          designStyleId={effectiveDesignStyleId}
-          hideFooter={hideFooter}
-          showCorrectAnswer={showCorrectAnswer}
-          correctAnswerIndex={(slide.content as { correctAnswer?: number })?.correctAnswer}
         />
       );
 
@@ -207,7 +187,7 @@ export function SlideRenderer({
           slide={slide}
           isEditing={isEditing}
           onUpdate={(content) => onUpdateContent?.(content)}
-          liveResults={liveResults}
+          liveResults={liveResults?.results}
           totalResponses={totalResponses}
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
@@ -221,7 +201,7 @@ export function SlideRenderer({
           slide={slide}
           isEditing={isEditing}
           onUpdate={(content) => onUpdateContent?.(content)}
-          liveResults={liveResults}
+          liveResults={liveResults?.results}
           totalResponses={totalResponses}
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
@@ -235,7 +215,7 @@ export function SlideRenderer({
           slide={slide}
           isEditing={isEditing}
           onUpdate={(content) => onUpdateContent?.(content)}
-          liveResults={liveResults}
+          liveResults={liveResults?.results}
           totalResponses={totalResponses}
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
@@ -243,14 +223,10 @@ export function SlideRenderer({
         />
       );
 
-    case "title": {
-      const titleAlignClass = textAlign === "left" ? "text-left items-start" : textAlign === "right" ? "text-right items-end" : "text-center items-center";
+    case "title":
       return (
         <SlideWrapper slide={slide} themeId={themeId}>
-          <div
-            className={`flex flex-col justify-center h-full p-12 min-h-0 overflow-y-auto ${titleAlignClass}`}
-            dir={direction}
-          >
+          <div className="flex flex-col items-center justify-center h-full p-12 min-h-0 overflow-y-auto">
             {isEditing ? (
               <>
                 <AutoResizeTextarea
@@ -258,8 +234,7 @@ export function SlideRenderer({
                   onChange={(e) =>
                     onUpdateContent?.({ ...slide.content, title: e.target.value })
                   }
-                  className="slide-title font-bold bg-transparent border-0 outline-none w-full mb-4 placeholder:opacity-50"
-                  style={{ textAlign }}
+                  className="slide-title font-bold bg-transparent border-0 outline-none text-center w-full mb-4 placeholder:opacity-50"
                   placeholder="Enter title..."
                   minRows={1}
                 />
@@ -268,20 +243,19 @@ export function SlideRenderer({
                   onChange={(e) =>
                     onUpdateContent?.({ ...slide.content, subtitle: e.target.value })
                   }
-                  className="text-lg md:text-xl opacity-80 bg-transparent border-0 outline-none w-full placeholder:opacity-40"
-                  style={{ textAlign }}
+                  className="text-lg md:text-xl opacity-80 bg-transparent border-0 outline-none text-center w-full placeholder:opacity-40"
                   placeholder="Enter subtitle..."
                   minRows={1}
                 />
               </>
             ) : (
               <>
-                <h1 className="slide-title font-bold drop-shadow-lg break-words" style={{ textAlign }}>
-                  <FormattedText>{String((slide.content as any).title || "Untitled")}</FormattedText>
+                <h1 className="slide-title font-bold text-center drop-shadow-lg break-words">
+                  {(slide.content as any).title || "Untitled"}
                 </h1>
                 {(slide.content as any).subtitle && (
-                  <p className="text-lg md:text-xl opacity-80 mt-4 break-words" style={{ textAlign }}>
-                    <FormattedText>{String((slide.content as any).subtitle)}</FormattedText>
+                  <p className="text-lg md:text-xl opacity-80 text-center mt-4 break-words">
+                    {(slide.content as any).subtitle}
                   </p>
                 )}
               </>
@@ -289,16 +263,11 @@ export function SlideRenderer({
           </div>
         </SlideWrapper>
       );
-    }
 
-    case "content": {
-      const contentAlignClass = textAlign === "left" ? "text-left items-start" : textAlign === "right" ? "text-right items-end" : "text-center items-center";
+    case "content":
       return (
         <SlideWrapper slide={slide} themeId={themeId}>
-          <div
-            className={`flex flex-col justify-start h-full p-8 md:p-12 min-h-0 overflow-y-auto ${contentAlignClass}`}
-            dir={direction}
-          >
+          <div className="flex flex-col items-center justify-center h-full p-12 min-h-0 overflow-y-auto">
             {isEditing ? (
               <>
                 <AutoResizeTextarea
@@ -306,8 +275,7 @@ export function SlideRenderer({
                   onChange={(e) =>
                     onUpdateContent?.({ ...slide.content, title: e.target.value })
                   }
-                  className="text-lg md:text-xl font-semibold bg-transparent border-0 outline-none w-full mb-4 placeholder:opacity-50 max-w-4xl"
-                  style={{ textAlign }}
+                  className="slide-question font-bold bg-transparent border-0 outline-none text-center w-full mb-6 placeholder:opacity-50"
                   placeholder="Enter title..."
                   minRows={1}
                 />
@@ -316,74 +284,59 @@ export function SlideRenderer({
                   onChange={(e) =>
                     onUpdateContent?.({ ...slide.content, text: e.target.value })
                   }
-                  className="slide-content-body flex-1 min-h-[200px] bg-transparent border-0 outline-none w-full max-w-4xl placeholder:opacity-40 resize-none"
-                  style={{ textAlign }}
-                  placeholder="Enter your content here... (this slide emphasizes the main text)"
-                  minRows={8}
+                  className="opacity-90 bg-transparent border-0 outline-none text-center w-full max-w-3xl placeholder:opacity-40"
+                  placeholder="Enter content..."
+                  minRows={4}
                 />
               </>
             ) : (
               <>
-                <h2 className="text-lg md:text-xl font-semibold drop-shadow-lg mb-4 break-words max-w-4xl" style={{ textAlign }}>
-                  <FormattedText>{String((slide.content as any).title || "Untitled")}</FormattedText>
+                <h2 className="slide-question font-bold text-center drop-shadow-lg mb-6 break-words">
+                  {(slide.content as any).title || "Untitled"}
                 </h2>
-                <div className="slide-content-body flex-1 text-base md:text-lg leading-relaxed break-words max-w-4xl" style={{ textAlign }}>
-                  <FormattedText>{String((slide.content as any).text || "")}</FormattedText>
-                </div>
+                <p className="opacity-90 text-center max-w-3xl break-words">
+                  {(slide.content as any).text}
+                </p>
               </>
             )}
           </div>
         </SlideWrapper>
       );
-    }
 
     case "image":
       return (
-        <SlideWrapper slide={slide} themeId={themeId}>
-          <div className="relative w-full h-full flex flex-col min-h-0 p-4">
-            {(slide.content as any).imageUrl ? (
-              <>
-                <div className="flex-1 min-h-0 rounded-lg overflow-hidden">
-                  <SlideImage
-                    src={(slide.content as any).imageUrl}
-                    alt={(slide.content as any).title || "Slide image"}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-                {isEditing && (
-                  <div className="flex-shrink-0 mt-3">
-                    <ImageUploader
-                      value={(slide.content as any).imageUrl}
-                      onChange={(url) =>
-                        onUpdateContent?.({ ...slide.content, imageUrl: url })
-                      }
-                      placeholder="Replace image"
-                      className="min-h-[100px]"
-                    />
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="flex-1 min-h-0 flex items-center justify-center">
-                {isEditing ? (
-                  <ImageUploader
-                    value=""
-                    onChange={(url) =>
-                      onUpdateContent?.({ ...slide.content, imageUrl: url })
-                    }
-                    placeholder="Upload or paste image URL"
-                    className="w-full max-w-md min-h-[180px]"
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-muted-foreground">
-                    <Image className="w-20 h-20 opacity-40 mb-4" />
-                    <p className="text-sm">No image added yet</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </SlideWrapper>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          className="w-full h-full overflow-hidden rounded-xl md:rounded-2xl shadow-lg bg-background flex items-center justify-center"
+        >
+          {(slide.content as any).imageUrl ? (
+            <img
+              src={(slide.content as any).imageUrl}
+              alt={(slide.content as any).title || "Slide image"}
+              className="w-full h-full object-contain"
+              style={{ objectFit: "contain" }}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center">
+              <Image className="w-16 h-16 opacity-50 mb-4 text-muted-foreground" />
+              <p className="opacity-60 text-muted-foreground">No image uploaded</p>
+            </div>
+          )}
+          {isEditing && (slide.content as any).imageUrl && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+              <input
+                value={(slide.content as any).imageUrl || ""}
+                onChange={(e) =>
+                  onUpdateContent?.({ ...slide.content, imageUrl: e.target.value })
+                }
+                className="px-4 py-2 rounded-lg bg-black/70 text-white placeholder:text-white/50 text-center w-80"
+                placeholder="Paste image URL..."
+              />
+            </div>
+          )}
+        </motion.div>
       );
 
     case "split_content":

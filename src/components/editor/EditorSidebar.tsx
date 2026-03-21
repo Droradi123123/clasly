@@ -46,7 +46,7 @@ export function EditorSidebar({
   slide, 
   onUpdateDesign, 
   onUpdateContent,
-  selectedThemeId = 'academic-pro', 
+  selectedThemeId = 'neon-cyber', 
   onSelectTheme, 
   selectedDesignStyleId = 'dynamic', 
   onSelectDesignStyle,
@@ -126,28 +126,6 @@ export function EditorSidebar({
                 <Label htmlFor="no" className="text-sm cursor-pointer">No</Label>
               </div>
             </RadioGroup>
-          )}
-          
-          {/* Poll (Quiz) – dropdown to select correct option */}
-          {slide.type === 'poll_quiz' && content.options && (
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Correct answer</Label>
-              <Select
-                value={String(content.correctAnswer ?? 0)}
-                onValueChange={(v) => updateContent({ correctAnswer: parseInt(v, 10) })}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {content.options.map((opt, i) => (
-                    <SelectItem key={i} value={String(i)}>
-                      {opt || `Option ${i + 1}`}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           )}
           
           {/* Quiz correct answer (already handled in main editor, show indicator) */}
@@ -560,23 +538,12 @@ function SlideImageOverlay({
 
       if (uploadError) throw uploadError;
 
-      let displayUrl: string;
-      try {
-        const { data: signedData } = await supabase.storage
-          .from('slide-images')
-          .createSignedUrl(filePath, 60 * 60 * 24 * 365); // 1 year
-        if (signedData?.signedUrl) {
-          displayUrl = signedData.signedUrl;
-        } else {
-          const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
-          displayUrl = publicData.publicUrl;
-        }
-      } catch {
-        const { data: publicData } = supabase.storage.from('slide-images').getPublicUrl(filePath);
-        displayUrl = publicData.publicUrl;
-      }
+      const { data: { publicUrl } } = supabase.storage
+        .from('slide-images')
+        .getPublicUrl(filePath);
+
       onUpdateDesign({ 
-        overlayImageUrl: displayUrl,
+        overlayImageUrl: publicUrl,
         overlayImagePosition: design.overlayImagePosition || 'background'
       });
       toast.success('Image uploaded');

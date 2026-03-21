@@ -8,7 +8,6 @@ export * from './LiveWordCloud';
 export * from './LiveScaleResults';
 export * from './LiveGuessResults';
 export * from './LiveYesNoResults';
-export * from './CleanBarResults';
 export * from './QuizSlide';
 export * from './PollSlide';
 export * from './WordCloudSlide';
