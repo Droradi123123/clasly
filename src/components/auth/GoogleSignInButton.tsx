@@ -39,11 +39,20 @@ export const GoogleSignInButton = ({ className, size = "lg" }: GoogleSignInButto
 
         if (data?.url) {
           const oauthUrl = new URL(data.url);
-          const allowedHosts = ["accounts.google.com", "vkviqlmeiqpavpeuoldw.supabase.co"];
-          if (!allowedHosts.some((host) => oauthUrl.hostname.endsWith(host))) {
+          // Allow Google + any Supabase project host (hardcoding one ref breaks production on another project)
+          const h = oauthUrl.hostname;
+          const isAllowed =
+            h === "accounts.google.com" ||
+            h.endsWith(".supabase.co") ||
+            h.endsWith(".supabase.in");
+          if (!isAllowed) {
+            console.error("Blocked OAuth URL host:", h);
             throw new Error("Invalid OAuth redirect URL");
           }
           window.location.href = data.url;
+        } else {
+          toast.error("Could not start Google sign-in. Check Supabase URL and Google provider settings.");
+          console.error("signInWithOAuth returned no URL", { data });
         }
       } else {
         const { error } = await lovable.auth.signInWithOAuth("google", {

@@ -98,11 +98,20 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
 
         if (data?.url) {
           const oauthUrl = new URL(data.url);
-          const allowedHosts = ["accounts.google.com", "vkviqlmeiqpavpeuoldw.supabase.co"];
-          if (!allowedHosts.some((host) => oauthUrl.hostname.endsWith(host))) {
+          const h = oauthUrl.hostname;
+          const isAllowed =
+            h === "accounts.google.com" ||
+            h.endsWith(".supabase.co") ||
+            h.endsWith(".supabase.in");
+          if (!isAllowed) {
+            console.error("Blocked OAuth URL host:", h);
             throw new Error("Invalid OAuth redirect URL");
           }
           window.location.href = data.url;
+        } else {
+          toast.error("Could not start Google sign-in. Check Supabase URL and Google provider settings.");
+          console.error("signInWithOAuth returned no URL", { data });
+          setIsLoading(false);
         }
       } else {
         // For Lovable domains, use the managed flow
