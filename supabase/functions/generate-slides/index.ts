@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireGeminiApiKey } from "../_shared/gemini-key.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -1024,6 +1025,7 @@ function mapSlideToFrontendFormat(
         baseDesign.overlayImagePosition = "background";
       }
       break;
+    }
 
     case "wordcloud": {
       const wcQ = rawSlide.content.question;
@@ -1776,10 +1778,7 @@ serve(async (req) => {
       progressiveSlide,
     } = body;
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured");
-    }
+    const GEMINI_API_KEY = requireGeminiApiKey();
 
     const inputText = singleSlide?.prompt || description || "";
     const hebrewRegex = /[\u0590-\u05FF]/;

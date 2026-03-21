@@ -35,6 +35,7 @@ import { Slide } from "@/types/slides";
 const INTERACTIVE_TYPES = new Set([
   "quiz",
   "poll",
+  "poll_quiz",
   "yesno",
   "wordcloud",
   "scale",
@@ -144,6 +145,14 @@ export default function LectureAnalytics() {
           type: "poll",
           options: content?.options || [],
           counts: aggregatePollResponses(responses, content?.options || []),
+          total: responses.length,
+        };
+      case "poll_quiz":
+        return {
+          type: "poll_quiz",
+          options: content?.options || [],
+          correctAnswer: content?.correctAnswer,
+          counts: aggregateQuizResponses(responses, content?.options || []),
           total: responses.length,
         };
       case "yesno":
@@ -339,7 +348,7 @@ export default function LectureAnalytics() {
                         </span>
                       </div>
 
-                      {slide.type === "quiz" && "options" in summary && (
+                      {(slide.type === "quiz" || slide.type === "poll_quiz") && "options" in summary && (
                         <div className="space-y-2">
                           {(summary.options as string[]).map((opt, i) => (
                             <div key={i} className="flex items-center gap-2">

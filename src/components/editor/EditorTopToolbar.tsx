@@ -487,6 +487,7 @@ export function EditorTopToolbar({
             const variantConfig: Record<string, { key: keyof SlideDesign; variant2: string; label1: string; label2: string; icon1: IconComp; icon2: IconComp }> = {
               quiz: { key: 'quizVariant', variant2: 'listWithIcons', label1: 'כרטיסים', label2: 'רשימה עם אייקונים', icon1: LayoutGrid, icon2: List },
               poll: { key: 'pollVariant', variant2: 'rankedBars', label1: 'פסים', label2: 'פסים מדורגים', icon1: Rows3, icon2: TrendingUp },
+              poll_quiz: { key: 'pollVariant', variant2: 'rankedBars', label1: 'פסים', label2: 'פסים מדורגים', icon1: Rows3, icon2: TrendingUp },
               yesno: { key: 'yesNoVariant', variant2: 'thumbsDynamic', label1: 'כפתורים', label2: 'אגודלים', icon1: Circle, icon2: ThumbsUp },
               scale: { key: 'scaleVariant', variant2: 'stepsClick', label1: 'מטר', label2: 'צעדים', icon1: Sliders, icon2: ListOrdered },
               ranking: { key: 'rankingVariant', variant2: 'podium', label1: 'רשימה', label2: 'פודיום', icon1: List, icon2: LayoutList },

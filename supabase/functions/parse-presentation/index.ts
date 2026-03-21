@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { getGeminiApiKey } from "../_shared/gemini-key.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -64,8 +65,8 @@ serve(async (req) => {
     }
 
     // For PDF/PPTX, use Gemini to analyze and extract slides
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    
+    const GEMINI_API_KEY = getGeminiApiKey();
+
     if (!GEMINI_API_KEY) {
       console.log('GEMINI_API_KEY not found, returning placeholder');
       return new Response(

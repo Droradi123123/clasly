@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getGeminiApiKey, requireGeminiApiKey } from "../_shared/gemini-key.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -276,7 +277,7 @@ function stripBase64ForContext(slides: Slide[]): any[] {
 // =============================================================================
 
 async function generateImage(prompt: string): Promise<string | null> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
+  const apiKey = getGeminiApiKey();
   if (!apiKey) {
     console.error("GEMINI_API_KEY not configured for image generation");
     return null;
@@ -601,8 +602,7 @@ async function callAI(
   originalPrompt?: string,
   visionImages: VisionImage[] = []
 ): Promise<{ responseMessage: string; commands: any[]; reasoning?: string }> {
-  const apiKey = Deno.env.get("GEMINI_API_KEY");
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+  const apiKey = requireGeminiApiKey();
 
   const systemPrompt = buildSystemPrompt(slides, currentSlideIndex, language, userAiContext, originalPrompt, visionImages.length > 0);
   const isHe = language === "he";

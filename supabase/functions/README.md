@@ -30,3 +30,12 @@
 
 - הקוד ב-`supabase/functions` **תקין** ל-Supabase Edge Functions.
 - האדום נובע מכך שהעורך לא מוגדר ל-Deno; אחרי התקנת Deno והגדרת ה-workspace הוא אמור להבין את הקבצים.
+
+## מפתחות AI (Gemini)
+
+פונקציות כמו `generate-slides`, `chat-builder`, `generate-image` ו-`parse-presentation` דורשות מפתח **Google AI (Gemini)**.
+
+1. ב-Supabase: **Project Settings → Edge Functions → Secrets**
+2. הוסיפו `GEMINI_API_KEY` עם המפתח מ-[Google AI Studio](https://aistudio.google.com/apikey).
+
+**Clasly לא משתמש ב-Lovable.** אם קיבלתם הודעה על `LOVABLE_API_KEY`, זו כנראה גרסה ישנה שעדיין פרוסה — הריצו `npm run deploy:functions` (או דיפלוי ידני) כדי לעדכן את הקוד. אופציונלית ניתן להגדיר גם `LOVABLE_API_KEY` **רק** כשם חלופי לאותו מפתח Gemini (לא מומלץ; עדיף `GEMINI_API_KEY`).

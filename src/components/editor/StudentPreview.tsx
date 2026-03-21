@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,38 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
   const [agreeValue, setAgreeValue] = useState([50]);
   const [sentenceInput, setSentenceInput] = useState("");
 
+  const handleReset = useCallback(() => {
+    setSelectedOption(null);
+    setHasAnswered(false);
+    setWordInput("");
+    setNumberInput("");
+    setScaleValue([3]);
+    setRankingOrder([]);
+    setSentimentValue([50]);
+    setAgreeValue([50]);
+    setSentenceInput("");
+  }, []);
+
+  // Reset preview state when switching slides (must run before any early return — Rules of Hooks).
+  useEffect(() => {
+    if (!slide?.id) return;
+    handleReset();
+  }, [slide?.id, handleReset]);
+
+  // Ranking items: init in effect only (never setState during render).
+  useEffect(() => {
+    if (!slide) {
+      setRankingOrder([]);
+      return;
+    }
+    if (slide.type !== "ranking") {
+      setRankingOrder([]);
+      return;
+    }
+    const items = (slide.content as RankingSlideContent)?.items || [];
+    setRankingOrder(items.length > 0 ? [...items] : []);
+  }, [slide?.id, slide?.type, slide?.content]);
+
   if (!slide) {
     return (
       <div className="flex flex-col h-full bg-background rounded-2xl overflow-hidden shadow-2xl border border-border items-center justify-center p-6 text-center text-muted-foreground">
@@ -45,18 +77,6 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
   const theme = getTheme(themeId);
   const slideType = SLIDE_TYPES.find(t => t.type === slide.type);
   const isInteractive = slideType?.category === 'interactive' || slideType?.category === 'quiz';
-
-  const handleReset = () => {
-    setSelectedOption(null);
-    setHasAnswered(false);
-    setWordInput("");
-    setNumberInput("");
-    setScaleValue([3]);
-    setRankingOrder([]);
-    setSentimentValue([50]);
-    setAgreeValue([50]);
-    setSentenceInput("");
-  };
 
   const handleVote = (index: number) => {
     if (hasAnswered) return;
@@ -79,14 +99,6 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
 
   // Get option colors from theme (never white/light background)
   const getOptionColor = (index: number) => getSafeOptionColor(theme, index);
-
-  // Initialize ranking order if not set
-  if (slide.type === 'ranking' && rankingOrder.length === 0) {
-    const items = (content as RankingSlideContent)?.items || [];
-    if (items.length > 0) {
-      setRankingOrder([...items]);
-    }
-  }
 
   return (
     <div className="flex flex-col h-full bg-background rounded-2xl overflow-hidden shadow-2xl border border-border">
@@ -141,7 +153,7 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
             </h2>
 
             {/* Quiz/Poll Options - 2x2 grid for 4 options */}
-            {(slide.type === 'quiz' || slide.type === 'poll') && (
+            {(slide.type === 'quiz' || slide.type === 'poll' || slide.type === 'poll_quiz') && (
               <div className={((content as QuizSlideContent | PollSlideContent).options || []).length === 4
                 ? "grid grid-cols-2 gap-2"
                 : "space-y-2"

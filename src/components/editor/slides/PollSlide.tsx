@@ -15,6 +15,7 @@ import {
 import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import { FormattedText } from "@/components/editor/FormattedText";
 import { useSlideLayout } from "@/contexts/SlideLayoutContext";
+import { cn } from "@/lib/utils";
 
 interface PollSlideProps {
   slide: Slide;

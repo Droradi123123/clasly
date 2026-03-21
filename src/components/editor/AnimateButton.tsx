@@ -53,8 +53,9 @@ export function AnimateButton({ slide, onSimulationData, hasSimulationData = fal
     switch (slide.type) {
       case 'quiz': {
         const quizContent = content as QuizSlideContent;
+        const n = Math.max(2, quizContent.options?.length || 0);
         cancelRef.current = simulateQuizResponses(
-          quizContent.options.length,
+          n,
           quizContent.correctAnswer,
           50,
           (results, total) => {
@@ -66,10 +67,12 @@ export function AnimateButton({ slide, onSimulationData, hasSimulationData = fal
         );
         break;
       }
-      case 'poll': {
+      case 'poll':
+      case 'poll_quiz': {
         const pollContent = content as PollSlideContent;
+        const n = Math.max(2, pollContent.options?.length || 0);
         cancelRef.current = simulatePollResponses(
-          pollContent.options.length,
+          n,
           50,
           (results, total) => {
             onSimulationData({ results, total });
@@ -222,7 +225,7 @@ export function AnimateButton({ slide, onSimulationData, hasSimulationData = fal
   }, []);
 
   // Check if this slide type supports simulation
-  const supportsSimulation = ['quiz', 'poll', 'yesno', 'scale', 'guess_number', 'wordcloud', 'ranking', 'finish_sentence', 'sentiment_meter', 'agree_spectrum'].includes(slide.type);
+  const supportsSimulation = ['quiz', 'poll', 'poll_quiz', 'yesno', 'scale', 'guess_number', 'wordcloud', 'ranking', 'finish_sentence', 'sentiment_meter', 'agree_spectrum'].includes(slide.type);
 
   if (!supportsSimulation) {
     return null;

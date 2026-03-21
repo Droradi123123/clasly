@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, Check, Users, Circle, HelpCircle, type LucideIcon } from "lucide-react";
 import { SlideWrapper, QuestionHeader, ActivityFooter, CleanBarResults } from "./index";
@@ -128,7 +128,7 @@ export function QuizSlide({
 
   // Content-matched icon for listWithIcons variant (simple keyword match)
   const getOptionIcon = (option: string): LucideIcon => {
-    const t = option.toLowerCase();
+    const t = String(option ?? "").toLowerCase();
     if (/\d|one|two|first|second|1|2|3|4/.test(t)) return Circle;
     if (/yes|true|correct|right|✓|נכון|כן/.test(t)) return Check;
     return HelpCircle;

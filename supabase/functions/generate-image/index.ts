@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireGeminiApiKey } from "../_shared/gemini-key.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -133,10 +134,7 @@ serve(async (req) => {
       );
     }
 
-    const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-    if (!GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY is not configured");
-    }
+    const GEMINI_API_KEY = requireGeminiApiKey();
 
     console.log("Generating image for prompt:", prompt.substring(0, 50));
 

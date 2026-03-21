@@ -1,0 +1,17 @@
+{
+  "name": "Clasly",
+  "short_name": "Clasly",
+  "description": "AI interactive presentations and live lectures",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#6366f1",
+  "theme_color": "#6366f1",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}
