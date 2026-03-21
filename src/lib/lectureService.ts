@@ -332,7 +332,7 @@ export function subscribeStudents(lectureId: string, callback: (students: unknow
     .subscribe();
 }
 
-const RESPONSES_DEBOUNCE_MS = 250;
+const RESPONSES_DEBOUNCE_MS = 120;
 
 // Subscribe to response updates (for presenter). Uses payload.new for instant display, then debounced getResponses to reconcile.
 export function subscribeResponses(

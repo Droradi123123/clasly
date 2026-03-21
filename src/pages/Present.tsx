@@ -279,6 +279,29 @@ const Present = () => {
   const currentSlide = slides[currentSlideIndex];
   const unansweredQuestionsCount = questions.filter(q => !q.is_answered).length;
 
+  // Unified slide navigation: broadcast first (instant to students), then update DB
+  const goToSlide = useCallback(async (index: number) => {
+    if (index < 0 || index >= slides.length) return;
+    setCurrentSlideIndex(index);
+    setShowCorrectAnswer(false);
+    if (lectureId) {
+      sendSlideBroadcast(lectureId, index);
+      await updateLecture(lectureId, { current_slide_index: index });
+    }
+  }, [lectureId, slides.length, sendSlideBroadcast]);
+
+  const handleNextSlide = useCallback(async () => {
+    if (currentSlideIndex < slides.length - 1) {
+      await goToSlide(currentSlideIndex + 1);
+    }
+  }, [currentSlideIndex, slides.length, goToSlide]);
+
+  const handlePrevSlide = useCallback(async () => {
+    if (currentSlideIndex > 0) {
+      await goToSlide(currentSlideIndex - 1);
+    }
+  }, [currentSlideIndex, goToSlide]);
+
   // Load lecture: use optimistic state from Editor for instant render, then sync from DB in background
   useEffect(() => {
     if (!lectureId) return;
@@ -372,7 +395,7 @@ const Present = () => {
   }, [lectureId, currentSlideIndex, currentSlide]);
 
   // Polling backup for responses when realtime may lag (only during live presentation on interactive/quiz slides)
-  const RESPONSE_POLL_INTERVAL_MS = 1800;
+  const RESPONSE_POLL_INTERVAL_MS = 1200;
   useEffect(() => {
     if (!lectureId || !currentSlide || !isLive) return;
     const slideInfo = SLIDE_TYPES.find(t => t.type === currentSlide.type);
@@ -484,10 +507,7 @@ const Present = () => {
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Fullscreen is not auto-requested; user can click fullscreen button or press F.
-  // Auto-fullscreen was removed to avoid blocking the Start button and improve responsiveness.
-
-  // Keyboard navigation
+  // Keyboard navigation — placed after toggleFullscreen / isFullscreen exist (avoids TDZ)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === " ") {
@@ -507,30 +527,10 @@ const Present = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [slides.length, navigate, lectureId, currentSlideIndex, isFullscreen, toggleFullscreen, handleNextSlide, handlePrevSlide]);
+  }, [slides.length, navigate, lectureId, isFullscreen, toggleFullscreen, handleNextSlide, handlePrevSlide]);
 
-  // Unified slide navigation: broadcast first (instant to students), then update DB
-  const goToSlide = useCallback(async (index: number) => {
-    if (index < 0 || index >= slides.length) return;
-    setCurrentSlideIndex(index);
-    setShowCorrectAnswer(false);
-    if (lectureId) {
-      sendSlideBroadcast(lectureId, index);
-      await updateLecture(lectureId, { current_slide_index: index });
-    }
-  }, [lectureId, slides.length, sendSlideBroadcast]);
-
-  const handleNextSlide = useCallback(async () => {
-    if (currentSlideIndex < slides.length - 1) {
-      await goToSlide(currentSlideIndex + 1);
-    }
-  }, [currentSlideIndex, slides.length, goToSlide]);
-
-  const handlePrevSlide = useCallback(async () => {
-    if (currentSlideIndex > 0) {
-      await goToSlide(currentSlideIndex - 1);
-    }
-  }, [currentSlideIndex, goToSlide]);
+  // Fullscreen is not auto-requested; user can click fullscreen button or press F.
+  // Auto-fullscreen was removed to avoid blocking the Start button and improve responsiveness.
 
   // Wheel-based slide navigation: scroll within slide first, then advance
   const WHEEL_THRESHOLD = 20;
@@ -923,7 +923,11 @@ const Present = () => {
                     <SlideRenderer
                       slide={currentSlide}
                       isEditing={false}
-                      showResults={isQuizSlide(currentSlide.type) ? showCorrectAnswer : true}
+                      showResults={
+                        currentSlide.type === "poll_quiz" || !isQuizSlide(currentSlide.type)
+                          ? true
+                          : showCorrectAnswer
+                      }
                       liveResults={aggregatedResults}
                       totalResponses={responses.length}
                       hideFooter={true}

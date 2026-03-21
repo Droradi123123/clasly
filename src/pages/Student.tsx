@@ -147,11 +147,19 @@ const Student = () => {
     const now = Date.now();
     const recentlyFromBroadcast =
       lastBroadcastTsRef.current > 0 &&
-      now - lastBroadcastTsRef.current < 3000 &&
+      now - lastBroadcastTsRef.current < 3500 &&
       lastBroadcastSlideIndexRef.current !== null;
-    const indexToApply = recentlyFromBroadcast
-      ? (newSlideIndex === lastBroadcastSlideIndexRef.current ? newSlideIndex : lastBroadcastSlideIndexRef.current!)
-      : newSlideIndex;
+    const b = lastBroadcastSlideIndexRef.current;
+    // During broadcast window: DB ahead of last broadcast → trust DB (missed a forward broadcast).
+    // DB behind broadcast → keep broadcast index (write lag). DB lower than broadcast → presenter went back; trust DB.
+    const indexToApply =
+      recentlyFromBroadcast && b !== null
+        ? newSlideIndex > b
+          ? newSlideIndex
+          : newSlideIndex < b
+            ? newSlideIndex
+            : b
+        : newSlideIndex;
 
     // Reset answer state when slide changes
     setCurrentSlideIndex((prevIndex: number) => {
@@ -174,6 +182,11 @@ const Student = () => {
       setSlides(newSlides);
     }
     setLecture(updatedLecture);
+
+    // After post-broadcast refetch, exit "broadcast merge" mode so postgres/poll use DB index only.
+    if (fromRefetch) {
+      lastBroadcastTsRef.current = 0;
+    }
   }, []);
 
   // Hard refetch lecture state (used for guaranteed instant sync)
@@ -328,7 +341,7 @@ const Student = () => {
           broadcastRefetchTimeoutRef.current = setTimeout(() => {
             broadcastRefetchTimeoutRef.current = null;
             refetchLectureState(lid, true);
-          }, 800);
+          }, 1100);
         }
       })
       .subscribe((status) => {
@@ -468,12 +481,17 @@ const Student = () => {
       }
       // Broadcast so presenter gets instant update (fallback if postgres_changes delays)
       const ch = lectureSyncChannelRef.current;
+      const responsePayload = { lectureId: lecture.id, slideIndex: currentSlideIndex };
       if (ch) {
-        ch.send({
-          type: 'broadcast',
-          event: 'response_changed',
-          payload: { lectureId: lecture.id, slideIndex: currentSlideIndex },
-        });
+        ch.send({ type: 'broadcast', event: 'response_changed', payload: responsePayload });
+        // Redundant send — presenter may subscribe milliseconds later; improves perceived latency
+        setTimeout(() => {
+          lectureSyncChannelRef.current?.send({
+            type: 'broadcast',
+            event: 'response_changed',
+            payload: responsePayload,
+          });
+        }, 220);
       }
     } catch (error) {
       console.error('Error submitting response:', error);
