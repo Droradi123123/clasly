@@ -247,6 +247,8 @@ const Present = () => {
     if (!ht) return;
     const dur = durationSeconds;
     const started = new Date(Date.now() - dur * 1000).toISOString();
+    // Optimistic: presenter + students switch to results immediately.
+    setLecture((prev: any) => (prev ? { ...prev, activity_started_at: started } : prev));
     sendSlideBroadcast(lectureId, currentSlideIndex, started);
     try {
       const updated = await updateLecture(lectureId, { activity_started_at: started });
@@ -267,6 +269,10 @@ const Present = () => {
         const activityStartedAt = isParticipativeSlide(targetSlide.type)
           ? new Date().toISOString()
           : null;
+        // Optimistic: start countdown immediately on presenter even if DB write is slow/fails.
+        setLecture((prev: any) =>
+          prev ? { ...prev, current_slide_index: index, activity_started_at: activityStartedAt } : prev
+        );
         sendSlideBroadcast(lectureId, index, activityStartedAt);
         try {
           const updated = await updateLecture(lectureId, {

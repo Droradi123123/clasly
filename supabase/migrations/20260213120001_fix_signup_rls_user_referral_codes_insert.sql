@@ -9,3 +9,4 @@ WITH CHECK (
   auth.uid() = user_id
   AND NOT EXISTS (SELECT 1 FROM public.user_referral_codes urc WHERE urc.user_id = auth.uid())
 );
+

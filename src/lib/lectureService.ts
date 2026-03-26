@@ -133,6 +133,7 @@ export async function updateLecture(lectureId: string, updates: {
   }
 
   let lastError: Error | null = null;
+  let retriedWithoutActivityStartedAt = false;
   for (let attempt = 0; attempt <= UPDATE_LECTURE_MAX_RETRIES; attempt++) {
     try {
       const { data, error } = await supabase
@@ -147,6 +148,20 @@ export async function updateLecture(lectureId: string, updates: {
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       const errObj = err as { message?: string; code?: string };
+      const msg = (errObj.message || '').toLowerCase();
+
+      // Resilience: if production DB is missing `activity_started_at`, don't block slide sync.
+      // Retry once without the column so current_slide_index updates still succeed.
+      if (
+        !retriedWithoutActivityStartedAt &&
+        'activity_started_at' in updateData &&
+        (msg.includes('activity_started_at') && msg.includes('column') && msg.includes('does not exist'))
+      ) {
+        retriedWithoutActivityStartedAt = true;
+        delete (updateData as any).activity_started_at;
+        continue;
+      }
+
       if (attempt < UPDATE_LECTURE_MAX_RETRIES && isRetryableError(errObj)) {
         const delay = UPDATE_LECTURE_BASE_DELAY_MS * Math.pow(2, attempt);
         await new Promise((r) => setTimeout(r, delay));

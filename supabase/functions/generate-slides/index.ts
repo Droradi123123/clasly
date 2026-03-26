@@ -875,7 +875,8 @@ function mapSlideToFrontendFormat(
   };
 
   const baseActivitySettings = {
-    duration: 60,
+    // Default interactive timer should match frontend defaults (20s). `0` is special-cased as "Off".
+    duration: 20,
     showResults: true,
     interactionStyle: "bar_chart",
   };

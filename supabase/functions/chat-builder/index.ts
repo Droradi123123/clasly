@@ -854,7 +854,8 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
             direction: lang === "he" ? "rtl" : "ltr",
           },
           layout: "centered",
-          activitySettings: { duration: 60, showResults: true, interactionStyle: "bar_chart" },
+          // Default interactive timer should match frontend defaults (20s). `0` is "Off".
+          activitySettings: { duration: 20, showResults: true, interactionStyle: "bar_chart" },
         };
 
         // Handle image for new slide
