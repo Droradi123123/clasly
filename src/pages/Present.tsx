@@ -22,10 +22,19 @@ import {
   HelpCircle,
   CheckCircle,
   Flag,
+  Clock,
 } from "lucide-react";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { SlideFrame } from "@/components/editor/SlideFrame";
-import { Slide, SLIDE_TYPES, isQuizSlide, isInteractiveSlide } from "@/types/slides";
+import {
+  Slide,
+  SLIDE_TYPES,
+  isQuizSlide,
+  isInteractiveSlide,
+  isParticipativeSlide,
+  getResolvedActivitySettings,
+} from "@/types/slides";
+import { buildLiveResultsPayload } from "@/lib/responseAggregation";
 import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 import { ThemeId } from "@/types/themes";
 import { DesignStyleId } from "@/types/designStyles";
@@ -61,118 +70,6 @@ interface Question {
   answered_at: string | null;
 }
 
-// Response aggregation helpers
-function aggregateQuizResponses(responses: any[], options: string[]) {
-  const counts = options.map(() => 0);
-  responses.forEach((r) => {
-    const answer = r.response_data?.answer;
-    if (typeof answer === 'number' && answer >= 0 && answer < options.length) {
-      counts[answer]++;
-    }
-  });
-  return counts;
-}
-
-function aggregatePollResponses(responses: any[], options: string[]) {
-  const counts = options.map(() => 0);
-  responses.forEach((r) => {
-    const answer = r.response_data?.answer;
-    if (typeof answer === 'number' && answer >= 0 && answer < options.length) {
-      counts[answer]++;
-    }
-  });
-  return counts;
-}
-
-function aggregateYesNoResponses(responses: any[]) {
-  let yes = 0, no = 0;
-  responses.forEach((r) => {
-    if (r.response_data?.answer === true) yes++;
-    else if (r.response_data?.answer === false) no++;
-  });
-  return { yes, no };
-}
-
-function aggregateWordCloudResponses(responses: any[]) {
-  const words: Record<string, number> = {};
-  responses.forEach((r) => {
-    const word = r.response_data?.word;
-    if (word) {
-      words[word.toLowerCase()] = (words[word.toLowerCase()] || 0) + 1;
-    }
-  });
-  return Object.entries(words).map(([text, count]) => ({ text, count }));
-}
-
-function aggregateScaleResponses(responses: any[]) {
-  const values: number[] = [];
-  responses.forEach((r) => {
-    const value = r.response_data?.value;
-    if (typeof value === 'number') values.push(value);
-  });
-  if (values.length === 0) return { average: 0, distribution: [] };
-  const average = values.reduce((a, b) => a + b, 0) / values.length;
-  return { average, distribution: values };
-}
-
-function aggregateGuessResponses(responses: any[], correctNumber: number) {
-  const guesses: number[] = [];
-  responses.forEach((r) => {
-    const guess = r.response_data?.guess;
-    if (typeof guess === 'number') guesses.push(guess);
-  });
-  return { guesses, correctNumber };
-}
-
-function aggregateRankingResponses(responses: any[], items: string[]) {
-  if (responses.length === 0) return { rankings: [] };
-  
-  // Calculate average rank for each item
-  const rankSums: Record<string, number[]> = {};
-  items.forEach(item => { rankSums[item] = []; });
-  
-  responses.forEach((r) => {
-    const ranking = r.response_data?.ranking;
-    if (Array.isArray(ranking)) {
-      ranking.forEach((item: string, index: number) => {
-        if (rankSums[item]) {
-          rankSums[item].push(index + 1); // 1-based ranking
-        }
-      });
-    }
-  });
-  
-  const rankings = items.map(item => ({
-    item,
-    avgRank: rankSums[item].length > 0 
-      ? rankSums[item].reduce((a, b) => a + b, 0) / rankSums[item].length 
-      : 0
-  }));
-  
-  return { rankings };
-}
-
-// Aggregate sentiment and agree responses
-function aggregateSentimentResponses(responses: any[]) {
-  const values: number[] = [];
-  responses.forEach((r) => {
-    const value = r.response_data?.value;
-    if (typeof value === 'number') values.push(value);
-  });
-  if (values.length === 0) return { average: 50, distribution: [] };
-  const average = values.reduce((a, b) => a + b, 0) / values.length;
-  return { average, distribution: values };
-}
-
-function aggregateFinishSentenceResponses(responses: any[]) {
-  const texts: string[] = [];
-  responses.forEach((r) => {
-    const text = r.response_data?.text;
-    if (text) texts.push(text);
-  });
-  return { texts };
-}
-
 const Present = () => {
   const { lectureId } = useParams();
   const navigate = useNavigate();
@@ -194,7 +91,8 @@ const Present = () => {
   const [floatingReactions, setFloatingReactions] = useState<{ id: number; emoji: string; x: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGame, setShowGame] = useState(false);
-  const [showCorrectAnswer, setShowCorrectAnswer] = useState(false);
+  const [, setTick] = useState(0);
+  const prevActivityPhaseRef = useRef<"voting" | "results" | "idle">("idle");
   // Questions state
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
@@ -203,7 +101,12 @@ const Present = () => {
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const slideSyncReadyRef = useRef(false);
-  const pendingBroadcastRef = useRef<{ lectureId: string; currentSlideIndex: number; ts: number } | null>(null);
+  const pendingBroadcastRef = useRef<{
+    lectureId: string;
+    currentSlideIndex: number;
+    ts: number;
+    activityStartedAt: string | null;
+  } | null>(null);
   const slideContainerRef = useRef<HTMLDivElement | null>(null);
   const currentSlideIndexRef = useRef(currentSlideIndex);
 
@@ -236,7 +139,12 @@ const Present = () => {
         channel.send({
           type: 'broadcast',
           event: 'slide_changed',
-          payload: { lectureId: pending.lectureId, currentSlideIndex: pending.currentSlideIndex, ts: pending.ts },
+          payload: {
+            lectureId: pending.lectureId,
+            currentSlideIndex: pending.currentSlideIndex,
+            ts: pending.ts,
+            activityStartedAt: pending.activityStartedAt,
+          },
         });
       }
     });
@@ -253,42 +161,126 @@ const Present = () => {
     };
   }, [lectureId]);
 
-  const sendSlideBroadcast = useCallback((lectureId: string, newIndex: number) => {
-    const payload = { lectureId, currentSlideIndex: newIndex, ts: Date.now() };
-    if (slideSyncReadyRef.current && slideSyncChannelRef.current) {
-      slideSyncChannelRef.current.send({
-        type: 'broadcast',
-        event: 'slide_changed',
-        payload,
-      });
-      setTimeout(() => {
-        if (slideSyncChannelRef.current) {
-          slideSyncChannelRef.current.send({
-            type: 'broadcast',
-            event: 'slide_changed',
-            payload: { ...payload, ts: Date.now() },
-          });
-        }
-      }, 180);
-    } else {
-      pendingBroadcastRef.current = payload;
-    }
-  }, []);
+  const sendSlideBroadcast = useCallback(
+    (lectureId: string, newIndex: number, activityStartedAt: string | null) => {
+      const payload = { lectureId, currentSlideIndex: newIndex, ts: Date.now(), activityStartedAt };
+      if (slideSyncReadyRef.current && slideSyncChannelRef.current) {
+        slideSyncChannelRef.current.send({
+          type: 'broadcast',
+          event: 'slide_changed',
+          payload,
+        });
+        setTimeout(() => {
+          if (slideSyncChannelRef.current) {
+            slideSyncChannelRef.current.send({
+              type: 'broadcast',
+              event: 'slide_changed',
+              payload: { ...payload, ts: Date.now() },
+            });
+          }
+        }, 180);
+      } else {
+        pendingBroadcastRef.current = payload;
+      }
+    },
+    []
+  );
 
   currentSlideIndexRef.current = currentSlideIndex;
   const currentSlide = slides[currentSlideIndex];
   const unansweredQuestionsCount = questions.filter(q => !q.is_answered).length;
 
-  // Unified slide navigation: broadcast first (instant to students), then update DB
-  const goToSlide = useCallback(async (index: number) => {
-    if (index < 0 || index >= slides.length) return;
-    setCurrentSlideIndex(index);
-    setShowCorrectAnswer(false);
-    if (lectureId) {
-      sendSlideBroadcast(lectureId, index);
-      await updateLecture(lectureId, { current_slide_index: index });
+  useEffect(() => {
+    if (!lectureId) return;
+    const id = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [lectureId]);
+
+  const participative = !!(currentSlide && isParticipativeSlide(currentSlide.type));
+  const activityResolved =
+    participative && currentSlide ? getResolvedActivitySettings(currentSlide) : null;
+  const hasTimer = !!(activityResolved?.hasTimer);
+  const durationSec = hasTimer && activityResolved ? activityResolved.durationSeconds : 0;
+  const startedAtMs = lecture?.activity_started_at
+    ? Date.parse(lecture.activity_started_at as string)
+    : NaN;
+  const elapsedMs =
+    participative && !Number.isNaN(startedAtMs) ? Date.now() - startedAtMs : 0;
+  const inVotingPhase =
+    participative &&
+    hasTimer &&
+    (Number.isNaN(startedAtMs) || elapsedMs < durationSec * 1000);
+  const inResultsPhase =
+    participative &&
+    hasTimer &&
+    !Number.isNaN(startedAtMs) &&
+    elapsedMs >= durationSec * 1000;
+  const remainingSec =
+    participative && hasTimer && !Number.isNaN(startedAtMs)
+      ? Math.max(0, Math.ceil(durationSec - elapsedMs / 1000))
+      : 0;
+  const showLiveResults = !participative || !hasTimer || inResultsPhase;
+  const showCorrectAnswerEffective =
+    !currentSlide ||
+    !isQuizSlide(currentSlide.type) ||
+    !participative ||
+    !hasTimer ||
+    inResultsPhase;
+
+  useEffect(() => {
+    if (!participative || !currentSlide || !hasTimer) {
+      prevActivityPhaseRef.current = "idle";
+      return;
     }
-  }, [lectureId, slides.length, sendSlideBroadcast]);
+    const phase: "voting" | "results" = inResultsPhase ? "results" : "voting";
+    const prev = prevActivityPhaseRef.current;
+    if (phase === "results" && prev === "voting" && isQuizSlide(currentSlide.type)) {
+      setShowConfetti(true);
+      setTimeout(() => setShowConfetti(false), 3000);
+    }
+    prevActivityPhaseRef.current = phase;
+  }, [inResultsPhase, participative, currentSlide?.id, currentSlide, hasTimer]);
+
+  const handleSkipToResults = useCallback(async () => {
+    if (!lectureId || !currentSlide || !isParticipativeSlide(currentSlide.type)) return;
+    const { hasTimer: ht, durationSeconds } = getResolvedActivitySettings(currentSlide);
+    if (!ht) return;
+    const dur = durationSeconds;
+    const started = new Date(Date.now() - dur * 1000).toISOString();
+    sendSlideBroadcast(lectureId, currentSlideIndex, started);
+    try {
+      const updated = await updateLecture(lectureId, { activity_started_at: started });
+      if (updated) setLecture(updated);
+    } catch (e) {
+      console.error("[Present] skip to results:", e);
+    }
+  }, [lectureId, currentSlide, currentSlideIndex, sendSlideBroadcast]);
+
+  // Unified slide navigation: broadcast first (instant to students), then update DB
+  const goToSlide = useCallback(
+    async (index: number) => {
+      if (index < 0 || index >= slides.length) return;
+      setCurrentSlideIndex(index);
+      prevActivityPhaseRef.current = "idle";
+      if (lectureId) {
+        const targetSlide = slides[index];
+        const activityStartedAt = isParticipativeSlide(targetSlide.type)
+          ? new Date().toISOString()
+          : null;
+        sendSlideBroadcast(lectureId, index, activityStartedAt);
+        try {
+          const updated = await updateLecture(lectureId, {
+            current_slide_index: index,
+            activity_started_at: activityStartedAt,
+          });
+          if (updated) setLecture(updated);
+        } catch (e) {
+          console.error("[Present] goToSlide:", e);
+        }
+      }
+    },
+    [lectureId, slides, sendSlideBroadcast]
+  );
 
   const handleNextSlide = useCallback(async () => {
     if (currentSlideIndex < slides.length - 1) {
@@ -608,91 +600,7 @@ const Present = () => {
   // Get join URL for QR code
   const joinUrl = `${window.location.origin}/join?code=${lectureCode}`;
 
-  // Calculate aggregated results for display
-  const getAggregatedResults = () => {
-    if (!currentSlide) return null;
-    
-    switch (currentSlide.type) {
-      case 'quiz':
-        const quizContent = currentSlide.content as any;
-        return {
-          type: 'quiz',
-          results: aggregateQuizResponses(responses, quizContent.options || []),
-          options: quizContent.options || [],
-          correctAnswer: quizContent.correctAnswer,
-        };
-      case 'poll':
-        const pollContent = currentSlide.content as any;
-        return {
-          type: 'poll',
-          results: aggregatePollResponses(responses, pollContent.options || []),
-          options: pollContent.options || [],
-        };
-      case 'poll_quiz':
-        const pollQuizContent = currentSlide.content as any;
-        return {
-          type: 'poll_quiz',
-          results: aggregatePollResponses(responses, pollQuizContent.options || []),
-          options: pollQuizContent.options || [],
-          correctAnswer: pollQuizContent.correctAnswer,
-        };
-      case 'yesno':
-        return {
-          type: 'yesno',
-          results: aggregateYesNoResponses(responses),
-        };
-      case 'wordcloud':
-        return {
-          type: 'wordcloud',
-          words: aggregateWordCloudResponses(responses),
-        };
-      case 'scale':
-        return {
-          type: 'scale',
-          results: aggregateScaleResponses(responses),
-        };
-      case 'guess_number':
-        const guessContent = currentSlide.content as any;
-        return {
-          type: 'guess_number',
-          results: aggregateGuessResponses(responses, guessContent.correctNumber || 0),
-        };
-      case 'ranking':
-        const rankingContent = currentSlide.content as any;
-        return {
-          type: 'ranking',
-          rankings: aggregateRankingResponses(responses, rankingContent.items || []),
-        };
-      case 'sentiment_meter': {
-        const { average, distribution } = aggregateSentimentResponses(responses);
-        return {
-          type: 'sentiment_meter',
-          average,
-          distribution,
-          results: { average, distribution },
-        };
-      }
-      case 'agree_spectrum': {
-        const { average, distribution } = aggregateSentimentResponses(responses);
-        return {
-          type: 'agree_spectrum',
-          average,
-          positions: distribution,
-          distribution,
-          results: { average, distribution },
-        };
-      }
-      case 'finish_sentence':
-        return {
-          type: 'finish_sentence',
-          results: aggregateFinishSentenceResponses(responses),
-        };
-      default:
-        return null;
-    }
-  };
-
-  const aggregatedResults = getAggregatedResults();
+  const aggregatedResults = buildLiveResultsPayload(currentSlide, responses);
 
   if (loading) {
     return (
@@ -798,6 +706,23 @@ const Present = () => {
                 <span className="font-bold tabular-nums">{responses.length}</span>
               </div>
             )}
+            {participative && hasTimer && inVotingPhase && !Number.isNaN(startedAtMs) && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-violet-500/20 text-violet-100 border border-violet-400/30">
+                <Clock className="w-4 h-4 shrink-0" />
+                <span className="text-sm font-bold tabular-nums">{remainingSec}s</span>
+                <span className="text-xs text-violet-200/90 hidden sm:inline">left</span>
+              </div>
+            )}
+            {participative && hasTimer && inResultsPhase && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-teal-500/20 text-teal-100 text-xs font-medium">
+                Results
+              </div>
+            )}
+            {participative && !hasTimer && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 text-xs font-medium">
+                Live
+              </div>
+            )}
           </div>
           {isLive && (
             <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 text-red-400">
@@ -866,27 +791,17 @@ const Present = () => {
           >
             <Gamepad2 className="w-4 h-4" />
           </Button>
-          {/* Reveal Answer button - for all quiz slides */}
-          {currentSlide && isQuizSlide(currentSlide.type) && (
+          {/* End question early (participative slides with timer) */}
+          {currentSlide && participative && hasTimer && inVotingPhase && (
             <Button
-              variant={showCorrectAnswer ? "default" : "ghost"}
+              variant="default"
               size="sm"
-              className={showCorrectAnswer 
-                ? "bg-green-500 hover:bg-green-600 text-white" 
-                : "text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-              }
-              onClick={() => {
-                setShowCorrectAnswer(!showCorrectAnswer);
-                if (!showCorrectAnswer) {
-                  setShowConfetti(true);
-                  setTimeout(() => setShowConfetti(false), 3000);
-                }
-              }}
-              disabled={responses.length === 0}
-              title={responses.length === 0 ? "Wait for responses before revealing" : showCorrectAnswer ? "Hide correct answer" : "Reveal correct answer"}
+              className="bg-teal-600 hover:bg-teal-700 text-white"
+              onClick={() => void handleSkipToResults()}
+              title="Show results now (skip remaining time)"
             >
               <Check className="w-4 h-4" />
-              <span className="ml-1 text-xs">{showCorrectAnswer ? "Hide" : "Reveal"}</span>
+              <span className="ml-1 text-xs">End question</span>
             </Button>
           )}
         </div>
@@ -923,15 +838,11 @@ const Present = () => {
                     <SlideRenderer
                       slide={currentSlide}
                       isEditing={false}
-                      showResults={
-                        currentSlide.type === "poll_quiz" || !isQuizSlide(currentSlide.type)
-                          ? true
-                          : showCorrectAnswer
-                      }
+                      showResults={showLiveResults}
                       liveResults={aggregatedResults}
                       totalResponses={responses.length}
                       hideFooter={true}
-                      showCorrectAnswer={showCorrectAnswer}
+                      showCorrectAnswer={showCorrectAnswerEffective}
                       forceShowStats={true}
                       themeId={((currentSlide?.design as { themeId?: string } | undefined)?.themeId ?? (lecture?.settings as Record<string, unknown> | undefined)?.themeId ?? (slides[0]?.design as { themeId?: string } | undefined)?.themeId) as ThemeId | undefined ?? "neon-cyber"}
                       designStyleId={((currentSlide?.design as { designStyleId?: string } | undefined)?.designStyleId ?? (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ?? (slides[0]?.design as { designStyleId?: string } | undefined)?.designStyleId) as DesignStyleId | undefined ?? "dynamic"}

@@ -118,6 +118,8 @@ export async function updateLecture(lectureId: string, updates: {
   current_slide_index?: number;
   slides?: Slide[];
   settings?: Record<string, unknown>;
+  /** ISO timestamp when the current participative slide's timer started; null when not applicable */
+  activity_started_at?: string | null;
 }) {
   const updateData: Record<string, unknown> = {
     ...updates,
@@ -158,7 +160,11 @@ export async function updateLecture(lectureId: string, updates: {
 
 // Start a lecture (set to active)
 export async function startLecture(lectureId: string) {
-  return updateLecture(lectureId, { status: 'active', current_slide_index: 0 });
+  return updateLecture(lectureId, {
+    status: 'active',
+    current_slide_index: 0,
+    activity_started_at: null,
+  });
 }
 
 // End a lecture

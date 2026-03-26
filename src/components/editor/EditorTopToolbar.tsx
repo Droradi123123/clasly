@@ -1,11 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  Italic,
   AlignLeft,
   AlignCenter,
   AlignRight,
-  AlignJustify,
   Palette,
   ImageIcon,
   Sparkles,
@@ -32,6 +30,9 @@ import {
   ArrowLeftRight,
   TrendingUp,
   Thermometer,
+  Clock,
+  Award,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -53,7 +54,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Slide, SlideDesign, FontFamily, FontSize, TextAlign, GRADIENT_PRESETS, OverlayImagePosition, LogoPosition, LogoScope } from "@/types/slides";
+import {
+  Slide,
+  SlideDesign,
+  FontFamily,
+  FontSize,
+  TextAlign,
+  GRADIENT_PRESETS,
+  OverlayImagePosition,
+  LogoPosition,
+  LogoScope,
+  ActivitySettings,
+  isParticipativeSlide,
+  getResolvedActivitySettings,
+} from "@/types/slides";
 import type { DesignStyleId } from "@/types/designStyles";
 import { ThemeId, getTheme } from "@/types/themes";
 import { ThemeSelector } from "./ThemeSelector";
@@ -69,6 +83,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Separator } from "@/components/ui/separator";
 
 interface EditorTopToolbarProps {
   slide: Slide;
@@ -87,6 +102,8 @@ interface EditorTopToolbarProps {
   onImportClick?: () => void;
   /** When true, use compact padding (constrained viewport) */
   compact?: boolean;
+  /** Participative slides: timer length and scoring */
+  onUpdateActivitySettings?: (settings: Partial<ActivitySettings>) => void;
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
@@ -116,6 +133,7 @@ export function EditorTopToolbar({
   onPremiumColorBlocked,
   onImportClick,
   compact = false,
+  onUpdateActivitySettings,
 }: EditorTopToolbarProps) {
   const design = slide.design || {};
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -139,177 +157,304 @@ export function EditorTopToolbar({
   };
 
   const isRtl = design.direction === "rtl";
+  const showActivityControls = isParticipativeSlide(slide.type) && onUpdateActivitySettings;
+  const resolvedActivity = getResolvedActivitySettings(slide);
+
+  const TIMER_PRESETS = [10, 20, 30, 60, 90, 120] as const;
+  const POINT_PRESETS = [
+    { correct: 500, participation: 250 },
+    { correct: 1000, participation: 500 },
+    { correct: 2000, participation: 1000 },
+  ] as const;
 
   return (
     <div className="flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
       <div className={`flex items-center gap-1 overflow-x-auto ${compact ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
-        {/* Group A - Typography */}
-        <div className="flex items-center gap-2 pr-3 border-r border-border/50">
-          {/* Font Family */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground shrink-0">Font</span>
-            <Select
-              value={design.fontFamily || "Inter"}
-              onValueChange={(value) => updateDesign({ fontFamily: value as FontFamily })}
-            >
-              <SelectTrigger className="w-[115px] h-8 text-xs">
-                <SelectValue placeholder="Font" />
-              </SelectTrigger>
-              <SelectContent>
-                {FONT_OPTIONS.map((font) => (
-                  <SelectItem
-                    key={font.value}
-                    value={font.value}
-                    style={{ fontFamily: font.value }}
+        {/* Text & layout — single compact control */}
+        <div className="flex items-center pr-3 border-r border-border/50 shrink-0">
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className={`h-8 border-border/80 bg-background/90 hover:bg-muted/60 shrink-0 ${
+                      compact ? "gap-0.5 px-1.5" : "gap-1.5 px-2.5"
+                    }`}
+                    aria-label="Text, font, color, alignment"
                   >
-                    {font.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Font Size */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground shrink-0">Size</span>
-            <Select
-              value={design.fontSize || "medium"}
-              onValueChange={(value) => updateDesign({ fontSize: value as FontSize })}
-            >
-              <SelectTrigger className="w-[85px] h-8 text-xs">
-                <SelectValue placeholder="Size" />
-              </SelectTrigger>
-              <SelectContent>
-                {FONT_SIZE_OPTIONS.map((size) => (
-                  <SelectItem key={size.value} value={size.value}>
-                    {size.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Divider */}
-          <div className="w-px h-5 bg-border/50 mx-0.5" />
-
-          {/* Text Color with color bar indicator */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-muted-foreground shrink-0">Color</span>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0 relative">
-                  <Type className="w-4 h-4" />
-                <div
-                  className="absolute bottom-0.5 left-1 right-1 h-1 rounded-full"
-                  style={{ backgroundColor: design.textColor || "#ffffff" }}
-                />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-48 p-3" align="start">
-              <div className="space-y-2">
-                <Label className="text-xs">Text Color</Label>
-                <div className="flex flex-wrap gap-2">
-                  {["#ffffff", "#000000", "#f1f5f9", "#fef3c7", "#dbeafe", "#fee2e2", "#d1fae5"].map(
-                    (color) => (
-                      <motion.button
-                        key={color}
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => updateDesign({ textColor: color })}
-                        className={`w-6 h-6 rounded-md shadow-sm border-2 ${
-                          design.textColor === color
-                            ? "border-primary ring-1 ring-primary"
-                            : "border-border"
-                        }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    )
-                  )}
+                    {compact ? (
+                      <>
+                        <Type className="w-4 h-4 shrink-0" />
+                        <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+                      </>
+                    ) : (
+                      <>
+                        <Type className="w-4 h-4 shrink-0" />
+                        <span
+                          className="h-3.5 w-3.5 rounded border border-border/60 shrink-0 shadow-inner"
+                          style={{ backgroundColor: design.textColor || "#ffffff" }}
+                        />
+                        <span className="text-[11px] text-muted-foreground max-w-[52px] truncate hidden sm:inline">
+                          {FONT_SIZE_OPTIONS.find((s) => s.value === (design.fontSize || "medium"))?.label ?? "Medium"}
+                        </span>
+                        <ChevronDown className="w-3.5 h-3.5 opacity-60 shrink-0 hidden sm:inline" />
+                      </>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-xs">
+                Font, size, color, alignment &amp; text direction
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent className="w-80 p-0" align="start" sideOffset={6}>
+              <div className="px-3 pt-3 pb-2">
+                <p className="text-xs font-semibold text-foreground">Text &amp; layout</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Font, size, color, alignment, direction</p>
+              </div>
+              <Separator />
+              <div className="p-3 space-y-3">
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-muted-foreground">Font</Label>
+                  <Select
+                    value={design.fontFamily || "Inter"}
+                    onValueChange={(value) => updateDesign({ fontFamily: value as FontFamily })}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Font" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FONT_OPTIONS.map((font) => (
+                        <SelectItem
+                          key={font.value}
+                          value={font.value}
+                          style={{ fontFamily: font.value }}
+                        >
+                          {font.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="flex gap-2 pt-2">
-                  <Input
-                    type="color"
-                    value={design.textColor || "#ffffff"}
-                    onChange={(e) => updateDesign({ textColor: e.target.value })}
-                    className="w-10 h-8 p-0 border-0 cursor-pointer"
-                  />
-                  <Input
-                    type="text"
-                    value={design.textColor || "#ffffff"}
-                    onChange={(e) => updateDesign({ textColor: e.target.value })}
-                    className="flex-1 h-8 text-xs font-mono"
-                    placeholder="#ffffff"
-                  />
+                <div className="space-y-1.5">
+                  <Label className="text-[11px] text-muted-foreground">Size</Label>
+                  <Select
+                    value={design.fontSize || "medium"}
+                    onValueChange={(value) => updateDesign({ fontSize: value as FontSize })}
+                  >
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Size" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FONT_SIZE_OPTIONS.map((size) => (
+                        <SelectItem key={size.value} value={size.value}>
+                          {size.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[11px] text-muted-foreground">Text color</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {["#ffffff", "#000000", "#f1f5f9", "#fef3c7", "#dbeafe", "#fee2e2", "#d1fae5"].map(
+                      (color) => (
+                        <motion.button
+                          key={color}
+                          type="button"
+                          whileHover={{ scale: 1.08 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => updateDesign({ textColor: color })}
+                          className={`w-7 h-7 rounded-md shadow-sm border-2 ${
+                            design.textColor === color
+                              ? "border-primary ring-1 ring-primary"
+                              : "border-border"
+                          }`}
+                          style={{ backgroundColor: color }}
+                        />
+                      )
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      type="color"
+                      value={design.textColor || "#ffffff"}
+                      onChange={(e) => updateDesign({ textColor: e.target.value })}
+                      className="w-10 h-9 p-0 border-0 cursor-pointer"
+                    />
+                    <Input
+                      type="text"
+                      value={design.textColor || "#ffffff"}
+                      onChange={(e) => updateDesign({ textColor: e.target.value })}
+                      className="flex-1 h-9 text-xs font-mono"
+                      placeholder="#ffffff"
+                    />
+                  </div>
+                </div>
+              </div>
+              <Separator />
+              <div className="p-3 space-y-2">
+                <Label className="text-[11px] text-muted-foreground">Alignment</Label>
+                <div className="flex gap-1">
+                  {[
+                    { value: "left", icon: AlignLeft },
+                    { value: "center", icon: AlignCenter },
+                    { value: "right", icon: AlignRight },
+                  ].map(({ value, icon: Icon }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={design.textAlign === value ? "secondary" : "outline"}
+                      size="sm"
+                      className="flex-1 h-9"
+                      onClick={() => updateDesign({ textAlign: value as TextAlign })}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <Separator />
+              <div className="p-3 space-y-2">
+                <Label className="text-[11px] text-muted-foreground">Direction</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant={isRtl ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={() => {
+                      const nextDir = isRtl ? "ltr" : "rtl";
+                      const updates: Partial<SlideDesign> = { direction: nextDir };
+                      if (design.textAlign !== "center") {
+                        updates.textAlign = nextDir === "rtl" ? "right" : "left";
+                      }
+                      updateDesign(updates);
+                    }}
+                  >
+                    <IndentIncrease className="w-4 h-4" />
+                    RTL
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={!isRtl ? "secondary" : "outline"}
+                    size="sm"
+                    className="h-9 gap-1.5"
+                    onClick={() => {
+                      const updates: Partial<SlideDesign> = { direction: "ltr" };
+                      if (design.textAlign !== "center") {
+                        updates.textAlign = "left";
+                      }
+                      updateDesign(updates);
+                    }}
+                  >
+                    <IndentDecrease className="w-4 h-4" />
+                    LTR
+                  </Button>
                 </div>
               </div>
             </PopoverContent>
-            </Popover>
+          </Popover>
+        </div>
+
+        {/* Participative: timer & points (Kahoot-style) — same settings drive Present + Student live */}
+        {showActivityControls && (
+          <div className="flex items-start gap-3 px-3 py-1.5 border-r border-border/50 shrink-0 rounded-xl bg-muted/30 border border-border/40">
+            <div className="flex items-start gap-4">
+              <div className="flex flex-col gap-1 min-w-0 max-w-[200px]">
+                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 shrink-0 text-violet-600" />
+                  Live timer
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className="inline-flex rounded-full p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/80"
+                        aria-label="How the timer works in presentation"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="max-w-xs text-left">
+                      <p className="font-medium mb-1">During your live session</p>
+                      <p className="text-xs text-muted-foreground">
+                        The countdown you set here appears for you and your audience. Results stay
+                        hidden until time runs out (or you tap End question). Choose{" "}
+                        <strong>Off</strong> for live-updating results while people answer—no
+                        countdown on either screen.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </span>
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  Shown to you and students in Present mode. Off = live results, no countdown.
+                </p>
+                <div className="flex flex-col gap-1 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => onUpdateActivitySettings!({ duration: 0 })}
+                    title="No countdown — live results while answering"
+                    className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors ${
+                      !resolvedActivity.hasTimer
+                        ? "bg-violet-600 text-white shadow-sm"
+                        : "bg-muted/80 text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    Off
+                  </button>
+                  <div className="grid grid-cols-3 gap-1">
+                    {TIMER_PRESETS.map((sec) => (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => onUpdateActivitySettings!({ duration: sec })}
+                        className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors ${
+                          resolvedActivity.hasTimer && resolvedActivity.durationSeconds === sec
+                            ? "bg-violet-600 text-white shadow-sm"
+                            : "bg-muted/80 text-muted-foreground hover:bg-muted"
+                        }`}
+                      >
+                        {sec}s
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5 w-[min-content]">
+                <span className="text-xs font-semibold text-foreground flex items-center gap-1">
+                  <Award className="w-3.5 h-3.5 shrink-0 text-teal-600" />
+                  Points
+                </span>
+                <p className="text-[10px] text-muted-foreground leading-snug max-w-[140px]">
+                  Awarded when students submit (live).
+                </p>
+                <div className="flex gap-1 flex-wrap">
+                  {POINT_PRESETS.map(({ correct, participation }) => (
+                    <button
+                      key={correct}
+                      type="button"
+                      onClick={() =>
+                        onUpdateActivitySettings!({
+                          pointsForCorrect: correct,
+                          pointsForParticipation: participation,
+                        })
+                      }
+                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors ${
+                        resolvedActivity.pointsForCorrect === correct
+                          ? "bg-teal-600 text-white shadow-sm"
+                          : "bg-muted/80 text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {correct}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* Group B - Alignment & Direction */}
-        <div className="flex items-center gap-1 px-3 border-r border-border/50">
-          {/* Text Alignment */}
-          {[
-            { value: "left", icon: AlignLeft },
-            { value: "center", icon: AlignCenter },
-            { value: "right", icon: AlignRight },
-          ].map(({ value, icon: Icon }) => (
-            <Button
-              key={value}
-              variant={design.textAlign === value ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 w-8 p-0"
-              onClick={() => updateDesign({ textAlign: value as TextAlign })}
-            >
-              <Icon className="w-4 h-4" />
-            </Button>
-          ))}
-
-          {/* Divider */}
-          <div className="w-px h-5 bg-border/50 mx-1" />
-
-          {/* RTL / LTR Toggle - standard paragraph+arrow style */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={isRtl ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => {
-                  const nextDir = isRtl ? "ltr" : "rtl";
-                  const updates: Partial<SlideDesign> = { direction: nextDir };
-                  if (design.textAlign !== "center") {
-                    updates.textAlign = nextDir === "rtl" ? "right" : "left";
-                  }
-                  updateDesign(updates);
-                }}
-              >
-                <IndentIncrease className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>RTL</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={!isRtl ? "secondary" : "ghost"}
-                size="sm"
-                className="h-8 w-8 p-0"
-                onClick={() => {
-                  const updates: Partial<SlideDesign> = { direction: "ltr" };
-                  if (design.textAlign !== "center") {
-                    updates.textAlign = "left";
-                  }
-                  updateDesign(updates);
-                }}
-              >
-                <IndentDecrease className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>LTR</TooltipContent>
-          </Tooltip>
-        </div>
+        )}
 
         {/* Group C - Slide Style */}
         <div className="flex items-center gap-1 px-3">

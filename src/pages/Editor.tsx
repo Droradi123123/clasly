@@ -34,12 +34,9 @@ import {
   SLIDE_TYPES,
   createNewSlide,
   isQuizSlide,
+  isParticipativeSlide,
+  ActivitySettings,
 } from "@/types/slides";
-
-const isParticipativeSlide = (type: SlideType) => {
-  const info = SLIDE_TYPES.find((t) => t.type === type);
-  return info?.category === "interactive" || info?.category === "quiz";
-};
 import {
   Play,
   Plus,
@@ -59,6 +56,7 @@ import {
   Save,
   Loader2,
   Wand2,
+  Sparkles,
   Upload,
   MessageSquare,
   Heart,
@@ -1019,6 +1017,21 @@ const Editor = () => {
     setHasChanges(true);
   };
 
+  const updateActivitySettings = (updates: Partial<ActivitySettings>) => {
+    setSlides(
+      slides.map((slide, index) =>
+        index === currentSlideIndex
+          ? {
+              ...slide,
+              activitySettings: { ...slide.activitySettings, ...updates },
+            }
+          : slide
+      )
+    );
+    setSandboxSlides([]);
+    setHasChanges(true);
+  };
+
   const deleteSlide = () => {
     if (slides.length > 1) {
       const newSlides = slides.filter((_, index) => index !== currentSlideIndex);
@@ -1178,6 +1191,7 @@ const Editor = () => {
           description: "Choosing any custom color is available on the Pro plan. Upgrade to unlock full color control.",
         })}
         onImportClick={() => setShowImportDialog(true)}
+        onUpdateActivitySettings={isParticipativeSlide(currentSlide.type) ? updateActivitySettings : undefined}
       />
 
       {/* Import Dialog */}
@@ -1218,36 +1232,52 @@ const Editor = () => {
               : 'w-52 opacity-100'
           }`}
         >
-          {/* Pill toggle: Add slide | AI Assistant - clean design, no icons */}
+          {/* Slides list vs AI chat — radiogroup so both options read as equal, tappable choices */}
           <div className="flex-shrink-0 p-2.5 pb-2">
-            <div className="flex rounded-xl bg-muted/80 p-1 gap-1">
+            <p
+              id="editor-left-panel-heading"
+              className="text-[11px] font-medium text-foreground/85 mb-2 px-0.5 leading-snug"
+            >
+              Show your slide list or the AI assistant below
+            </p>
+            <div
+              className="flex rounded-xl bg-muted/70 p-1 gap-1 ring-1 ring-border/50 shadow-sm"
+              role="radiogroup"
+              aria-labelledby="editor-left-panel-heading"
+            >
               <button
                 type="button"
+                role="radio"
+                aria-checked={!isAIPanelOpen}
                 onClick={() => setIsAIPanelOpen(false)}
-                className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                className={`flex flex-1 items-center justify-center gap-2 py-2.5 px-2 sm:px-3 rounded-lg text-sm font-semibold transition-all min-h-[44px] border ${
                   !isAIPanelOpen
-                    ? "bg-background text-foreground shadow-sm border border-border/50"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    ? "bg-background text-foreground shadow-sm border-border/60"
+                    : "bg-muted/40 text-foreground/85 border-transparent hover:bg-muted/70 hover:border-border/40"
                 }`}
               >
-                Add slide
+                <Plus className="w-4 h-4 shrink-0 opacity-90" aria-hidden />
+                <span className="truncate">Add slide</span>
               </button>
               <button
                 type="button"
+                role="radio"
+                aria-checked={isAIPanelOpen}
                 onClick={() => setIsAIPanelOpen(true)}
-                className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all ${
+                className={`flex flex-1 items-center justify-center gap-2 py-2.5 px-2 sm:px-3 rounded-lg text-sm font-semibold transition-all min-h-[44px] border ${
                   isAIPanelOpen
-                    ? "bg-background text-foreground shadow-sm border border-border/50"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                    ? "bg-background text-foreground shadow-sm border-border/60"
+                    : "bg-muted/40 text-foreground/85 border-transparent hover:bg-muted/70 hover:border-border/40"
                 }`}
               >
-                AI Assistant
+                <Sparkles className="w-4 h-4 shrink-0 text-primary opacity-90" aria-hidden />
+                <span className="truncate">AI Assistant</span>
               </button>
             </div>
           </div>
 
           {isAIPanelOpen ? (
-            <div className="flex-1 min-h-0 flex flex-col">
+            <div id="editor-ai-panel" className="flex-1 min-h-0 flex flex-col" role="region" aria-label="AI assistant chat">
               <ChatPanel
                 onSendMessage={handleSendAIMessage}
                 embeddedInEditor
@@ -1256,7 +1286,12 @@ const Editor = () => {
           ) : (
             <>
               {/* Slides list - Scrollable */}
-              <div className="flex-1 overflow-y-auto p-2 min-h-0">
+              <div
+                id="editor-slides-panel"
+                className="flex-1 overflow-y-auto p-2 min-h-0"
+                role="region"
+                aria-label="Slide list and add slide"
+              >
                 {/* Add Slide CTA - first item, prominent */}
                 <button
                   type="button"

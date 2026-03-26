@@ -1,7 +1,100 @@
 /**
- * Shared aggregation helpers for lecture responses. Used by Present (live) and LectureAnalytics.
+ * Shared aggregation helpers for lecture responses. Used by Present (live), Student (results), and LectureAnalytics.
  * Each function expects an array of response rows with response_data (JSON from DB).
  */
+import type { Slide } from "@/types/slides";
+
+/** Shape passed to SlideRenderer as `liveResults` (Presenter + Student full results) */
+export function buildLiveResultsPayload(
+  slide: Slide | null | undefined,
+  responses: { response_data?: unknown }[]
+): Record<string, unknown> | null {
+  if (!slide) return null;
+
+  switch (slide.type) {
+    case "quiz": {
+      const quizContent = slide.content as { options?: string[]; correctAnswer?: number };
+      return {
+        type: "quiz",
+        results: aggregateQuizResponses(responses, quizContent.options || []),
+        options: quizContent.options || [],
+        correctAnswer: quizContent.correctAnswer,
+      };
+    }
+    case "poll": {
+      const pollContent = slide.content as { options?: string[] };
+      return {
+        type: "poll",
+        results: aggregatePollResponses(responses, pollContent.options || []),
+        options: pollContent.options || [],
+      };
+    }
+    case "poll_quiz": {
+      const pollQuizContent = slide.content as { options?: string[]; correctAnswer?: number };
+      return {
+        type: "poll_quiz",
+        results: aggregatePollResponses(responses, pollQuizContent.options || []),
+        options: pollQuizContent.options || [],
+        correctAnswer: pollQuizContent.correctAnswer,
+      };
+    }
+    case "yesno":
+      return {
+        type: "yesno",
+        results: aggregateYesNoResponses(responses),
+      };
+    case "wordcloud":
+      return {
+        type: "wordcloud",
+        words: aggregateWordCloudResponses(responses),
+      };
+    case "scale":
+      return {
+        type: "scale",
+        results: aggregateScaleResponses(responses),
+      };
+    case "guess_number": {
+      const guessContent = slide.content as { correctNumber?: number };
+      return {
+        type: "guess_number",
+        results: aggregateGuessResponses(responses, guessContent.correctNumber || 0),
+      };
+    }
+    case "ranking": {
+      const rankingContent = slide.content as { items?: string[] };
+      return {
+        type: "ranking",
+        rankings: aggregateRankingResponses(responses, rankingContent.items || []),
+      };
+    }
+    case "sentiment_meter": {
+      const { average, distribution } = aggregateSentimentResponses(responses);
+      return {
+        type: "sentiment_meter",
+        average,
+        distribution,
+        results: { average, distribution },
+      };
+    }
+    case "agree_spectrum": {
+      const { average, distribution } = aggregateSentimentResponses(responses);
+      return {
+        type: "agree_spectrum",
+        average,
+        positions: distribution,
+        distribution,
+        results: { average, distribution },
+      };
+    }
+    case "finish_sentence":
+      return {
+        type: "finish_sentence",
+        results: aggregateFinishSentenceResponses(responses),
+      };
+    default:
+      return null;
+  }
+}
 export function aggregateQuizResponses(responses: { response_data?: any }[], options: string[]) {
   const counts = options.map(() => 0);
   responses.forEach((r) => {

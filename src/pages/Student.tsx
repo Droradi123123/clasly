@@ -1,19 +1,38 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw } from "lucide-react";
+import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
 import {
   getLectureByCode,
   subscribeLecture,
   submitResponse,
+  getResponses,
+  subscribeResponses,
 } from "@/lib/lectureService";
+import { buildLiveResultsPayload } from "@/lib/responseAggregation";
+import { SlideRenderer } from "@/components/editor/SlideRenderer";
+import { SlideFrame } from "@/components/editor/SlideFrame";
+import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
+import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
+import { DesignStyleId } from "@/types/designStyles";
 import { supabase } from "@/integrations/supabase/client";
-import { Slide, SLIDE_TYPES, FinishSentenceSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent } from "@/types/slides";
+import {
+  Slide,
+  SLIDE_TYPES,
+  FinishSentenceSlideContent,
+  SentimentMeterSlideContent,
+  AgreeSpectrumSlideContent,
+  isParticipativeSlide,
+  isQuizSlide,
+  getResolvedActivitySettings,
+  DEFAULT_POINTS_CORRECT,
+  DEFAULT_POINTS_PARTICIPATION,
+} from "@/types/slides";
 import { Json } from "@/integrations/supabase/types";
 import { StudentGameControls } from "@/components/game";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
@@ -82,6 +101,8 @@ const Student = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isGameActive, setIsGameActive] = useState(false);
+  const [, setTick] = useState(0);
+  const [slideResponses, setSlideResponses] = useState<unknown[]>([]);
   const [rankingOrder, setRankingOrder] = useState<string[]>([]);
   // For new slide types
   const [sentimentValue, setSentimentValue] = useState([50]);
@@ -97,8 +118,66 @@ const Student = () => {
   const lastAppliedUpdatedAtRef = React.useRef<string | null>(null);
 
   const currentSlide = slides[currentSlideIndex];
-  const slideTypeInfo = currentSlide ? SLIDE_TYPES.find(t => t.type === currentSlide.type) : null;
-  const isInteractiveSlide = slideTypeInfo?.category === 'interactive' || slideTypeInfo?.category === 'quiz';
+  const participativeSlide = currentSlide ? isParticipativeSlide(currentSlide.type) : false;
+  const activityResolved =
+    participativeSlide && currentSlide ? getResolvedActivitySettings(currentSlide) : null;
+  const hasTimer = !!(activityResolved?.hasTimer);
+  const startedAtMs = lecture?.activity_started_at
+    ? Date.parse(lecture.activity_started_at as string)
+    : NaN;
+  const elapsedMs =
+    participativeSlide && activityResolved && !Number.isNaN(startedAtMs)
+      ? Date.now() - startedAtMs
+      : 0;
+  const durationSeconds = activityResolved?.durationSeconds ?? 0;
+  const inVotingPhase =
+    participativeSlide &&
+    activityResolved &&
+    hasTimer &&
+    (Number.isNaN(startedAtMs) || elapsedMs < durationSeconds * 1000);
+  const inResultsPhase =
+    participativeSlide &&
+    activityResolved &&
+    hasTimer &&
+    !Number.isNaN(startedAtMs) &&
+    elapsedMs >= durationSeconds * 1000;
+  const remainingSec =
+    participativeSlide && activityResolved && hasTimer && !Number.isNaN(startedAtMs)
+      ? Math.max(0, Math.ceil(durationSeconds - elapsedMs / 1000))
+      : 0;
+
+  useEffect(() => {
+    if (!lecture?.id) return;
+    const id = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, [lecture?.id]);
+
+  useEffect(() => {
+    if (!lecture?.id || !currentSlide || !participativeSlide) {
+      setSlideResponses([]);
+      return;
+    }
+    const load = async () => {
+      try {
+        const data = await getResponses(lecture.id, currentSlideIndex);
+        setSlideResponses(data);
+      } catch (e) {
+        console.error("[Student] load responses:", e);
+      }
+    };
+    load();
+    const channel = subscribeResponses(lecture.id, currentSlideIndex, (rows) => {
+      setSlideResponses(rows as unknown[]);
+    });
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [lecture?.id, currentSlideIndex, currentSlide?.id, participativeSlide]);
+
+  const aggregatedLiveResults = useMemo(
+    () => buildLiveResultsPayload(currentSlide, slideResponses as { response_data?: unknown }[]),
+    [currentSlide, slideResponses]
+  );
 
   // Theme from current slide design first, then lecture settings, so option colors match presenter
   const themeId: ThemeId = (currentSlide?.design?.themeId as ThemeId) ?? (lecture?.settings?.themeId as ThemeId) ?? 'academic-pro';
@@ -218,6 +297,7 @@ const Student = () => {
     let pollTimeoutId: NodeJS.Timeout | null = null;
     let lastUpdatedAt = lecture.updated_at;
     let lastSlideIndex = lecture.current_slide_index;
+    let lastActivityStartedAt = lecture.activity_started_at ?? null;
     let isRealtimeActive = false;
 
     // Fetch immediately on mount
@@ -225,6 +305,7 @@ const Student = () => {
       if (data) {
         lastUpdatedAt = data.updated_at;
         lastSlideIndex = data.current_slide_index;
+        lastActivityStartedAt = data.activity_started_at ?? null;
       }
     });
 
@@ -241,11 +322,17 @@ const Student = () => {
           console.error('[Student] Poll error:', error);
           pollIntervalMs = Math.min(pollIntervalMs * 1.2, 5000); // Max 5s on error
         } else if (data) {
-          // Check for ANY changes - slide index is most critical
-          if (data.current_slide_index !== lastSlideIndex || data.updated_at !== lastUpdatedAt) {
+          const nextActivityAt = data.activity_started_at ?? null;
+          // Include activity_started_at so "End question" / timer phase sync is never missed when index unchanged
+          if (
+            data.current_slide_index !== lastSlideIndex ||
+            data.updated_at !== lastUpdatedAt ||
+            nextActivityAt !== lastActivityStartedAt
+          ) {
             console.log('[Student] Poll detected change - slide:', data.current_slide_index);
             lastUpdatedAt = data.updated_at;
             lastSlideIndex = data.current_slide_index;
+            lastActivityStartedAt = nextActivityAt;
             applyLectureUpdate(data);
             pollIntervalMs = 1000; // Reset to fast polling
           } else if (isRealtimeActive) {
@@ -279,10 +366,15 @@ const Student = () => {
         (payload: any) => {
           console.log('[Student] Realtime update received:', payload.new?.current_slide_index);
           if (payload.new) {
-            // Only apply if actually changed
-            if (payload.new.current_slide_index !== lastSlideIndex || payload.new.updated_at !== lastUpdatedAt) {
+            const nextActivityAt = payload.new.activity_started_at ?? null;
+            if (
+              payload.new.current_slide_index !== lastSlideIndex ||
+              payload.new.updated_at !== lastUpdatedAt ||
+              nextActivityAt !== lastActivityStartedAt
+            ) {
               lastUpdatedAt = payload.new.updated_at;
               lastSlideIndex = payload.new.current_slide_index;
+              lastActivityStartedAt = nextActivityAt;
               applyLectureUpdate(payload.new);
             }
             pollIntervalMs = 2000; // Slow down polling when realtime works
@@ -319,13 +411,23 @@ const Student = () => {
 
     channel
       .on('broadcast', { event: 'slide_changed' }, ({ payload }) => {
-        const p = payload as { currentSlideIndex?: number; lectureId?: string; ts?: number };
+        const p = payload as {
+          currentSlideIndex?: number;
+          lectureId?: string;
+          ts?: number;
+          activityStartedAt?: string | null;
+        };
         const newIndex = p.currentSlideIndex;
         if (typeof newIndex === 'number') {
           lastBroadcastSlideIndexRef.current = newIndex;
           lastBroadcastTsRef.current = Date.now();
           // Apply immediately so student sees the right slide without waiting for refetch
           setCurrentSlideIndex(newIndex);
+          if (p.activityStartedAt !== undefined) {
+            setLecture((prev: any) =>
+              prev ? { ...prev, activity_started_at: p.activityStartedAt } : prev
+            );
+          }
           setHasAnswered(false);
           setSelectedOption(null);
           setWordInput('');
@@ -462,7 +564,7 @@ const Student = () => {
   }, [currentSlide, rankingOrder.length]);
 
   const handleSubmitResponse = async (responseData: any, isCorrect?: boolean, points?: number) => {
-    if (!lecture?.id || !studentId || hasAnswered) return;
+    if (!lecture?.id || !studentId || hasAnswered || inResultsPhase) return;
 
     setIsSubmitting(true);
     try {
@@ -500,68 +602,81 @@ const Student = () => {
     }
   };
 
-  // Points: 5 for any answer, 10 for correct
+  const pts = currentSlide
+    ? getResolvedActivitySettings(currentSlide)
+    : {
+        hasTimer: true,
+        durationSeconds: 20,
+        pointsForCorrect: DEFAULT_POINTS_CORRECT,
+        pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
+      };
+
   const handleQuizAnswer = (index: number) => {
-    if (hasAnswered) return;
+    if (hasAnswered || inResultsPhase) return;
     setSelectedOption(index);
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctAnswer === index;
-    const points = isCorrect ? 10 : 5;
+    const points = isCorrect ? pts.pointsForCorrect : pts.pointsForParticipation;
     handleSubmitResponse({ answer: index }, isCorrect, points);
   };
 
   const handlePollAnswer = (index: number) => {
-    if (hasAnswered) return;
+    if (hasAnswered || inResultsPhase) return;
     setSelectedOption(index);
-    handleSubmitResponse({ answer: index }, undefined, 5);
+    handleSubmitResponse({ answer: index }, undefined, pts.pointsForParticipation);
   };
 
   const handleYesNo = (answer: boolean) => {
-    if (hasAnswered) return;
+    if (hasAnswered || inResultsPhase) return;
     setSelectedOption(answer ? 0 : 1);
-    handleSubmitResponse({ answer }, undefined, 5);
+    const content = currentSlide?.content as any;
+    const isCorrect =
+      typeof content?.correctAnswer === "boolean" ? content.correctAnswer === answer : undefined;
+    const points =
+      isCorrect === true ? pts.pointsForCorrect : isCorrect === false ? pts.pointsForParticipation : pts.pointsForParticipation;
+    handleSubmitResponse({ answer }, isCorrect, points);
   };
 
   const handleWordSubmit = () => {
-    if (!wordInput.trim() || hasAnswered) return;
-    handleSubmitResponse({ word: wordInput.trim() }, undefined, 5);
+    if (!wordInput.trim() || hasAnswered || inResultsPhase) return;
+    handleSubmitResponse({ word: wordInput.trim() }, undefined, pts.pointsForParticipation);
     setWordInput("");
   };
 
   const handleNumberSubmit = () => {
     const num = parseInt(numberInput);
-    if (isNaN(num) || hasAnswered) return;
+    if (isNaN(num) || hasAnswered || inResultsPhase) return;
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctNumber === num;
-    const points = isCorrect ? 10 : 5;
+    const points = isCorrect ? pts.pointsForCorrect : pts.pointsForParticipation;
     handleSubmitResponse({ guess: num }, isCorrect, points);
   };
 
   const handleScaleSubmit = () => {
-    if (hasAnswered) return;
-    handleSubmitResponse({ value: scaleValue[0] }, undefined, 5);
+    if (hasAnswered || inResultsPhase) return;
+    handleSubmitResponse({ value: scaleValue[0] }, undefined, pts.pointsForParticipation);
   };
 
   const handleSentimentSubmit = () => {
-    if (hasAnswered) return;
-    handleSubmitResponse({ value: sentimentValue[0] }, undefined, 5);
+    if (hasAnswered || inResultsPhase) return;
+    handleSubmitResponse({ value: sentimentValue[0] }, undefined, pts.pointsForParticipation);
   };
 
   const handleAgreeSubmit = () => {
-    if (hasAnswered) return;
-    handleSubmitResponse({ value: agreeValue[0] }, undefined, 5);
+    if (hasAnswered || inResultsPhase) return;
+    handleSubmitResponse({ value: agreeValue[0] }, undefined, pts.pointsForParticipation);
   };
 
   const handleSentenceSubmit = () => {
-    if (!sentenceInput.trim() || hasAnswered) return;
-    handleSubmitResponse({ text: sentenceInput.trim() }, undefined, 5);
+    if (!sentenceInput.trim() || hasAnswered || inResultsPhase) return;
+    handleSubmitResponse({ text: sentenceInput.trim() }, undefined, pts.pointsForParticipation);
     setSentenceInput("");
   };
 
   const handleRankingSubmit = () => {
-    if (hasAnswered) return;
+    if (hasAnswered || inResultsPhase) return;
     const items = rankingOrder.length > 0 ? rankingOrder : ((currentSlide?.content as any).items || []);
-    handleSubmitResponse({ ranking: items }, undefined, 5);
+    handleSubmitResponse({ ranking: items }, undefined, pts.pointsForParticipation);
   };
 
   // Ref for the persistent emoji reaction channel
@@ -743,13 +858,61 @@ const Student = () => {
               The instructor will start the presentation soon. Stay tuned!
             </p>
           </motion.div>
-        ) : currentSlide && isInteractiveSlide ? (
+        ) : currentSlide && participativeSlide ? (
+          hasTimer && inResultsPhase ? (
+          <motion.div
+            key={`${currentSlide.id}-results`}
+            initial={{ opacity: 0, y: 20, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ type: "spring", stiffness: 400, damping: 28 }}
+            className="w-full max-w-4xl mx-auto rounded-2xl overflow-hidden border border-border/50 shadow-xl bg-card"
+          >
+            <div className="px-4 py-3 border-b border-border/50 bg-gradient-to-r from-primary/10 via-muted/30 to-teal-500/10 text-sm font-semibold text-center text-foreground">
+              Results are in
+            </div>
+            <div className="aspect-video w-full max-h-[70vh] min-h-[240px]">
+              <SlideFrame>
+                <BuilderPreviewProvider allowContentScroll>
+                  <SlideLayoutProvider slide={currentSlide}>
+                    <SlideRenderer
+                      slide={currentSlide}
+                      isEditing={false}
+                      showResults
+                      showCorrectAnswer={isQuizSlide(currentSlide.type)}
+                      liveResults={aggregatedLiveResults}
+                      totalResponses={slideResponses.length}
+                      hideFooter
+                      forceShowStats
+                      themeId={themeId}
+                      designStyleId={
+                        ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
+                          (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
+                          "dynamic") as DesignStyleId
+                      }
+                    />
+                  </SlideLayoutProvider>
+                </BuilderPreviewProvider>
+              </SlideFrame>
+            </div>
+          </motion.div>
+          ) : (
           <motion.div
             key={currentSlide.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-card rounded-2xl shadow-lg border border-border/50 p-6"
           >
+            {participativeSlide && hasTimer && !Number.isNaN(startedAtMs) && (
+              <div className="flex items-center justify-between gap-3 mb-4 p-3 rounded-xl bg-violet-500/10 border border-violet-500/25">
+                <div className="flex items-center gap-2 text-violet-700 dark:text-violet-200">
+                  <Clock className="w-5 h-5" />
+                  <span className="text-sm font-medium">Time left</span>
+                </div>
+                <span className="text-2xl font-bold tabular-nums text-violet-700 dark:text-violet-100">
+                  {remainingSec}s
+                </span>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-primary font-medium mb-4">
               <Presentation className="w-4 h-4" />
               {SLIDE_TYPES.find(t => t.type === currentSlide.type)?.label || currentSlide.type}
@@ -1038,6 +1201,39 @@ const Student = () => {
               </div>
             )}
 
+            {/* Live results (no timer — same slide as voting) */}
+            {!hasTimer && (
+              <div className="mt-6 rounded-2xl border border-border/50 overflow-hidden bg-card/80">
+                <div className="px-3 py-2 border-b border-border/50 bg-muted/30 text-xs font-medium text-center text-muted-foreground">
+                  Live results
+                </div>
+                <div className="max-h-[min(50vh,420px)] min-h-[180px] overflow-y-auto">
+                  <SlideFrame>
+                    <BuilderPreviewProvider allowContentScroll>
+                      <SlideLayoutProvider slide={currentSlide}>
+                        <SlideRenderer
+                          slide={currentSlide}
+                          isEditing={false}
+                          showResults
+                          showCorrectAnswer={isQuizSlide(currentSlide.type)}
+                          liveResults={aggregatedLiveResults}
+                          totalResponses={slideResponses.length}
+                          hideFooter
+                          forceShowStats
+                          themeId={themeId}
+                          designStyleId={
+                            ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
+                              (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
+                              "dynamic") as DesignStyleId
+                          }
+                        />
+                      </SlideLayoutProvider>
+                    </BuilderPreviewProvider>
+                  </SlideFrame>
+                </div>
+              </div>
+            )}
+
             {/* Answer submitted message */}
             {hasAnswered && (
               <motion.div
@@ -1049,10 +1245,13 @@ const Student = () => {
                   <CheckCircle className="w-5 h-5" />
                   <span className="font-medium">Answer submitted!</span>
                 </div>
-                <p className="text-sm text-muted-foreground mt-2">Waiting for results...</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  {hasTimer ? "Waiting for results..." : "Your response is in — results update live below."}
+                </p>
               </motion.div>
             )}
           </motion.div>
+          )
         ) : (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Presentation className="w-16 h-16 text-muted-foreground mb-4" />

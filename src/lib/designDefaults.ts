@@ -4,6 +4,12 @@
  * Normalizes themeId/designStyleId so Editor and Present render identically (AI-generated slides).
  */
 import type { Slide, SlideDesign, TextAlign } from "@/types/slides";
+import {
+  DEFAULT_ACTIVITY_DURATION_SEC,
+  DEFAULT_POINTS_CORRECT,
+  DEFAULT_POINTS_PARTICIPATION,
+  isParticipativeSlide,
+} from "@/types/slides";
 import type { DesignStyleId } from "@/types/designStyles";
 import type { ThemeId } from "@/types/themes";
 
@@ -59,11 +65,43 @@ export function ensureDesignDefaults(slide: Slide): Slide {
   };
 }
 
+function ensureActivitySettings(slide: Slide): Slide {
+  if (!isParticipativeSlide(slide.type)) return slide;
+  const a = slide.activitySettings || {};
+  const next = {
+    duration:
+      a.duration === 0
+        ? 0
+        : typeof a.duration === "number" && a.duration > 0
+          ? a.duration
+          : DEFAULT_ACTIVITY_DURATION_SEC,
+    showResults: a.showResults ?? true,
+    interactionStyle: a.interactionStyle ?? ("bar_chart" as const),
+    pointsForCorrect:
+      typeof a.pointsForCorrect === "number" && a.pointsForCorrect >= 0
+        ? a.pointsForCorrect
+        : DEFAULT_POINTS_CORRECT,
+    pointsForParticipation:
+      typeof a.pointsForParticipation === "number" && a.pointsForParticipation >= 0
+        ? a.pointsForParticipation
+        : DEFAULT_POINTS_PARTICIPATION,
+  };
+  const same =
+    slide.activitySettings &&
+    slide.activitySettings.duration === next.duration &&
+    slide.activitySettings.showResults === next.showResults &&
+    slide.activitySettings.interactionStyle === next.interactionStyle &&
+    slide.activitySettings.pointsForCorrect === next.pointsForCorrect &&
+    slide.activitySettings.pointsForParticipation === next.pointsForParticipation;
+  if (same) return slide;
+  return { ...slide, activitySettings: next };
+}
+
 /**
  * Normalize an array of slides - ensures all have stable design values.
  */
 export function ensureSlidesDesignDefaults(slides: Slide[]): Slide[] {
-  return slides.map(ensureDesignDefaults);
+  return slides.map((s) => ensureDesignDefaults(ensureActivitySettings(s)));
 }
 
 /**

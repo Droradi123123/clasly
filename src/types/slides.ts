@@ -158,10 +158,20 @@ export interface SlideDesign {
 
 // Activity settings for interactive slides
 export interface ActivitySettings {
-  duration?: number; // in seconds
+  /** Seconds for the answer timer. Omitted/legacy defaults to 20. `0` = no timer (live results while answering). */
+  duration?: number;
   showResults?: boolean;
   interactionStyle?: InteractionStyle;
+  /** Points awarded for a correct answer (quiz types) */
+  pointsForCorrect?: number;
+  /** Points for participation (wrong answer or non-graded interaction) */
+  pointsForParticipation?: number;
 }
+
+/** Default seconds for the answer timer (matches editor presets) */
+export const DEFAULT_ACTIVITY_DURATION_SEC = 20;
+export const DEFAULT_POINTS_CORRECT = 1000;
+export const DEFAULT_POINTS_PARTICIPATION = 500;
 
 // Base slide content
 export interface BaseSlideContent {
@@ -373,6 +383,53 @@ export function isInteractiveSlide(type: SlideType): boolean {
   return slideInfo?.category === 'interactive' || false;
 }
 
+/** Polls, quizzes, word cloud, etc. — any slide where students submit responses */
+export function isParticipativeSlide(type: SlideType): boolean {
+  const slideInfo = SLIDE_TYPES.find(t => t.type === type);
+  return slideInfo?.category === 'interactive' || slideInfo?.category === 'quiz' || false;
+}
+
+/** Resolved timer/points for runtime (legacy slides may omit fields) */
+export function getResolvedActivitySettings(slide: Slide): {
+  /** True when a countdown applies; false when `duration === 0` (live results). */
+  hasTimer: boolean;
+  /** Countdown length in seconds when `hasTimer`; otherwise `0`. */
+  durationSeconds: number;
+  pointsForCorrect: number;
+  pointsForParticipation: number;
+} {
+  const a = slide.activitySettings;
+  const raw = a?.duration;
+  if (raw === 0) {
+    return {
+      hasTimer: false,
+      durationSeconds: 0,
+      pointsForCorrect:
+        typeof a?.pointsForCorrect === "number" && a.pointsForCorrect >= 0
+          ? a.pointsForCorrect
+          : DEFAULT_POINTS_CORRECT,
+      pointsForParticipation:
+        typeof a?.pointsForParticipation === "number" && a.pointsForParticipation >= 0
+          ? a.pointsForParticipation
+          : DEFAULT_POINTS_PARTICIPATION,
+    };
+  }
+  const durationSeconds =
+    typeof raw === "number" && raw > 0 ? raw : DEFAULT_ACTIVITY_DURATION_SEC;
+  return {
+    hasTimer: true,
+    durationSeconds,
+    pointsForCorrect:
+      typeof a?.pointsForCorrect === "number" && a.pointsForCorrect >= 0
+        ? a.pointsForCorrect
+        : DEFAULT_POINTS_CORRECT,
+    pointsForParticipation:
+      typeof a?.pointsForParticipation === "number" && a.pointsForParticipation >= 0
+        ? a.pointsForParticipation
+        : DEFAULT_POINTS_PARTICIPATION,
+  };
+}
+
 // Helper to create default content for each slide type
 export function createDefaultSlideContent(type: SlideType): SlideContent {
   switch (type) {
@@ -514,9 +571,11 @@ export function createNewSlide(type: SlideType, order: number): Slide {
     design,
     layout: 'centered',
     activitySettings: {
-      duration: 60,
+      duration: DEFAULT_ACTIVITY_DURATION_SEC,
       showResults: true,
       interactionStyle: 'bar_chart',
+      pointsForCorrect: DEFAULT_POINTS_CORRECT,
+      pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
     },
     order,
   };

@@ -8,13 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -458,18 +452,34 @@ const Dashboard = () => {
                         <Label className="text-sm font-medium mb-2 block">
                           Content Mode
                         </Label>
-                        <Select value={contentMode} onValueChange={(v) => setContentMode(v as "interactive" | "with_content")}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {CONTENT_MODES.map((mode) => (
-                              <SelectItem key={mode.value} value={mode.value}>
+                        <div
+                          className="flex flex-wrap gap-2"
+                          role="radiogroup"
+                          aria-label="Content mode"
+                        >
+                          {CONTENT_MODES.map((mode) => {
+                            const selected = contentMode === mode.value;
+                            return (
+                              <button
+                                key={mode.value}
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                onClick={() =>
+                                  setContentMode(mode.value as "interactive" | "with_content")
+                                }
+                                className={cn(
+                                  "rounded-full px-4 py-2.5 text-sm font-medium transition-all border-2 text-left",
+                                  selected
+                                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                    : "bg-muted/60 text-foreground border-transparent hover:border-border hover:bg-muted"
+                                )}
+                              >
                                 {mode.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                       <div className="flex gap-3">
                         <Button

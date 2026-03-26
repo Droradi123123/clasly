@@ -79,6 +79,7 @@ export type Database = {
       }
       lectures: {
         Row: {
+          activity_started_at: string | null
           created_at: string
           current_slide_index: number
           id: string
@@ -91,6 +92,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
+          activity_started_at?: string | null
           created_at?: string
           current_slide_index?: number
           id?: string
@@ -103,6 +105,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
+          activity_started_at?: string | null
           created_at?: string
           current_slide_index?: number
           id?: string
