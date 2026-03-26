@@ -1430,6 +1430,115 @@ Valid JSON only. Add "imagePrompt" for title, poll, wordcloud when appropriate.
 `;
 }
 
+function buildInteractiveOnlyPlanPrompt(
+  description: string,
+  slideCount: number,
+  difficulty: string,
+  userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
+): string {
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const userContext = userAiSettings
+    ? [
+        userAiSettings.who_am_i && `Instructor profile: ${userAiSettings.who_am_i}`,
+        userAiSettings.what_i_lecture && `Typically lectures on: ${userAiSettings.what_i_lecture}`,
+        userAiSettings.teaching_style && `Teaching style: ${userAiSettings.teaching_style}`,
+        userAiSettings.additional_context && `Additional context: ${userAiSettings.additional_context}`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+  return `
+You are a world-class Instructional Designer.
+
+The user chose **INTERACTIVE ONLY**. You MUST return slideTypes that are:
+- Slide 1: "title"
+- Slides 2..${effectiveSlideCount}: ONLY from these interactive types:
+  poll, quiz, poll_quiz, yesno, wordcloud, scale, ranking, guess_number, sentiment_meter, agree_spectrum, finish_sentence
+
+Do NOT include content, split_content, timeline, bullet_points, or bar_chart.
+
+## USER REQUEST
+"${description}"
+${userContext ? `\n## INSTRUCTOR CONTEXT\n${userContext}\n` : ""}
+Difficulty: ${difficulty}
+
+## OUTPUT (JSON only)
+{
+  "interpretation": "1-2 sentences: what you understood",
+  "plan": "Brief plan (2-4 sentences)",
+  "slideTypes": ["title", "poll", "quiz", ...] // EXACTLY ${effectiveSlideCount} items
+}
+`;
+}
+
+const INTERACTIVE_ONLY_SLIDE_TYPES = new Set([
+  "poll",
+  "quiz",
+  "poll_quiz",
+  "yesno",
+  "wordcloud",
+  "scale",
+  "ranking",
+  "guess_number",
+  "sentiment_meter",
+  "agree_spectrum",
+  "finish_sentence",
+]);
+
+function enforceInteractiveOnlySlideTypes(slideTypes: string[], count: number): string[] {
+  const effectiveCount = Math.min(Math.max(count, 3), 12);
+  const out: string[] = [];
+  out.push("title");
+  const desired = slideTypes.filter((t) => typeof t === "string").map((t) => t.trim());
+  for (const t of desired) {
+    if (out.length >= effectiveCount) break;
+    if (out.length === 1 && t === "title") continue;
+    out.push(INTERACTIVE_ONLY_SLIDE_TYPES.has(t) ? t : "poll");
+  }
+  const fallbackSeq = ["poll", "quiz", "scale", "wordcloud", "yesno", "agree_spectrum", "ranking", "sentiment_meter", "finish_sentence", "poll_quiz"];
+  let i = 0;
+  while (out.length < effectiveCount) {
+    out.push(fallbackSeq[i % fallbackSeq.length]);
+    i++;
+  }
+  return out.slice(0, effectiveCount);
+}
+
+function enforceInteractiveOnlySlides(rawSlides: any[], slideCount: number): any[] {
+  const desiredCount = Math.min(Math.max(slideCount, 3), 12);
+  const result: any[] = [];
+  for (let i = 0; i < rawSlides.length && result.length < desiredCount; i++) {
+    const s = rawSlides[i] || {};
+    const t = String(s.type || "").trim();
+    if (result.length === 0) {
+      // First slide must be title; if not, coerce to title-ish.
+      result.push(t === "title" ? s : { type: "title", content: { title: s?.content?.title || "Title", subtitle: s?.content?.subtitle || "" }, imagePrompt: s?.imagePrompt });
+      continue;
+    }
+    if (INTERACTIVE_ONLY_SLIDE_TYPES.has(t)) {
+      result.push(s);
+    } else {
+      // Coerce non-interactive slide into a poll to guarantee interactive-only output.
+      const topic = (s?.content?.title || s?.content?.question || "").toString().trim();
+      result.push({
+        type: "poll",
+        content: {
+          question: topic ? `Quick check: ${topic}?` : "Quick check: what do you think?",
+          options: ["Option A", "Option B", "Option C", "Option D"],
+        },
+      });
+    }
+  }
+  // Pad if AI returned too few slides
+  while (result.length < desiredCount) {
+    result.push({
+      type: "poll",
+      content: { question: "Quick check: which option best fits?", options: ["A", "B", "C", "D"] },
+    });
+  }
+  return result;
+}
+
 function buildProPlanOnlyPrompt(
   description: string,
   audience: string,
@@ -1877,6 +1986,12 @@ serve(async (req) => {
       if (!desc || typeof slideType !== "string") {
         throw new Error("progressiveSlide requires description and slideType");
       }
+      const progressiveContentType =
+        (typeof progressiveSlide.contentType === "string" ? progressiveSlide.contentType : contentType) || "with_content";
+      const effectiveSlideType =
+        progressiveContentType === "interactive" && slideType !== "title" && !INTERACTIVE_ONLY_SLIDE_TYPES.has(slideType)
+          ? "poll"
+          : slideType;
       const balanceCheck = await checkCreditsBalance(user.id, 1);
       if (!balanceCheck.allowed) {
         return new Response(
@@ -1887,9 +2002,9 @@ serve(async (req) => {
       const ctxPrompt = plan && interpretation
         ? `Presentation: "${desc}". Plan: ${plan}. This is slide ${(index || 0) + 1}. Context: ${interpretation}`
         : desc;
-      const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(slideType);
-      const sysPrompt = buildSingleSlidePrompt(slideType, ctxPrompt, "professional", includeImage);
-      const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${slideType} slide: "${desc}"`);
+      const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType);
+      const sysPrompt = buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage);
+      const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${effectiveSlideType} slide: "${desc}"`);
       let rawSlide = cleanAndParseJSON(rawContent);
       if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
       if (!rawSlide || typeof rawSlide !== "object") {
@@ -1897,8 +2012,8 @@ serve(async (req) => {
       }
       rawSlide = validateAndFixSlide(rawSlide, index || 0, desc);
       let generatedImageUrl: string | null = null;
-      if (!skipImages && ["title", "split_content", "poll", "wordcloud"].includes(slideType) && rawSlide.imagePrompt) {
-        generatedImageUrl = await generateImage(GEMINI_API_KEY, rawSlide.imagePrompt, slideType);
+      if (!skipImages && ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType) && rawSlide.imagePrompt) {
+        generatedImageUrl = await generateImage(GEMINI_API_KEY, rawSlide.imagePrompt, effectiveSlideType);
       }
       const selectedTheme = selectThemeForTopic(desc);
       const hebrewRegex = /[\u0590-\u05FF]/;
@@ -1949,7 +2064,10 @@ serve(async (req) => {
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
-      const systemPrompt = buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings);
+      const systemPrompt =
+        contentType === "interactive"
+          ? buildInteractiveOnlyPlanPrompt(description, slideCount, difficulty, userAiSettings)
+          : buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings);
       const planRaw = await callAIWithThinking(
         GEMINI_API_KEY,
         systemPrompt,
@@ -1958,6 +2076,9 @@ serve(async (req) => {
       const planParsed = cleanAndParseJSON(planRaw);
       if (!planParsed || typeof planParsed !== "object" || !Array.isArray(planParsed.slideTypes)) {
         throw new Error("Failed to parse plan from AI response.");
+      }
+      if (contentType === "interactive") {
+        planParsed.slideTypes = enforceInteractiveOnlySlideTypes(planParsed.slideTypes || [], maxSlidesAllowed);
       }
       // Cap slide types to user's max_slides
       const cappedSlideTypes = (planParsed.slideTypes || []).slice(0, maxSlidesAllowed);
@@ -2004,11 +2125,15 @@ serve(async (req) => {
     let interpretation: string | undefined;
 
     if (isPro && providedPlan && providedInterpretation && Array.isArray(providedSlideTypes) && providedSlideTypes.length > 0) {
+      const slideTypes =
+        contentType === "interactive"
+          ? enforceInteractiveOnlySlideTypes(providedSlideTypes, effectiveSlideCount)
+          : providedSlideTypes;
       const slidesFromPlanPrompt = buildProSlidesFromPlanPrompt(
         description,
         providedInterpretation,
         providedPlan,
-        providedSlideTypes
+        slideTypes
       );
       rawContent = await callAI(
         GEMINI_API_KEY,
@@ -2057,6 +2182,10 @@ serve(async (req) => {
     }
 
     rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));
+    if (contentType === "interactive") {
+      rawSlides = enforceInteractiveOnlySlides(rawSlides, effectiveSlideCount);
+      rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));
+    }
 
     console.log(`✅ Parsed and validated ${rawSlides.length} slides`);
 

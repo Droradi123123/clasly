@@ -342,6 +342,7 @@ const Editor = () => {
         let planRes = await supabase.functions.invoke('generate-slides', {
           body: {
             description: prompt,
+            contentType: 'interactive',
             targetAudience: audience,
             slideCount,
             phase: 'plan',
@@ -353,6 +354,7 @@ const Editor = () => {
           planRes = await supabase.functions.invoke('generate-slides', {
             body: {
               description: prompt,
+              contentType: 'interactive',
               targetAudience: audience,
               slideCount,
               phase: 'plan',
@@ -397,6 +399,7 @@ const Editor = () => {
                 description: prompt,
                 plan: planData.plan,
                 interpretation: planData.interpretation,
+                contentType: 'interactive',
               },
             },
             headers: { Authorization: `Bearer ${session.access_token}` },
@@ -411,6 +414,7 @@ const Editor = () => {
                   description: prompt,
                   plan: planData.plan,
                   interpretation: planData.interpretation,
+                  contentType: 'interactive',
                 },
               },
               headers: { Authorization: `Bearer ${session.access_token}` },

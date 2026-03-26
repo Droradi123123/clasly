@@ -67,6 +67,9 @@ import {
   ActivitySettings,
   isParticipativeSlide,
   getResolvedActivitySettings,
+  DEFAULT_ACTIVITY_DURATION_SEC,
+  DEFAULT_POINTS_CORRECT,
+  DEFAULT_POINTS_PARTICIPATION,
 } from "@/types/slides";
 import type { DesignStyleId } from "@/types/designStyles";
 import { ThemeId, getTheme } from "@/types/themes";
@@ -159,6 +162,16 @@ export function EditorTopToolbar({
   const isRtl = design.direction === "rtl";
   const showActivityControls = isParticipativeSlide(slide.type) && onUpdateActivitySettings;
   const resolvedActivity = getResolvedActivitySettings(slide);
+  const rawDuration = slide.activitySettings?.duration;
+  const rawPointsCorrect = slide.activitySettings?.pointsForCorrect;
+  const rawPointsParticipation = slide.activitySettings?.pointsForParticipation;
+  const isDefaultTimer =
+    rawDuration === undefined && resolvedActivity.hasTimer && resolvedActivity.durationSeconds === DEFAULT_ACTIVITY_DURATION_SEC;
+  const isDefaultPoints =
+    rawPointsCorrect === undefined &&
+    rawPointsParticipation === undefined &&
+    resolvedActivity.pointsForCorrect === DEFAULT_POINTS_CORRECT &&
+    resolvedActivity.pointsForParticipation === DEFAULT_POINTS_PARTICIPATION;
 
   const TIMER_PRESETS = [10, 20, 30, 60, 90, 120] as const;
   const POINT_PRESETS = [
@@ -368,7 +381,17 @@ export function EditorTopToolbar({
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
                     <Clock className="w-4 h-4 text-violet-600" />
-                    <span className="hidden sm:inline">Timer</span>
+                    <span className="hidden sm:inline">
+                      Timer{" "}
+                      <span className="text-muted-foreground">
+                        {resolvedActivity.hasTimer ? `${resolvedActivity.durationSeconds}s` : "Off"}
+                      </span>
+                    </span>
+                    {isDefaultTimer && (
+                      <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        default
+                      </span>
+                    )}
                     <ChevronDown className="w-3 h-3" />
                   </Button>
                 </PopoverTrigger>
@@ -425,7 +448,12 @@ export function EditorTopToolbar({
                               : "bg-muted/80 text-muted-foreground hover:bg-muted"
                           }`}
                         >
-                          {sec}s
+                          <span className="inline-flex items-center gap-1">
+                            {sec}s
+                            {sec === DEFAULT_ACTIVITY_DURATION_SEC && isDefaultTimer && (
+                              <span className="text-[10px] opacity-90">(default)</span>
+                            )}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -437,7 +465,17 @@ export function EditorTopToolbar({
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
                     <Award className="w-4 h-4 text-teal-600" />
-                    <span className="hidden sm:inline">Points</span>
+                    <span className="hidden sm:inline">
+                      Points{" "}
+                      <span className="text-muted-foreground tabular-nums">
+                        {resolvedActivity.pointsForCorrect}
+                      </span>
+                    </span>
+                    {isDefaultPoints && (
+                      <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                        default
+                      </span>
+                    )}
                     <ChevronDown className="w-3 h-3" />
                   </Button>
                 </PopoverTrigger>
@@ -465,7 +503,12 @@ export function EditorTopToolbar({
                               : "bg-muted/80 text-muted-foreground hover:bg-muted"
                           }`}
                         >
-                          {correct}
+                          <span className="inline-flex items-center gap-1">
+                            {correct}
+                            {correct === DEFAULT_POINTS_CORRECT && isDefaultPoints && (
+                              <span className="text-[10px] opacity-90">(default)</span>
+                            )}
+                          </span>
                         </button>
                       ))}
                     </div>
