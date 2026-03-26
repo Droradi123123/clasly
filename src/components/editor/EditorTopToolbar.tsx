@@ -359,105 +359,122 @@ export function EditorTopToolbar({
           </Popover>
         </div>
 
-        {/* Participative: timer & points (Kahoot-style) — same settings drive Present + Student live */}
-        {showActivityControls && (
-          <div className="flex items-start gap-3 px-3 py-1.5 border-r border-border/50 shrink-0 rounded-xl bg-muted/30 border border-border/40">
-            <div className="flex items-start gap-4">
-              <div className="flex flex-col gap-1 min-w-0 max-w-[200px]">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 shrink-0 text-violet-600" />
-                  Live timer
-                  <Tooltip>
-                    <TooltipTrigger asChild>
+        {/* Group C - Slide Style */}
+        <div className="flex items-center gap-1 px-3">
+          {/* Participative: timer & points — compact buttons (open popovers) */}
+          {showActivityControls && (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
+                    <Clock className="w-4 h-4 text-violet-600" />
+                    <span className="hidden sm:inline">Timer</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3" align="start">
+                  <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-foreground">Live timer</p>
+                        <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">
+                          Shown to you and students in Present mode.
+                        </p>
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex rounded-full p-1 text-muted-foreground hover:text-foreground hover:bg-muted/80"
+                            aria-label="How the timer works in presentation"
+                          >
+                            <HelpCircle className="w-4 h-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-xs text-left">
+                          <p className="font-medium mb-1">During your live session</p>
+                          <p className="text-xs text-muted-foreground">
+                            The countdown appears for you and your audience. Results stay hidden
+                            until time runs out. Choose <strong>Off</strong> for live-updating
+                            results—no countdown.
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5 pt-1">
                       <button
                         type="button"
-                        className="inline-flex rounded-full p-0.5 text-muted-foreground hover:text-foreground hover:bg-muted/80"
-                        aria-label="How the timer works in presentation"
-                      >
-                        <HelpCircle className="w-3.5 h-3.5" />
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom" className="max-w-xs text-left">
-                      <p className="font-medium mb-1">During your live session</p>
-                      <p className="text-xs text-muted-foreground">
-                        The countdown you set here appears for you and your audience. Results stay
-                        hidden until time runs out (or you tap End question). Choose{" "}
-                        <strong>Off</strong> for live-updating results while people answer—no
-                        countdown on either screen.
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </span>
-                <p className="text-[10px] text-muted-foreground leading-snug">
-                  Shown to you and students in Present mode. Off = live results, no countdown.
-                </p>
-                <div className="flex flex-col gap-1 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => onUpdateActivitySettings!({ duration: 0 })}
-                    title="No countdown — live results while answering"
-                    className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors ${
-                      !resolvedActivity.hasTimer
-                        ? "bg-violet-600 text-white shadow-sm"
-                        : "bg-muted/80 text-muted-foreground hover:bg-muted"
-                    }`}
-                  >
-                    Off
-                  </button>
-                  <div className="grid grid-cols-3 gap-1">
-                    {TIMER_PRESETS.map((sec) => (
-                      <button
-                        key={sec}
-                        type="button"
-                        onClick={() => onUpdateActivitySettings!({ duration: sec })}
-                        className={`rounded-lg px-2 py-1 text-[11px] font-medium transition-colors ${
-                          resolvedActivity.hasTimer && resolvedActivity.durationSeconds === sec
+                        onClick={() => onUpdateActivitySettings!({ duration: 0 })}
+                        className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                          !resolvedActivity.hasTimer
                             ? "bg-violet-600 text-white shadow-sm"
                             : "bg-muted/80 text-muted-foreground hover:bg-muted"
                         }`}
                       >
-                        {sec}s
+                        Off
                       </button>
-                    ))}
+                      {TIMER_PRESETS.map((sec) => (
+                        <button
+                          key={sec}
+                          type="button"
+                          onClick={() => onUpdateActivitySettings!({ duration: sec })}
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                            resolvedActivity.hasTimer && resolvedActivity.durationSeconds === sec
+                              ? "bg-violet-600 text-white shadow-sm"
+                              : "bg-muted/80 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          {sec}s
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5 w-[min-content]">
-                <span className="text-xs font-semibold text-foreground flex items-center gap-1">
-                  <Award className="w-3.5 h-3.5 shrink-0 text-teal-600" />
-                  Points
-                </span>
-                <p className="text-[10px] text-muted-foreground leading-snug max-w-[140px]">
-                  Awarded when students submit (live).
-                </p>
-                <div className="flex gap-1 flex-wrap">
-                  {POINT_PRESETS.map(({ correct, participation }) => (
-                    <button
-                      key={correct}
-                      type="button"
-                      onClick={() =>
-                        onUpdateActivitySettings!({
-                          pointsForCorrect: correct,
-                          pointsForParticipation: participation,
-                        })
-                      }
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors ${
-                        resolvedActivity.pointsForCorrect === correct
-                          ? "bg-teal-600 text-white shadow-sm"
-                          : "bg-muted/80 text-muted-foreground hover:bg-muted"
-                      }`}
-                    >
-                      {correct}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+                </PopoverContent>
+              </Popover>
 
-        {/* Group C - Slide Style */}
-        <div className="flex items-center gap-1 px-3">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
+                    <Award className="w-4 h-4 text-teal-600" />
+                    <span className="hidden sm:inline">Points</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-3" align="start">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-foreground">Points</p>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      Awarded when students submit (live).
+                    </p>
+
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {POINT_PRESETS.map(({ correct, participation }) => (
+                        <button
+                          key={correct}
+                          type="button"
+                          onClick={() =>
+                            onUpdateActivitySettings!({
+                              pointsForCorrect: correct,
+                              pointsForParticipation: participation,
+                            })
+                          }
+                          className={`rounded-md px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors ${
+                            resolvedActivity.pointsForCorrect === correct
+                              ? "bg-teal-600 text-white shadow-sm"
+                              : "bg-muted/80 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          {correct}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
+
           {/* Background Picker */}
           <Popover open={showBgPicker} onOpenChange={setShowBgPicker}>
             <PopoverTrigger asChild>
