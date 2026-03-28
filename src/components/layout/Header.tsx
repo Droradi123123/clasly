@@ -28,6 +28,9 @@ const Header = () => {
   const location = useLocation();
   const isHome = location.pathname === "/";
   const isWebinar = location.pathname === "/webinar";
+  const dashboardPath = location.pathname.startsWith("/webinar/") || location.pathname === "/webinar"
+    ? "/webinar/dashboard"
+    : "/dashboard";
   const { user, isLoading, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -259,7 +262,7 @@ const Header = () => {
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuItem asChild>
-                      <Link to="/dashboard" className="cursor-pointer">
+                      <Link to={dashboardPath} className="cursor-pointer">
                         <LayoutDashboard className="w-4 h-4 mr-2" />
                         Dashboard
                       </Link>
@@ -273,7 +276,7 @@ const Header = () => {
                 </DropdownMenu>
                 
                 <Button variant="hero" size="sm" asChild>
-                  <Link to="/dashboard">
+                  <Link to={dashboardPath}>
                     <LayoutDashboard className="w-4 h-4" />
                     Dashboard
                   </Link>

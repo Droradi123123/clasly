@@ -32,9 +32,16 @@ export function PostLoginRedirect() {
       sessionStorage.removeItem('clasly_mobile_oauth_pending');
       navigate('/continue-on-desktop', { replace: true });
     } else if (!isMobileView && hasPendingPrompt && pendingPrompt) {
+      const pendingTrack = localStorage.getItem('clasly_pending_track');
       localStorage.removeItem('clasly_pending_prompt');
       localStorage.removeItem('clasly_pending_prompt_ts');
-      navigate(`/builder?prompt=${encodeURIComponent(pendingPrompt)}&audience=general`, { replace: true });
+      localStorage.removeItem('clasly_pending_track');
+      const trackQ =
+        pendingTrack === 'webinar' ? '&track=webinar' : '';
+      navigate(
+        `/builder?prompt=${encodeURIComponent(pendingPrompt)}&audience=general${trackQ}`,
+        { replace: true },
+      );
     } else {
       // Logged-in user on homepage -> redirect to Dashboard (their "home")
       navigate('/dashboard', { replace: true });

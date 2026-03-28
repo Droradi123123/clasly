@@ -419,13 +419,17 @@ export default function HeroSection({ onGenerate, onSeeExample, variant = "defau
     if (!prompt.trim()) return;
     const trimmed = prompt.trim();
     
+    const trackQ = isWebinar ? '&track=webinar' : '';
     if (user) {
-      // User is logged in, go directly to builder
-      navigate(`/builder?prompt=${encodeURIComponent(trimmed)}&audience=general`);
+      navigate(`/builder?prompt=${encodeURIComponent(trimmed)}&audience=general${trackQ}`);
     } else {
-      // Save prompt immediately so we never lose it (before auth, OAuth redirect, etc.)
       localStorage.setItem('clasly_pending_prompt', trimmed);
       localStorage.setItem('clasly_pending_prompt_ts', String(Date.now()));
+      if (isWebinar) {
+        localStorage.setItem('clasly_pending_track', 'webinar');
+      } else {
+        localStorage.removeItem('clasly_pending_track');
+      }
       setPendingPrompt(trimmed);
       setShowAuthModal(true);
     }
@@ -654,11 +658,13 @@ export default function HeroSection({ onGenerate, onSeeExample, variant = "defau
           setShowAuthModal(false);
           localStorage.removeItem('clasly_pending_prompt');
           localStorage.removeItem('clasly_pending_prompt_ts');
+          localStorage.removeItem('clasly_pending_track');
           setPendingPrompt('');
         }}
         onSuccess={handleAuthSuccess}
         promptText={pendingPrompt}
         redirectTo="builder"
+        builderTrack={isWebinar ? 'webinar' : 'education'}
       />
     </section>
   );

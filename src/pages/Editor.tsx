@@ -161,7 +161,13 @@ const Editor = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [lectureDbId, setLectureDbId] = useState<string | null>(null);
   const [lectureCode, setLectureCode] = useState<string>("");
-  const [lectureMode, setLectureMode] = useState<"education" | "webinar">("education");
+  const [lectureMode, setLectureMode] = useState<"education" | "webinar">(() =>
+    lectureId === "new" &&
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("track") === "webinar"
+      ? "webinar"
+      : "education",
+  );
   const [webinarCtaLabel, setWebinarCtaLabel] = useState("");
   const [webinarCtaUrl, setWebinarCtaUrl] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -242,6 +248,14 @@ const Editor = () => {
     originalPrompt: originalPrompt || undefined,
     targetAudience: targetAudience || undefined,
   });
+
+  const dashboardHome = lectureMode === "webinar" ? "/webinar/dashboard" : "/dashboard";
+
+  // New deck: lecture mode follows URL (?track=webinar) only — no in-editor toggle.
+  useEffect(() => {
+    if (lectureId !== "new") return;
+    setLectureMode(searchParams.get("track") === "webinar" ? "webinar" : "education");
+  }, [lectureId, searchParams]);
 
   // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
   useEffect(() => {
@@ -358,6 +372,7 @@ const Editor = () => {
             targetAudience: audience,
             slideCount,
             phase: 'plan',
+            lectureMode,
           },
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
@@ -370,6 +385,7 @@ const Editor = () => {
               targetAudience: audience,
               slideCount,
               phase: 'plan',
+              lectureMode,
             },
             headers: { Authorization: `Bearer ${session.access_token}` },
           });
@@ -412,6 +428,7 @@ const Editor = () => {
         for (let i = 0; i < planData.slideTypes.length; i++) {
           let progRes = await supabase.functions.invoke('generate-slides', {
             body: {
+              lectureMode,
               progressiveSlide: {
                 index: i,
                 slideType: planData.slideTypes[i],
@@ -427,6 +444,7 @@ const Editor = () => {
             await new Promise((r) => setTimeout(r, 2500));
             progRes = await supabase.functions.invoke('generate-slides', {
               body: {
+                lectureMode,
                 progressiveSlide: {
                   index: i,
                   slideType: planData.slideTypes[i],
@@ -471,6 +489,7 @@ const Editor = () => {
             difficulty: 'intermediate',
             slideCount,
             maxImages: isPro ? 6 : 3,
+            lectureMode,
             ...(planData && planData.slideTypes?.length && {
               plan: planData.plan,
               interpretation: planData.interpretation,
@@ -489,6 +508,7 @@ const Editor = () => {
               difficulty: 'intermediate',
               slideCount,
               maxImages: isPro ? 6 : 3,
+              lectureMode,
               ...(planData && planData.slideTypes?.length && {
                 plan: planData.plan,
                 interpretation: planData.interpretation,
@@ -558,12 +578,16 @@ const Editor = () => {
         : '';
       const draftTitle = aiTitle || (prompt.slice(0, 50) + (prompt.length > 50 ? '...' : '')) || 'Untitled Presentation';
       try {
-        const newLecture = await createLecture(draftTitle, normalizedSlides);
+        const newLecture = await createLecture(draftTitle, normalizedSlides, undefined, {
+          lecture_mode: lectureMode,
+        });
         setLectureDbId(newLecture.id);
         setLectureCode(newLecture.lecture_code);
         const settings = { themeId: aiThemeId ?? selectedThemeId, designStyleId: aiDesignStyleId ?? selectedDesignStyleId };
-        await updateLecture(newLecture.id, { settings });
-        navigate(`/editor/${newLecture.id}?ai=1`, {
+        await updateLecture(newLecture.id, { settings, lecture_mode: lectureMode });
+        const aiQuery =
+          lectureMode === "webinar" ? "?ai=1&track=webinar" : "?ai=1";
+        navigate(`/editor/${newLecture.id}${aiQuery}`, {
           replace: true,
           state: { preloadedLecture: { ...newLecture, slides: normalizedSlides, settings } },
         });
@@ -601,7 +625,21 @@ const Editor = () => {
       setIsInitialGenerating(false);
       setIsGenerating(false);
     }
-  }, [isFree, maxSlides, isPro, hasAITokens, addMessage, updateLastMessage, setSandboxSlides, setOriginalPrompt, setGeneratedTheme, navigate]);
+  }, [
+    isFree,
+    maxSlides,
+    isPro,
+    hasAITokens,
+    lectureMode,
+    addMessage,
+    updateLastMessage,
+    setSandboxSlides,
+    setOriginalPrompt,
+    setGeneratedTheme,
+    navigate,
+    selectedThemeId,
+    selectedDesignStyleId,
+  ]);
 
   // Generate initial presentation when landing with ?prompt=...&ai=1 (from Dashboard)
   useEffect(() => {
@@ -674,6 +712,7 @@ const Editor = () => {
             currentSlideIndex,
             originalPrompt: originalPrompt || '',
             targetAudience: targetAudience || 'general',
+            lectureMode,
           },
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
@@ -717,7 +756,22 @@ const Editor = () => {
       clearInterval(progressId);
       setIsGenerating(false);
     }
-  }, [sandboxSlides, slides, currentSlideIndex, originalPrompt, targetAudience, hasAITokens, addMessage, updateLastMessage, setIsGenerating, setSandboxSlides, setCurrentSlideIndex, messages, runGenerateSlides]);
+  }, [
+    sandboxSlides,
+    slides,
+    currentSlideIndex,
+    originalPrompt,
+    targetAudience,
+    lectureMode,
+    hasAITokens,
+    addMessage,
+    updateLastMessage,
+    setIsGenerating,
+    setSandboxSlides,
+    setCurrentSlideIndex,
+    messages,
+    runGenerateSlides,
+  ]);
 
   // Clamp currentSlideIndex when display slides count changes
   useEffect(() => {
@@ -770,7 +824,8 @@ const Editor = () => {
     const lectureUserId = (lecture as { user_id?: string }).user_id;
     if (user && lectureUserId && lectureUserId !== user.id) {
       toast.error("You don't have access to this lecture");
-      navigate("/dashboard");
+      const lm = (lecture as { lecture_mode?: string }).lecture_mode;
+      navigate(lm === "webinar" ? "/webinar/dashboard" : "/dashboard");
       return;
     }
     setLectureDbId(lecture.id);
@@ -1094,6 +1149,7 @@ const Editor = () => {
           : "Turn into one concise multiple-choice quiz with 4 options and correctAnswer index.";
       const res = await supabase.functions.invoke("generate-slides", {
         body: {
+          lectureMode,
           singleSlide: {
             type: slideType,
             prompt: `${instruction}\n\n${snippet.slice(0, 800)}`,
@@ -1187,7 +1243,7 @@ const Editor = () => {
         void saveToDatabase(true).catch(() => toast.error('Auto-save failed'));
       }
     } else {
-      createLecture(lectureTitle, normalizedSlides)
+      createLecture(lectureTitle, normalizedSlides, undefined, { lecture_mode: lectureMode })
         .then((newLecture) => {
           navigate(`/present/${newLecture.id}`, {
             state: {
@@ -1224,7 +1280,7 @@ const Editor = () => {
               size="sm"
               onClick={() => {
                 if (hasChanges && lectureDbId) void saveToDatabase(true).catch(() => toast.error('Auto-save failed'));
-                navigate("/dashboard");
+                navigate(dashboardHome);
               }}
               className="gap-1.5"
             >
@@ -1388,33 +1444,6 @@ const Editor = () => {
           </div>
 
           <div className="flex-shrink-0 px-2.5 pb-2 space-y-2 border-b border-border/40">
-            <p className="text-[11px] font-medium text-foreground/85 px-0.5">Lecture mode</p>
-            <div className="flex rounded-lg bg-muted/60 p-0.5 gap-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setLectureMode("education");
-                  setHasChanges(true);
-                }}
-                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                  lectureMode === "education" ? "bg-background shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                Education
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLectureMode("webinar");
-                  setHasChanges(true);
-                }}
-                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
-                  lectureMode === "webinar" ? "bg-background shadow-sm" : "text-muted-foreground"
-                }`}
-              >
-                Webinar
-              </button>
-            </div>
           {lectureMode === "webinar" && (
             <>
               <p className="text-[11px] font-medium text-foreground/85 px-0.5 pt-1">Live CTA button</p>

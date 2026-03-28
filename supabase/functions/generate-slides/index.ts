@@ -1907,7 +1907,26 @@ async function generateImage(apiKey: string, prompt: string, slideType: string):
 }
 
 // =============================================================================
-// 15. MAIN REQUEST HANDLER
+// 15. PRODUCT TRACK (education vs webinar) — never ask the user to choose
+// =============================================================================
+
+function fixedLectureModeContext(mode: "education" | "webinar"): string {
+  if (mode === "webinar") {
+    return `
+
+## PRODUCT CONTEXT (FIXED)
+This deck is for a **live webinar** (sales, launches, demos, lead nurture). Use persuasive, audience-focused copy and a clear story toward action. Do **not** ask whether this is a webinar or a classroom, and do **not** offer a choice between education and webinar.
+`;
+  }
+  return `
+
+## PRODUCT CONTEXT (FIXED)
+This deck is for **teaching / classroom / corporate training**. Optimize for learning outcomes and clarity. Do **not** ask whether this is a webinar or a classroom, and do **not** offer a choice between education and webinar.
+`;
+}
+
+// =============================================================================
+// 16. MAIN REQUEST HANDLER
 // =============================================================================
 
 serve(async (req) => {
@@ -1957,7 +1976,10 @@ serve(async (req) => {
       progressiveSlide,
       /** When true (default), full-deck slide images are returned as pendingSlideImages for client-side generate-image hydration. */
       asyncImages = true,
+      lectureMode: rawLectureMode,
     } = body;
+
+    const resolvedLectureMode: "education" | "webinar" = rawLectureMode === "webinar" ? "webinar" : "education";
 
     const GEMINI_API_KEY = requireGeminiApiKey();
 
@@ -1988,7 +2010,8 @@ serve(async (req) => {
         );
       }
 
-      const systemPrompt = buildSingleSlidePrompt(type, prompt, style, includeImage);
+      const systemPrompt =
+        buildSingleSlidePrompt(type, prompt, style, includeImage) + fixedLectureModeContext(resolvedLectureMode);
       const rawContent = await callAI(
         GEMINI_API_KEY,
         systemPrompt,
@@ -2076,7 +2099,9 @@ serve(async (req) => {
         ? `Presentation: "${desc}". Plan: ${plan}. This is slide ${(index || 0) + 1}. Context: ${interpretation}`
         : desc;
       const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType);
-      const sysPrompt = buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage);
+      const sysPrompt =
+        buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage) +
+        fixedLectureModeContext(resolvedLectureMode);
       const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${effectiveSlideType} slide: "${desc}"`, {
         responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA,
       });
@@ -2140,9 +2165,10 @@ serve(async (req) => {
         );
       }
       const systemPrompt =
-        contentType === "interactive"
+        (contentType === "interactive"
           ? buildInteractiveOnlyPlanPrompt(description, slideCount, difficulty, userAiSettings)
-          : buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings);
+          : buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings)) +
+        fixedLectureModeContext(resolvedLectureMode);
       const planRaw = await callAI(GEMINI_API_KEY, systemPrompt, `Analyze and plan: "${description}".`, {
         responseSchema: GEMINI_PLAN_RESPONSE_SCHEMA,
         maxOutputTokens: 8192,
@@ -2201,12 +2227,13 @@ serve(async (req) => {
         contentType === "interactive"
           ? enforceInteractiveOnlySlideTypes(providedSlideTypes, effectiveSlideCount)
           : providedSlideTypes;
-      const slidesFromPlanPrompt = buildProSlidesFromPlanPrompt(
-        description,
-        providedInterpretation,
-        providedPlan,
-        slideTypes
-      );
+      const slidesFromPlanPrompt =
+        buildProSlidesFromPlanPrompt(
+          description,
+          providedInterpretation,
+          providedPlan,
+          slideTypes,
+        ) + fixedLectureModeContext(resolvedLectureMode);
       rawContent = await callAI(
         GEMINI_API_KEY,
         slidesFromPlanPrompt,
@@ -2219,7 +2246,7 @@ serve(async (req) => {
     } else {
       // Same Pro-quality path for all users (Free only differs by max_slides cap)
       const systemPrompt =
-        contentType === "interactive"
+        (contentType === "interactive"
           ? buildInteractiveOnlyPrompt(description, effectiveSlideCount, difficulty, userAiSettings)
           : buildProInstructionalDesignPrompt(
               description,
@@ -2227,7 +2254,7 @@ serve(async (req) => {
               effectiveSlideCount,
               userAiSettings,
               difficulty,
-            );
+            )) + fixedLectureModeContext(resolvedLectureMode);
       rawContent = await callAIWithThinking(
         GEMINI_API_KEY,
         systemPrompt,

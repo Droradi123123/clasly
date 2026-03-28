@@ -142,6 +142,7 @@ export async function updateLecture(lectureId: string, updates: {
 
   let lastError: Error | null = null;
   let retriedWithoutActivityStartedAt = false;
+  let retriedWithoutLectureMode = false;
   for (let attempt = 0; attempt <= UPDATE_LECTURE_MAX_RETRIES; attempt++) {
     try {
       const { data, error } = await supabase
@@ -167,6 +168,18 @@ export async function updateLecture(lectureId: string, updates: {
       ) {
         retriedWithoutActivityStartedAt = true;
         delete (updateData as any).activity_started_at;
+        continue;
+      }
+
+      if (
+        !retriedWithoutLectureMode &&
+        'lecture_mode' in updateData &&
+        msg.includes('lecture_mode') &&
+        msg.includes('column') &&
+        msg.includes('does not exist')
+      ) {
+        retriedWithoutLectureMode = true;
+        delete (updateData as any).lecture_mode;
         continue;
       }
 

@@ -259,7 +259,7 @@ export default function AIGenerationPreview({
                     variant="hero"
                     onClick={() => {
                       localStorage.setItem("clasly_ai_prompt", prompt);
-                      navigate("/dashboard");
+                      navigate(variant === "webinar" ? "/webinar/dashboard" : "/dashboard");
                     }}
                   >
                     <Sparkles className="w-4 h-4" />

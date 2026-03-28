@@ -73,6 +73,7 @@ const App = () => {
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/webinar" element={<WebinarLanding />} />
+              <Route path="/webinar/dashboard" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
               <Route path="/dashboard" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
               <Route path="/editor" element={<Navigate to="/editor/new" replace />} />
               <Route path="/editor/:lectureId" element={<Suspense fallback={<PageLoader />}><Editor /></Suspense>} />

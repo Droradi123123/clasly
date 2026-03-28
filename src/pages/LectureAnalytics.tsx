@@ -280,7 +280,9 @@ export default function LectureAnalytics() {
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => navigate("/dashboard")}
+              onClick={() =>
+                navigate(lecture.lecture_mode === "webinar" ? "/webinar/dashboard" : "/dashboard")
+              }
               className="shrink-0"
             >
               <ArrowLeft className="w-5 h-5" />

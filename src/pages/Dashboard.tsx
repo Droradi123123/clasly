@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -48,6 +48,7 @@ interface Lecture {
   title: string;
   status: string;
   lecture_code: string;
+  lecture_mode?: string;
   slides?: Slide[];
   created_at: string;
   updated_at: string;
@@ -86,6 +87,9 @@ const LectureCardSkeleton = () => (
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const isWebinar = location.pathname.startsWith("/webinar/");
+  const lectureModeFilter = isWebinar ? "webinar" : "education";
   const { user, isLoading: authLoading } = useAuth();
   const isMobile = useIsMobile();
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
@@ -108,15 +112,16 @@ const Dashboard = () => {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['lectures', user?.id],
+    queryKey: ['lectures', user?.id, lectureModeFilter],
     queryFn: async ({ pageParam = 0 }) => {
       if (!user) return [];
       const from = pageParam * LECTURES_PAGE_SIZE;
       const to = from + LECTURES_PAGE_SIZE - 1;
       const { data: pageData, error } = await supabase
         .from('lectures')
-        .select('id, title, status, lecture_code, created_at, updated_at, user_id')
+        .select('id, title, status, lecture_code, lecture_mode, created_at, updated_at, user_id')
         .eq('user_id', user.id)
+        .eq('lecture_mode', lectureModeFilter)
         .order('updated_at', { ascending: false })
         .range(from, to);
       if (error) throw error;
@@ -152,14 +157,11 @@ const Dashboard = () => {
     }
   }, []);
 
-  const [newLectureMode, setNewLectureMode] = useState<"education" | "webinar">("education");
-
   const resetCreateDialog = () => {
     setCreateMode('choose');
     setNewLectureTitle("");
     setAiDescription("");
     setContentMode("interactive");
-    setNewLectureMode("education");
   };
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -175,7 +177,7 @@ const Dashboard = () => {
     setIsCreating(true);
     try {
       const newLecture = await createLecture(newLectureTitle, [createNewSlide('title', 0)], undefined, {
-        lecture_mode: newLectureMode,
+        lecture_mode: isWebinar ? "webinar" : "education",
       });
       queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
       resetCreateDialog();
@@ -200,7 +202,8 @@ const Dashboard = () => {
       prompt: aiDescription,
       mode: contentMode,
     });
-    
+    if (isWebinar) params.set("track", "webinar");
+
     resetCreateDialog();
     setIsCreateOpen(false);
     navigate(`/builder?${params.toString()}`);
@@ -305,9 +308,13 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-background">
       <DocumentHead
-        title="Dashboard – Clasly"
-        description="Your presentations and lectures."
-        path="/dashboard"
+        title={isWebinar ? "Webinars – Clasly" : "Dashboard – Clasly"}
+        description={
+          isWebinar
+            ? "Your interactive webinar decks and live sessions."
+            : "Your presentations and lectures."
+        }
+        path={isWebinar ? "/webinar/dashboard" : "/dashboard"}
       />
       <Header />
 
@@ -317,10 +324,12 @@ const Dashboard = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
               <h1 className="text-3xl font-display font-bold text-foreground mb-2">
-                My Lectures
+                {isWebinar ? "My Webinars" : "My Lectures"}
               </h1>
               <p className="text-muted-foreground">
-                Create, manage, and present your interactive lectures
+                {isWebinar
+                  ? "Create, manage, and present interactive webinars with lead capture and live CTAs"
+                  : "Create, manage, and present your interactive lectures"}
               </p>
             </div>
 
@@ -388,38 +397,6 @@ const Dashboard = () => {
                       </div>
                     </DialogHeader>
                     <div className="space-y-4 mt-4">
-                      <div>
-                        <Label className="text-sm font-medium mb-2 block">
-                          Lecture mode
-                        </Label>
-                        <div className="flex rounded-lg border border-border p-1 bg-muted/40 gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setNewLectureMode("education")}
-                            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                              newLectureMode === "education"
-                                ? "bg-background shadow-sm text-foreground"
-                                : "text-muted-foreground hover:text-foreground"
-                            }`}
-                          >
-                            Education
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setNewLectureMode("webinar")}
-                            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
-                              newLectureMode === "webinar"
-                                ? "bg-background shadow-sm text-foreground"
-                                : "text-muted-foreground hover:text-foreground"
-                            }`}
-                          >
-                            Webinar
-                          </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1.5">
-                          Webinar: lead capture on join and live CTA tools in the editor.
-                        </p>
-                      </div>
                       <div>
                         <Label className="text-sm font-medium mb-2 block">
                           Lecture Title

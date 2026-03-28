@@ -336,12 +336,18 @@ function buildSystemPrompt(
   language: "he" | "en",
   userAiContext?: string,
   originalPrompt?: string,
-  hasVisionImages?: boolean
+  hasVisionImages?: boolean,
+  lectureMode: "education" | "webinar" = "education",
 ): string {
   const isHe = language === "he";
   const slidesData = stripBase64ForContext(slides);
+  const modeLine =
+    lectureMode === "webinar"
+      ? "\n## PRODUCT CONTEXT (FIXED)\nThis presentation is for a **live webinar**. Keep edits aligned with that (persuasive, audience-focused). Do not ask the user to choose between webinar and education.\n"
+      : "\n## PRODUCT CONTEXT (FIXED)\nThis presentation is for **teaching / training**. Keep edits aligned with instructional clarity. Do not ask the user to choose between webinar and education.\n";
 
   return `You are a presentation editing assistant. You receive user requests and return structured commands to modify their presentation.
+${modeLine}
 ${userAiContext ? `\n## INSTRUCTOR CONTEXT (use to personalize edits)\n${userAiContext}\n` : ""}
 ${originalPrompt ? `\n## PRESENTATION CONTEXT\nThis presentation was created from: "${originalPrompt}"\nUse this to understand topic, tone, and theme when making edits. When the user refers to "the presentation about X" or similar, this is the topic.\n` : ""}
 
@@ -600,11 +606,20 @@ async function callAI(
   conversationHistory: HistoryTurn[] = [],
   userAiContext?: string,
   originalPrompt?: string,
-  visionImages: VisionImage[] = []
+  visionImages: VisionImage[] = [],
+  lectureMode: "education" | "webinar" = "education",
 ): Promise<{ responseMessage: string; commands: any[]; reasoning?: string }> {
   const apiKey = requireGeminiApiKey();
 
-  const systemPrompt = buildSystemPrompt(slides, currentSlideIndex, language, userAiContext, originalPrompt, visionImages.length > 0);
+  const systemPrompt = buildSystemPrompt(
+    slides,
+    currentSlideIndex,
+    language,
+    userAiContext,
+    originalPrompt,
+    visionImages.length > 0,
+    lectureMode,
+  );
   const isHe = language === "he";
 
   console.log(`🤖 Calling AI with message: "${message.slice(0, 100)}..." | History: ${conversationHistory.length} turns | Vision images: ${visionImages.length}`);
@@ -1225,7 +1240,16 @@ serve(async (req) => {
 
     // Parse body
     const body = await req.json();
-    const { message, slides = [], currentSlideIndex = 0, originalPrompt, targetAudience, conversationHistory = [] } = body;
+    const {
+      message,
+      slides = [],
+      currentSlideIndex = 0,
+      originalPrompt,
+      targetAudience,
+      conversationHistory = [],
+      lectureMode: rawLectureMode,
+    } = body;
+    const lectureMode: "education" | "webinar" = rawLectureMode === "webinar" ? "webinar" : "education";
 
     // Validate
     if (!message || typeof message !== "string") {
@@ -1297,7 +1321,17 @@ serve(async (req) => {
     const visionImages = getSlidesWithImagesForVision(safeSlides, message);
 
     // Call AI
-    const aiResult = await callAI(message, safeSlides, safeIndex, language, safeHistory, userAiContext, originalPrompt, visionImages);
+    const aiResult = await callAI(
+      message,
+      safeSlides,
+      safeIndex,
+      language,
+      safeHistory,
+      userAiContext,
+      originalPrompt,
+      visionImages,
+      lectureMode,
+    );
 
     console.log(
       `🤖 AI response: "${aiResult.responseMessage.slice(0, 60)}..." | Commands: ${aiResult.commands.length}`,

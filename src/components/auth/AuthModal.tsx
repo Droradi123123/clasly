@@ -24,9 +24,22 @@ interface AuthModalProps {
   onSuccess?: () => void;
   promptText?: string;
   redirectTo?: 'dashboard' | 'builder';
+  /** When redirecting to builder, which product track (affects ?track= and localStorage for OAuth return). */
+  builderTrack?: 'education' | 'webinar';
 }
 
-export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo = 'dashboard' }: AuthModalProps) => {
+function builderTrackQuery(track: 'education' | 'webinar' | undefined): string {
+  return track === 'webinar' ? '&track=webinar' : '';
+}
+
+export const AuthModal = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  promptText,
+  redirectTo = 'dashboard',
+  builderTrack = 'education',
+}: AuthModalProps) => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [isLoading, setIsLoading] = useState(false);
@@ -55,13 +68,19 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
         if (promptText && redirectTo === 'builder') {
           localStorage.setItem('clasly_pending_prompt', promptText);
           localStorage.setItem('clasly_pending_prompt_ts', String(Date.now()));
+          if (builderTrack === 'webinar') {
+            localStorage.setItem('clasly_pending_track', 'webinar');
+          } else {
+            localStorage.removeItem('clasly_pending_track');
+          }
         }
-        
+
         // Mobile: go to Continue on Desktop (prompt saved for when they open on desktop)
         if (isMobile) {
           navigate('/continue-on-desktop', { replace: true });
         } else if (promptText && redirectTo === 'builder') {
-          navigate(`/builder?prompt=${encodeURIComponent(promptText)}&audience=general`);
+          const tq = builderTrackQuery(builderTrack);
+          navigate(`/builder?prompt=${encodeURIComponent(promptText)}&audience=general${tq}`);
         } else {
           navigate('/dashboard');
         }
@@ -73,7 +92,7 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
     return () => {
       subscription.unsubscribe();
     };
-  }, [isOpen, onClose, onSuccess, promptText, redirectTo, navigate, isMobile]);
+  }, [isOpen, onClose, onSuccess, promptText, redirectTo, builderTrack, navigate, isMobile]);
   
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
@@ -82,6 +101,11 @@ export const AuthModal = ({ isOpen, onClose, onSuccess, promptText, redirectTo =
       if (promptText && redirectTo === 'builder') {
         localStorage.setItem("clasly_pending_prompt", promptText);
         localStorage.setItem("clasly_pending_prompt_ts", String(Date.now()));
+        if (builderTrack === "webinar") {
+          localStorage.setItem("clasly_pending_track", "webinar");
+        } else {
+          localStorage.removeItem("clasly_pending_track");
+        }
       }
 
       if (isMobile) {
