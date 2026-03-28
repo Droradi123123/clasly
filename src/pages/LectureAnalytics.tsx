@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   ArrowLeft,
@@ -9,6 +9,7 @@ import {
   Loader2,
   Presentation,
   Target,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -64,6 +65,9 @@ export default function LectureAnalytics() {
   const [students, setStudents] = useState<any[]>([]);
   const [allResponses, setAllResponses] = useState<any[]>([]);
   const [questions, setQuestions] = useState<QuestionRow[]>([]);
+  const [leads, setLeads] = useState<
+    { id: string; email: string; name: string; student_id: string | null; cta_clicked_at: string | null }[]
+  >([]);
 
   // Instant display when coming from Present (End Lecture)
   const fromPresent = (location.state as { fromPresent?: { lecture: any; slides: Slide[]; students: any[] } })?.fromPresent;
@@ -99,6 +103,16 @@ export default function LectureAnalytics() {
         setSlides((lectureData?.slides as Slide[]) || []);
         setStudents(studentsData || []);
         setAllResponses(responsesData || []);
+
+        if ((lectureData as { lecture_mode?: string })?.lecture_mode === "webinar") {
+          const { data: leadsData } = await supabase
+            .from("lecture_leads")
+            .select("id, email, name, student_id, cta_clicked_at")
+            .eq("lecture_id", lectureId);
+          if (!cancelled) setLeads(leadsData || []);
+        } else if (!cancelled) {
+          setLeads([]);
+        }
 
         const { data: questionsData } = await supabase
           .from("questions")
@@ -207,6 +221,37 @@ export default function LectureAnalytics() {
     .map((slide, index) => ({ slide, index }))
     .filter(({ slide }) => INTERACTIVE_TYPES.has(slide.type));
 
+  const webinarLeadScores = useMemo(() => {
+    if (!leads.length) return [];
+    return leads
+      .map((lead) => {
+        const respCount = lead.student_id
+          ? allResponses.filter((r) => r.student_id === lead.student_id).length
+          : 0;
+        const clickedCta = !!lead.cta_clicked_at;
+        const score = respCount * 5 + (clickedCta ? 15 : 0);
+        return { lead, respCount, clickedCta, score };
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [leads, allResponses]);
+
+  const exportLeadsCsv = () => {
+    const header = "name,email,responses,cta_clicked,engagement_score\n";
+    const body = webinarLeadScores
+      .map(
+        ({ lead, respCount, clickedCta, score }) =>
+          `"${String(lead.name).replace(/"/g, '""')}","${String(lead.email).replace(/"/g, '""')}",${respCount},${clickedCta ? "yes" : "no"},${score}`,
+      )
+      .join("\n");
+    const blob = new Blob([header + body], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `lecture-${lectureId}-leads.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -307,6 +352,53 @@ export default function LectureAnalytics() {
               )}
             </CardContent>
           </Card>
+
+          {lecture.lecture_mode === "webinar" && (
+            <Card className="mb-8">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="w-5 h-5" />
+                  Leads and engagement
+                </CardTitle>
+                {webinarLeadScores.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={exportLeadsCsv} className="gap-2">
+                    <Download className="w-4 h-4" />
+                    Export CSV
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {webinarLeadScores.length === 0 ? (
+                  <p className="text-muted-foreground">No leads captured yet.</p>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <div className="grid grid-cols-[1fr_1fr_80px_80px_60px] gap-2 text-muted-foreground border-b pb-2 font-medium">
+                      <span>Name</span>
+                      <span>Email</span>
+                      <span>Answers</span>
+                      <span>CTA</span>
+                      <span>Score</span>
+                    </div>
+                    {webinarLeadScores.map(({ lead, respCount, clickedCta, score }) => (
+                      <div
+                        key={lead.id}
+                        className="grid grid-cols-[1fr_1fr_80px_80px_60px] gap-2 py-2 border-b border-border/40 last:border-0 items-center"
+                      >
+                        <span className="font-medium truncate">{lead.name}</span>
+                        <span className="truncate text-muted-foreground">{lead.email}</span>
+                        <span>{respCount}</span>
+                        <span>{clickedCta ? "Yes" : "—"}</span>
+                        <span className="font-mono text-primary">{score}</span>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted-foreground pt-2">
+                      Score = 5 × poll/quiz answers linked to the attendee + 15 if they tapped the live CTA.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Interactive slides results */}
           <Card className="mb-8">

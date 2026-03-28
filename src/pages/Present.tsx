@@ -23,6 +23,8 @@ import {
   CheckCircle,
   Flag,
   Clock,
+  Link2,
+  Sparkles,
 } from "lucide-react";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { SlideFrame } from "@/components/editor/SlideFrame";
@@ -58,6 +60,13 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
 import { toast } from "sonner";
+import {
+  createLectureSyncChannel,
+  createReactionsChannel,
+  createPresenterPresenceChannel,
+  countPresenceOnline,
+  presenceNamesList,
+} from "@/lib/liveChannels";
 
 // Types for questions
 interface Question {
@@ -97,6 +106,9 @@ const Present = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
+  const [presenceOnlineCount, setPresenceOnlineCount] = useState(0);
+  const presenceStateRef = useRef<Record<string, unknown[]>>({});
+  const [raffleWinnerName, setRaffleWinnerName] = useState<string | null>(null);
 
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -114,9 +126,7 @@ const Present = () => {
     if (!lectureId) return;
 
     slideSyncReadyRef.current = false;
-    const channel = supabase.channel(`lecture-sync-${lectureId}`, {
-      config: { broadcast: { self: false } },
-    });
+    const channel = createLectureSyncChannel(lectureId);
 
     channel
       .on('broadcast', { event: 'response_changed' }, async ({ payload }) => {
@@ -160,6 +170,49 @@ const Present = () => {
       slideSyncReadyRef.current = false;
     };
   }, [lectureId]);
+
+  const webinarCta = (lecture?.settings as { webinarCta?: { label?: string; url?: string } } | null | undefined)
+    ?.webinarCta;
+
+  const broadcastWebinarCta = useCallback(() => {
+    const ch = slideSyncChannelRef.current;
+    if (!ch || !lectureId) return;
+    const label = webinarCta?.label?.trim();
+    const url = webinarCta?.url?.trim();
+    if (!label || !url) {
+      toast.error("Set CTA label and URL in the editor (Webinar section).");
+      return;
+    }
+    void ch.send({
+      type: "broadcast",
+      event: "cta_show",
+      payload: { label, url },
+    });
+    toast.success("CTA sent to attendees");
+  }, [lectureId, webinarCta?.label, webinarCta?.url]);
+
+  const pickRaffleWinner = useCallback(() => {
+    const ch = slideSyncChannelRef.current;
+    const names = presenceNamesList(presenceStateRef.current);
+    if (names.length === 0) {
+      toast.error("No participants online.");
+      return;
+    }
+    const pick = names[Math.floor(Math.random() * names.length)]!;
+    setRaffleWinnerName(pick.name);
+    setShowConfetti(true);
+    if (ch) {
+      void ch.send({
+        type: "broadcast",
+        event: "raffle_winner",
+        payload: { name: pick.name },
+      });
+    }
+    window.setTimeout(() => {
+      setRaffleWinnerName(null);
+      setShowConfetti(false);
+    }, 4500);
+  }, []);
 
   const sendSlideBroadcast = useCallback(
     (lectureId: string, newIndex: number, activityStartedAt: string | null) => {
@@ -413,13 +466,35 @@ const Present = () => {
     return () => clearInterval(id);
   }, [lectureId, currentSlideIndex, currentSlide, isLive]);
 
+  // Supabase Presence: live online count (students track on lecture-presence channel)
+  useEffect(() => {
+    if (!lectureId || loading) return;
+
+    const channel = createPresenterPresenceChannel(lectureId);
+    const applyPresence = () => {
+      const state = channel.presenceState();
+      presenceStateRef.current = state;
+      setPresenceOnlineCount(countPresenceOnline(state));
+    };
+
+    channel
+      .on("presence", { event: "sync" }, applyPresence)
+      .on("presence", { event: "join" }, applyPresence)
+      .on("presence", { event: "leave" }, applyPresence)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") applyPresence();
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [lectureId, loading]);
+
   // Subscribe to emoji reactions via broadcast
   useEffect(() => {
     if (!lectureId) return;
 
-    const channel = supabase.channel(`reactions-${lectureId}`, {
-      config: { broadcast: { self: false } },
-    });
+    const channel = createReactionsChannel(lectureId);
 
     channel
       .on('broadcast', { event: 'emoji_reaction' }, ({ payload }) => {
@@ -642,6 +717,15 @@ const Present = () => {
       {/* Confetti effect */}
       <Confetti isActive={showConfetti} />
 
+      {raffleWinnerName && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 pointer-events-none px-4">
+          <div className="rounded-3xl bg-card border border-border px-10 py-12 text-center shadow-2xl max-w-lg pointer-events-auto">
+            <p className="text-sm uppercase tracking-wider text-muted-foreground mb-2">Winner</p>
+            <p className="font-display text-4xl sm:text-5xl font-bold text-foreground">{raffleWinnerName}</p>
+          </div>
+        </div>
+      )}
+
       {/* Floating Emoji Reactions */}
       <AnimatePresence>
         {floatingReactions.map((reaction) => (
@@ -702,9 +786,19 @@ const Present = () => {
             </button>
           )}
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-primary-foreground/80">
+            <div
+              className="flex items-center gap-2 text-primary-foreground/80"
+              title={
+                isLive
+                  ? `${presenceOnlineCount} online now · ${students.length} total joined`
+                  : `${students.length} joined`
+              }
+            >
               <Users className="w-4 h-4" />
-              <span className="font-medium">{students.length}</span>
+              <span className="font-medium">{isLive ? presenceOnlineCount : students.length}</span>
+              {isLive && (
+                <span className="text-xs text-primary-foreground/60 hidden sm:inline">online</span>
+              )}
             </div>
             {currentSlide && (isInteractiveSlide(currentSlide.type) || isQuizSlide(currentSlide.type)) && (
               <div className="flex items-center gap-2 text-primary-foreground/80 text-sm">
@@ -797,6 +891,30 @@ const Present = () => {
           >
             <Gamepad2 className="w-4 h-4" />
           </Button>
+          {isLive && lecture?.lecture_mode === "webinar" && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                onClick={() => broadcastWebinarCta()}
+                title="Show CTA link on all phones"
+              >
+                <Link2 className="w-4 h-4" />
+                <span className="ml-1 text-xs hidden sm:inline">CTA</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                onClick={() => pickRaffleWinner()}
+                title="Pick a random online participant"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span className="ml-1 text-xs hidden sm:inline">Raffle</span>
+              </Button>
+            </>
+          )}
           {/* End question early (participative slides with timer) */}
           {currentSlide && participative && hasTimer && inVotingPhase && (
             <Button

@@ -84,6 +84,7 @@ export type Database = {
           current_slide_index: number
           id: string
           lecture_code: string
+          lecture_mode: string
           settings: Json | null
           slides: Json
           status: string
@@ -97,6 +98,7 @@ export type Database = {
           current_slide_index?: number
           id?: string
           lecture_code: string
+          lecture_mode?: string
           settings?: Json | null
           slides?: Json
           status?: string
@@ -110,6 +112,7 @@ export type Database = {
           current_slide_index?: number
           id?: string
           lecture_code?: string
+          lecture_mode?: string
           settings?: Json | null
           slides?: Json
           status?: string
@@ -118,6 +121,44 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      lecture_leads: {
+        Row: {
+          id: string
+          lecture_id: string
+          email: string
+          name: string
+          student_id: string | null
+          cta_clicked_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          lecture_id: string
+          email: string
+          name: string
+          student_id?: string | null
+          cta_clicked_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          lecture_id?: string
+          email?: string
+          name?: string
+          student_id?: string | null
+          cta_clicked_at?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lecture_leads_lecture_id_fkey"
+            columns: ["lecture_id"]
+            isOneToOne: false
+            referencedRelation: "lectures"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       questions: {
         Row: {
@@ -444,6 +485,17 @@ export type Database = {
       record_referral: {
         Args: { referral_code: string }
         Returns: Json
+      }
+      submit_student_response: {
+        Args: {
+          p_lecture_id: string
+          p_student_id: string
+          p_slide_index: number
+          p_response_data: Json
+          p_is_correct?: boolean | null
+          p_points_earned?: number | null
+        }
+        Returns: string
       }
     }
     Enums: {

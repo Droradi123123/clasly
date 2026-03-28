@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { AlertCircle } from "lucide-react";
 import { DocumentHead } from "@/components/seo/DocumentHead";
 import { getLectureByCode, joinLecture } from "@/lib/lectureService";
+import { supabase } from "@/integrations/supabase/client";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
 
@@ -27,7 +28,7 @@ function JoinBrandMark({ className }: { className?: string }) {
 const Join = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [step, setStep] = useState<"code" | "profile">("code");
+  const [step, setStep] = useState<"code" | "lead" | "profile">("code");
   const [lectureCode, setLectureCode] = useState("");
   const [lectureId, setLectureId] = useState("");
   const [lectureName, setLectureName] = useState("");
@@ -62,7 +63,11 @@ const Join = () => {
 
       setLectureId(lecture.id);
       setLectureName(lecture.title);
-      setStep("profile");
+      const mode = (lecture as { lecture_mode?: string }).lecture_mode;
+      setWebinarLeadId(null);
+      setLeadEmail("");
+      setLeadName("");
+      setStep(mode === "webinar" ? "lead" : "profile");
     } catch (err) {
       setError("Something went wrong. Please try again.");
       console.error(err);
@@ -84,6 +89,38 @@ const Join = () => {
     }
   }, [searchParams]);
 
+  const handleLeadSubmit = async () => {
+    if (!leadEmail.trim() || !leadName.trim()) {
+      setError("Please enter your email and name.");
+      return;
+    }
+    setIsLoading(true);
+    setError("");
+    try {
+      const { data, error: insErr } = await supabase
+        .from("lecture_leads")
+        .insert({
+          lecture_id: lectureId,
+          email: leadEmail.trim(),
+          name: leadName.trim(),
+        })
+        .select("id")
+        .single();
+      if (insErr || !data?.id) {
+        setError("Could not save your details. Try again.");
+        return;
+      }
+      setWebinarLeadId(data.id);
+      setName(leadName.trim());
+      setStep("profile");
+    } catch (e) {
+      console.error(e);
+      setError("Something went wrong. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleJoin = async () => {
     if (!name.trim()) return;
 
@@ -94,6 +131,14 @@ const Join = () => {
       const student = await joinLecture(lectureId, name.trim(), selectedEmoji);
 
       if (student) {
+        if (webinarLeadId) {
+          await supabase.from("lecture_leads").update({ student_id: student.id }).eq("id", webinarLeadId);
+          try {
+            sessionStorage.setItem(`clasly_lead_${lectureId}`, webinarLeadId);
+          } catch {
+            /* ignore */
+          }
+        }
         navigate(`/student/${lectureCode}?studentId=${student.id}`);
       }
     } catch (err) {
@@ -140,7 +185,8 @@ const Join = () => {
 
         <div className="rounded-3xl border border-white/[0.08] bg-white/[0.04] backdrop-blur-xl shadow-2xl shadow-black/40 px-6 py-8 sm:px-8 sm:py-10">
           <AnimatePresence mode="wait">
-            {step === "code" ? (
+            {step === "code" || step === "lead" ? (
+              step === "code" ? (
               <motion.div
                 key="code"
                 initial={{ opacity: 0, x: -16 }}
@@ -198,6 +244,74 @@ const Join = () => {
                   </Button>
                 </div>
               </motion.div>
+              ) : (
+              <motion.div
+                key="lead"
+                initial={{ opacity: 0, x: 16 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -16 }}
+                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {lectureName ? (
+                  <p className="text-center text-xs font-medium uppercase tracking-wider text-teal-300/90 mb-4 truncate px-1">
+                    {lectureName}
+                  </p>
+                ) : null}
+                <div className="text-center mb-8">
+                  <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-2 tracking-tight">
+                    Webinar registration
+                  </h1>
+                  <p className="text-sm sm:text-base text-violet-200/75">
+                    Enter your email and name to continue
+                  </p>
+                </div>
+                <div className="space-y-4">
+                  <Input
+                    type="email"
+                    value={leadEmail}
+                    onChange={(e) => setLeadEmail(e.target.value)}
+                    placeholder="Email"
+                    className="h-12 rounded-2xl border-white/10 bg-[#12152a] text-white placeholder:text-white/35"
+                  />
+                  <Input
+                    value={leadName}
+                    onChange={(e) => setLeadName(e.target.value)}
+                    placeholder="Full name"
+                    className="h-12 rounded-2xl border-white/10 bg-[#12152a] text-white placeholder:text-white/35"
+                    onKeyDown={(e) => e.key === "Enter" && handleLeadSubmit()}
+                  />
+                  {error && (
+                    <div className="flex items-center justify-center gap-2 text-sm text-rose-300">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      {error}
+                    </div>
+                  )}
+                  <Button
+                    type="button"
+                    size="xl"
+                    disabled={isLoading}
+                    onClick={() => void handleLeadSubmit()}
+                    className="w-full h-14 rounded-2xl text-lg font-bold bg-violet-600 hover:bg-violet-500 text-white"
+                  >
+                    {isLoading ? (
+                      <span className="inline-block w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      "Continue"
+                    )}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("code");
+                      setError("");
+                    }}
+                    className="w-full text-center text-sm text-violet-300/70 hover:text-violet-200/90 py-2"
+                  >
+                    Change code
+                  </button>
+                </div>
+              </motion.div>
+              )
             ) : (
               <motion.div
                 key="profile"

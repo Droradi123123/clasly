@@ -13,7 +13,14 @@ import {
   submitResponse,
   getResponses,
   subscribeResponses,
+  setStudentActive,
 } from "@/lib/lectureService";
+import {
+  createLectureSyncChannel,
+  createReactionsChannel,
+  createGameChannel,
+  createStudentPresenceChannel,
+} from "@/lib/liveChannels";
 import { buildLiveResultsPayload } from "@/lib/responseAggregation";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { SlideFrame } from "@/components/editor/SlideFrame";
@@ -110,6 +117,8 @@ const Student = () => {
   const [sentenceInput, setSentenceInput] = useState("");
   const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
   const [realtimeReconnectKey, setRealtimeReconnectKey] = useState(0);
+  const [ctaOverlay, setCtaOverlay] = useState<{ label: string; url: string } | null>(null);
+  const [studentRaffleName, setStudentRaffleName] = useState<string | null>(null);
   const previousPointsRef = React.useRef<number>(0);
   const lastBroadcastSlideIndexRef = React.useRef<number | null>(null);
   const lastBroadcastTsRef = React.useRef<number>(0);
@@ -410,6 +419,21 @@ const Student = () => {
     lectureSyncChannelRef.current = channel;
 
     channel
+      .on("broadcast", { event: "cta_show" }, ({ payload }) => {
+        const p = payload as { label?: string; url?: string };
+        if (p?.label && p?.url) setCtaOverlay({ label: p.label, url: p.url });
+      })
+      .on("broadcast", { event: "raffle_winner" }, ({ payload }) => {
+        const p = payload as { name?: string };
+        if (p?.name) {
+          setStudentRaffleName(p.name);
+          setShowConfetti(true);
+          window.setTimeout(() => {
+            setStudentRaffleName(null);
+            setShowConfetti(false);
+          }, 4000);
+        }
+      })
       .on('broadcast', { event: 'slide_changed' }, ({ payload }) => {
         const p = payload as {
           currentSlideIndex?: number;
@@ -461,11 +485,7 @@ const Student = () => {
   useEffect(() => {
     if (!lecture?.id) return;
 
-    const channel = supabase.channel(`game-${lecture.id}`, {
-      config: {
-        broadcast: { self: true },
-      },
-    });
+    const channel = createGameChannel(lecture.id);
 
     channel
       .on('broadcast', { event: 'game_state' }, ({ payload }) => {
@@ -527,6 +547,44 @@ const Student = () => {
       supabase.removeChannel(channel);
     };
   }, [studentId]);
+
+  const PRESENCE_HEARTBEAT_MS = 60_000;
+  useEffect(() => {
+    if (!lecture?.id || !studentId || !student?.name) return;
+
+    const ch = createStudentPresenceChannel(lecture.id, studentId);
+    const meta = {
+      studentId,
+      name: student.name as string,
+      emoji: String((student as { emoji?: string }).emoji || "👤"),
+      joinedAt: new Date().toISOString(),
+    };
+
+    ch.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        await setStudentActive(studentId, true);
+        const err = await ch.track(meta);
+        if (err) console.warn("[Student] presence track:", err);
+      }
+    });
+
+    const hb = window.setInterval(() => {
+      void setStudentActive(studentId, true);
+    }, PRESENCE_HEARTBEAT_MS);
+
+    const onUnload = () => {
+      void setStudentActive(studentId, false);
+    };
+    window.addEventListener("beforeunload", onUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      window.clearInterval(hb);
+      void setStudentActive(studentId, false);
+      void ch.untrack();
+      supabase.removeChannel(ch);
+    };
+  }, [lecture?.id, studentId, student?.name, student?.emoji]);
 
   // Check if already answered
   useEffect(() => {
@@ -686,9 +744,7 @@ const Student = () => {
   useEffect(() => {
     if (!lecture?.id) return;
 
-    const channel = supabase.channel(`reactions-${lecture.id}`, {
-      config: { broadcast: { self: false } },
-    });
+    const channel = createReactionsChannel(lecture.id);
     
     channel.subscribe((status) => {
       console.log('[Student] Reaction channel status:', status);
@@ -788,9 +844,56 @@ const Student = () => {
     );
   }
 
+  const handleCtaOpen = async (url: string) => {
+    if (lecture?.id) {
+      try {
+        const lid = sessionStorage.getItem(`clasly_lead_${lecture.id}`);
+        if (lid) {
+          await supabase
+            .from("lecture_leads")
+            .update({ cta_clicked_at: new Date().toISOString() })
+            .eq("id", lid);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    setCtaOverlay(null);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Confetti isActive={showConfetti} />
+
+      {ctaOverlay && (
+        <div className="fixed inset-0 z-[95] flex flex-col justify-end bg-black/50 p-4 pb-10">
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={() => setCtaOverlay(null)}
+            className="absolute top-4 right-4 rounded-full bg-background/90 px-4 py-2 text-sm font-medium shadow"
+          >
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleCtaOpen(ctaOverlay.url)}
+            className="w-full min-h-[4.5rem] rounded-2xl bg-primary text-primary-foreground text-xl font-bold shadow-lg active:scale-[0.99] transition-transform"
+          >
+            {ctaOverlay.label}
+          </button>
+        </div>
+      )}
+
+      {studentRaffleName && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 px-4 pointer-events-none">
+          <div className="rounded-2xl bg-card border px-8 py-10 text-center shadow-xl pointer-events-auto max-w-sm w-full">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Winner</p>
+            <p className="text-3xl font-display font-bold">{studentRaffleName}</p>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <header className="bg-gradient-primary text-primary-foreground p-4 relative">
@@ -895,6 +998,16 @@ const Student = () => {
               </SlideFrame>
             </div>
           </motion.div>
+          ) : hasTimer && inVotingPhase && hasAnswered ? (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-md mx-auto mt-12 rounded-2xl border border-border/60 bg-card/80 backdrop-blur px-8 py-12 text-center shadow-lg"
+          >
+            <CheckCircle className="w-14 h-14 text-teal-500 mx-auto mb-4" />
+            <p className="text-lg font-semibold text-foreground mb-2">Answer received</p>
+            <p className="text-muted-foreground">Waiting for the presenter to continue.</p>
+          </motion.div>
           ) : (
           <motion.div
             key={currentSlide.id}
@@ -935,7 +1048,7 @@ const Student = () => {
                     disabled={hasAnswered || isSubmitting}
                     whileHover={{ scale: hasAnswered ? 1 : 1.02 }}
                     whileTap={{ scale: hasAnswered ? 1 : 0.98 }}
-                    className={`w-full p-4 rounded-xl text-left transition-all text-white font-medium shadow-lg ${
+                    className={`w-full min-h-[4.5rem] p-5 sm:p-6 rounded-xl text-left transition-all text-white font-semibold text-lg sm:text-xl shadow-lg ${
                       selectedOption === index
                         ? "ring-2 ring-white ring-offset-2 ring-offset-background"
                         : hasAnswered
@@ -957,7 +1070,7 @@ const Student = () => {
                   disabled={hasAnswered || isSubmitting}
                   whileHover={{ scale: hasAnswered ? 1 : 1.05 }}
                   whileTap={{ scale: hasAnswered ? 1 : 0.95 }}
-                  className={`p-8 rounded-2xl text-center transition-all shadow-xl ${
+                  className={`min-h-[5rem] p-8 sm:p-10 rounded-2xl text-center text-lg sm:text-xl font-semibold transition-all shadow-xl ${
                     hasAnswered && selectedOption === 0
                       ? "ring-2 ring-white"
                       : hasAnswered
@@ -973,7 +1086,7 @@ const Student = () => {
                   disabled={hasAnswered || isSubmitting}
                   whileHover={{ scale: hasAnswered ? 1 : 1.05 }}
                   whileTap={{ scale: hasAnswered ? 1 : 0.95 }}
-                  className={`p-8 rounded-2xl text-center transition-all shadow-xl ${
+                  className={`min-h-[5rem] p-8 sm:p-10 rounded-2xl text-center text-lg sm:text-xl font-semibold transition-all shadow-xl ${
                     hasAnswered && selectedOption === 1
                       ? "ring-2 ring-white"
                       : hasAnswered

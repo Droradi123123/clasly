@@ -15,7 +15,12 @@ export function generateLectureCode(): string {
 }
 
 // Create a new lecture in the database
-export async function createLecture(title: string, slides: Slide[], userId?: string) {
+export async function createLecture(
+  title: string,
+  slides: Slide[],
+  userId?: string,
+  options?: { lecture_mode?: 'education' | 'webinar' },
+) {
   // Validate input
   const validatedTitle = lectureTitleSchema.parse(title);
   
@@ -28,6 +33,7 @@ export async function createLecture(title: string, slides: Slide[], userId?: str
   }
   
   const lectureCode = generateLectureCode();
+  const mode = options?.lecture_mode === 'webinar' ? 'webinar' : 'education';
   
   const { data, error } = await supabase
     .from('lectures')
@@ -38,6 +44,7 @@ export async function createLecture(title: string, slides: Slide[], userId?: str
       status: 'draft',
       current_slide_index: 0,
       user_id: finalUserId,
+      lecture_mode: mode,
     })
     .select()
     .single();
@@ -118,6 +125,7 @@ export async function updateLecture(lectureId: string, updates: {
   current_slide_index?: number;
   slides?: Slide[];
   settings?: Record<string, unknown>;
+  lecture_mode?: 'education' | 'webinar';
   /** ISO timestamp when the current participative slide's timer started; null when not applicable */
   activity_started_at?: string | null;
 }) {
@@ -224,6 +232,12 @@ export async function joinLecture(lectureId: string, name: string, emoji: string
   return data;
 }
 
+/** Best-effort DB backup for “active” tab (Presence is source of truth for live). */
+export async function setStudentActive(studentId: string, active: boolean) {
+  const { error } = await supabase.from("students").update({ is_active: active }).eq("id", studentId);
+  if (error) console.warn("[lectureService] setStudentActive:", error.message);
+}
+
 // Get students in a lecture
 export async function getStudents(lectureId: string) {
   const { data, error } = await supabase
@@ -236,7 +250,7 @@ export async function getStudents(lectureId: string) {
   return data || [];
 }
 
-// Submit a response
+// Submit a response (transactional insert + points via RPC; advisory lock per lecture+slide)
 export async function submitResponse(
   lectureId: string,
   studentId: string,
@@ -245,37 +259,16 @@ export async function submitResponse(
   isCorrect?: boolean,
   pointsEarned?: number
 ) {
-  const { data, error } = await supabase
-    .from('responses')
-    .insert({
-      lecture_id: lectureId,
-      student_id: studentId,
-      slide_index: slideIndex,
-      response_data: responseData as Json,
-      is_correct: isCorrect,
-      points_earned: pointsEarned || 0,
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("submit_student_response", {
+    p_lecture_id: lectureId,
+    p_student_id: studentId,
+    p_slide_index: slideIndex,
+    p_response_data: responseData as Json,
+    p_is_correct: isCorrect ?? null,
+    p_points_earned: pointsEarned ?? 0,
+  });
 
   if (error) throw error;
-
-  // Update student points directly
-  if (pointsEarned && pointsEarned > 0) {
-    const { data: student } = await supabase
-      .from('students')
-      .select('points')
-      .eq('id', studentId)
-      .single();
-    
-    if (student) {
-      await supabase
-        .from('students')
-        .update({ points: (student.points || 0) + pointsEarned })
-        .eq('id', studentId);
-    }
-  }
-
   return data;
 }
 
@@ -311,7 +304,8 @@ export async function duplicateLecture(lectureId: string) {
   if (!lecture) throw new Error('Lecture not found');
   const slides = (lecture.slides as unknown as Slide[]) || [];
   const newTitle = `${lecture.title} (Copy)`;
-  return createLecture(newTitle, slides.length ? [...slides] : []);
+  const mode = (lecture as { lecture_mode?: string }).lecture_mode === "webinar" ? "webinar" : "education";
+  return createLecture(newTitle, slides.length ? [...slides] : [], undefined, { lecture_mode: mode });
 }
 
 // Subscribe to lecture updates (for students)

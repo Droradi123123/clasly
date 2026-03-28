@@ -152,11 +152,14 @@ const Dashboard = () => {
     }
   }, []);
 
+  const [newLectureMode, setNewLectureMode] = useState<"education" | "webinar">("education");
+
   const resetCreateDialog = () => {
     setCreateMode('choose');
     setNewLectureTitle("");
     setAiDescription("");
     setContentMode("interactive");
+    setNewLectureMode("education");
   };
 
   const handleDialogOpenChange = (open: boolean) => {
@@ -171,7 +174,9 @@ const Dashboard = () => {
 
     setIsCreating(true);
     try {
-      const newLecture = await createLecture(newLectureTitle, [createNewSlide('title', 0)]);
+      const newLecture = await createLecture(newLectureTitle, [createNewSlide('title', 0)], undefined, {
+        lecture_mode: newLectureMode,
+      });
       queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
       resetCreateDialog();
       setIsCreateOpen(false);
@@ -383,6 +388,38 @@ const Dashboard = () => {
                       </div>
                     </DialogHeader>
                     <div className="space-y-4 mt-4">
+                      <div>
+                        <Label className="text-sm font-medium mb-2 block">
+                          Lecture mode
+                        </Label>
+                        <div className="flex rounded-lg border border-border p-1 bg-muted/40 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setNewLectureMode("education")}
+                            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                              newLectureMode === "education"
+                                ? "bg-background shadow-sm text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            Education
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNewLectureMode("webinar")}
+                            className={`flex-1 py-2 px-3 rounded-md text-sm font-medium transition-colors ${
+                              newLectureMode === "webinar"
+                                ? "bg-background shadow-sm text-foreground"
+                                : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            Webinar
+                          </button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                          Webinar: lead capture on join and live CTA tools in the editor.
+                        </p>
+                      </div>
                       <div>
                         <Label className="text-sm font-medium mb-2 block">
                           Lecture Title

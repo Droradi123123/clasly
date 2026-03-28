@@ -69,6 +69,7 @@ import {
   Home,
 } from "lucide-react";
 import { getLecture, updateLecture, createLecture } from "@/lib/lectureService";
+import { hydratePendingSlideImages, type PendingSlideImage } from "@/lib/hydrateSlideImages";
 import { toast } from "sonner";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/hooks/useAuth";
@@ -105,6 +106,13 @@ function arePlaceholderOrEmptySlides(slides: Slide[]): boolean {
     }));
   return !!isPlaceholder;
 }
+
+const AI_PROGRESS_MESSAGES = [
+  "Analyzing your topic…",
+  "Planning slide flow…",
+  "Writing slides…",
+  "Finishing up…",
+];
 
 const BUILDER_TIPS = [
   'Students join with a QR code—no app download needed.',
@@ -153,6 +161,9 @@ const Editor = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [lectureDbId, setLectureDbId] = useState<string | null>(null);
   const [lectureCode, setLectureCode] = useState<string>("");
+  const [lectureMode, setLectureMode] = useState<"education" | "webinar">("education");
+  const [webinarCtaLabel, setWebinarCtaLabel] = useState("");
+  const [webinarCtaUrl, setWebinarCtaUrl] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
@@ -163,6 +174,7 @@ const Editor = () => {
   const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
   const [isInitialGenerating, setIsInitialGenerating] = useState(false);
   const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
+  const [aiProgressStage, setAiProgressStage] = useState(0);
   const hasTriggeredInitialGen = useRef(false);
   // Start with logical size so no layout shift when ResizeObserver runs
   const [slideSize, setSlideSize] = useState<{ width: number; height: number; scale?: number } | null>({ width: 960, height: 540, scale: 1 });
@@ -385,7 +397,14 @@ const Editor = () => {
       }
 
       let processedSlides: Slide[];
-      let resData: { error?: string; slides?: unknown[]; theme?: unknown; plan?: string; interpretation?: string };
+      let resData: {
+        error?: string;
+        slides?: unknown[];
+        theme?: unknown;
+        plan?: string;
+        interpretation?: string;
+        pendingSlideImages?: PendingSlideImage[];
+      };
 
       if (isPro && planData?.slideTypes?.length) {
         const accumulated: Slide[] = [];
@@ -491,6 +510,7 @@ const Editor = () => {
           theme?: unknown;
           plan?: string;
           interpretation?: string;
+          pendingSlideImages?: PendingSlideImage[];
         };
         if (resData.error) throw new Error(resData.error);
         if (!resData?.slides?.length) throw new Error('No slides returned');
@@ -502,7 +522,19 @@ const Editor = () => {
         }));
       }
 
-      const normalizedSlides = ensureSlidesDesignDefaults(processedSlides);
+      let normalizedSlides = ensureSlidesDesignDefaults(processedSlides);
+      const pendingImgs = resData.pendingSlideImages;
+      if (pendingImgs?.length) {
+        const { data: sessHydrate } = await supabase.auth.getSession();
+        const tok = sessHydrate?.session?.access_token;
+        if (tok) {
+          normalizedSlides = ensureSlidesDesignDefaults(
+            await hydratePendingSlideImages(normalizedSlides, pendingImgs, tok, (upd) => {
+              setSandboxSlides(ensureSlidesDesignDefaults(upd));
+            }),
+          );
+        }
+      }
       // Reasoning-first: show interpretation+plan in message before revealing slides (Free gets these from single invoke)
       if (resData.interpretation || resData.plan) {
         let reasoningMsg = '';
@@ -587,7 +619,11 @@ const Editor = () => {
 
   useEffect(() => {
     if (!isInitialGenerating) return;
-    const t = setInterval(() => setAiGenTipIndex((i) => (i + 1) % BUILDER_TIPS.length), 4500);
+    setAiProgressStage(0);
+    const t = setInterval(() => {
+      setAiGenTipIndex((i) => (i + 1) % BUILDER_TIPS.length);
+      setAiProgressStage((s) => (s + 1) % AI_PROGRESS_MESSAGES.length);
+    }, 2800);
     return () => clearInterval(t);
   }, [isInitialGenerating]);
 
@@ -749,6 +785,11 @@ const Editor = () => {
     const settings = lecture.settings as Record<string, unknown> | null;
     if (settings?.themeId) setSelectedThemeId(settings.themeId as ThemeId);
     if (settings?.designStyleId) setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
+    const lm = (lecture as { lecture_mode?: string }).lecture_mode;
+    setLectureMode(lm === "webinar" ? "webinar" : "education");
+    const wc = settings?.webinarCta as { label?: string; url?: string } | undefined;
+    setWebinarCtaLabel(typeof wc?.label === "string" ? wc.label : "");
+    setWebinarCtaUrl(typeof wc?.url === "string" ? wc.url : "");
   }, [user?.id, navigate]);
 
   // Load lecture from database if it exists (only own lectures)
@@ -802,7 +843,13 @@ const Editor = () => {
     
     if (!silent) setIsSaving(true);
     try {
-      const settings = { themeId: selectedThemeId, designStyleId: selectedDesignStyleId };
+      const settings: Record<string, unknown> = {
+        themeId: selectedThemeId,
+        designStyleId: selectedDesignStyleId,
+      };
+      if (lectureMode === "webinar" && webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
+        settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
+      }
       const slidesToSave = sandboxSlides.length > 0 ? sandboxSlides : slides;
       const normalizedSlides = ensureSlidesDesignDefaults(slidesToSave);
       
@@ -810,13 +857,16 @@ const Editor = () => {
         await updateLecture(lectureDbId, {
           slides: normalizedSlides,
           settings,
+          lecture_mode: lectureMode,
         });
       } else {
-        const newLecture = await createLecture(lectureTitle, normalizedSlides);
+        const newLecture = await createLecture(lectureTitle, normalizedSlides, undefined, {
+          lecture_mode: lectureMode,
+        });
         setLectureDbId(newLecture.id);
         setLectureCode(newLecture.lecture_code);
         window.history.replaceState(null, '', `/editor/${newLecture.id}`);
-        await updateLecture(newLecture.id, { settings });
+        await updateLecture(newLecture.id, { settings, lecture_mode: lectureMode });
       }
       setHasChanges(false);
       if (!silent) toast.success('Saved!');
@@ -826,7 +876,18 @@ const Editor = () => {
     } finally {
       if (!silent) setIsSaving(false);
     }
-  }, [hasChanges, lectureDbId, lectureTitle, slides, sandboxSlides, selectedThemeId, selectedDesignStyleId]);
+  }, [
+    hasChanges,
+    lectureDbId,
+    lectureTitle,
+    slides,
+    sandboxSlides,
+    selectedThemeId,
+    selectedDesignStyleId,
+    lectureMode,
+    webinarCtaLabel,
+    webinarCtaUrl,
+  ]);
 
   // Save title changes (persist current display slides so title + slides stay in sync)
   const saveTitleToDatabase = useCallback(async () => {
@@ -1009,6 +1070,52 @@ const Editor = () => {
       return updatedSlide;
     }));
     setHasChanges(true);
+  };
+
+  const handleInlineMagicWand = async (mode: "shorter" | "quiz") => {
+    if (!hasAITokens(1)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
+    const cs = currentSlide?.content as Record<string, unknown> | undefined;
+    const snippet = String(cs?.title ?? cs?.question ?? cs?.text ?? "").trim();
+    if (!snippet) {
+      toast.error("Add text on this slide first.");
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const { data: { session }, error: se } = await supabase.auth.refreshSession();
+      if (se || !session) throw new Error("Please sign in to use AI.");
+      const slideType = mode === "quiz" ? "quiz" : "content";
+      const instruction =
+        mode === "shorter"
+          ? "Rewrite shorter and clearer in the same language."
+          : "Turn into one concise multiple-choice quiz with 4 options and correctAnswer index.";
+      const res = await supabase.functions.invoke("generate-slides", {
+        body: {
+          singleSlide: {
+            type: slideType,
+            prompt: `${instruction}\n\n${snippet.slice(0, 800)}`,
+            style: "professional",
+            includeImage: false,
+          },
+          skipImages: true,
+        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (res.error) throw new Error(await getEdgeFunctionErrorMessage(res.error, "AI edit failed."));
+      const payload = res.data as { slides?: { content?: SlideContent }[]; error?: string };
+      if (payload?.error) throw new Error(payload.error);
+      const newContent = payload?.slides?.[0]?.content;
+      if (!newContent) throw new Error("No content returned.");
+      handleSingleSlideAIContent(newContent);
+      toast.success("Slide updated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "AI edit failed.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const updateSlideDesign = (design: SlideDesign) => {
@@ -1280,6 +1387,59 @@ const Editor = () => {
             </div>
           </div>
 
+          <div className="flex-shrink-0 px-2.5 pb-2 space-y-2 border-b border-border/40">
+            <p className="text-[11px] font-medium text-foreground/85 px-0.5">Lecture mode</p>
+            <div className="flex rounded-lg bg-muted/60 p-0.5 gap-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setLectureMode("education");
+                  setHasChanges(true);
+                }}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  lectureMode === "education" ? "bg-background shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Education
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLectureMode("webinar");
+                  setHasChanges(true);
+                }}
+                className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${
+                  lectureMode === "webinar" ? "bg-background shadow-sm" : "text-muted-foreground"
+                }`}
+              >
+                Webinar
+              </button>
+            </div>
+          {lectureMode === "webinar" && (
+            <>
+              <p className="text-[11px] font-medium text-foreground/85 px-0.5 pt-1">Live CTA button</p>
+              <Input
+                placeholder="Button label (e.g. Get the course)"
+                value={webinarCtaLabel}
+                onChange={(e) => {
+                  setWebinarCtaLabel(e.target.value);
+                  setHasChanges(true);
+                }}
+                className="h-9 text-sm"
+              />
+              <Input
+                placeholder="https://…"
+                value={webinarCtaUrl}
+                onChange={(e) => {
+                  setWebinarCtaUrl(e.target.value);
+                  setHasChanges(true);
+                }}
+                className="h-9 text-sm"
+              />
+            </>
+          )}
+          </div>
+
           {isAIPanelOpen ? (
             <div id="editor-ai-panel" className="flex-1 min-h-0 flex flex-col" role="region" aria-label="AI assistant chat">
               <ChatPanel
@@ -1339,9 +1499,12 @@ const Editor = () => {
             <BuilderPreviewProvider allowContentScroll>
             {isInitialGenerating && sandboxSlides.length === 0 ? (
               <div className="flex-1 flex items-center justify-center min-h-0">
-                <div className="flex flex-col items-center gap-4 text-muted-foreground">
+                <div className="flex flex-col items-center gap-4 text-muted-foreground max-w-sm text-center px-4">
                   <Loader2 className="w-12 h-12 animate-spin text-primary" />
-                  <p className="text-sm font-medium">Building your presentation...</p>
+                  <p className="text-base font-semibold text-foreground">
+                    {AI_PROGRESS_MESSAGES[aiProgressStage % AI_PROGRESS_MESSAGES.length]}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{BUILDER_TIPS[aiGenTipIndex % BUILDER_TIPS.length]}</p>
                 </div>
               </div>
             ) : (
@@ -1451,6 +1614,28 @@ const Editor = () => {
                 >
                   <Eye className="w-4 h-4" />
                   View
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isGenerating}
+                  onClick={() => void handleInlineMagicWand("shorter")}
+                  title="AI: shorten main text"
+                  className="hidden sm:inline-flex gap-1"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  Shorten
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isGenerating}
+                  onClick={() => void handleInlineMagicWand("quiz")}
+                  title="AI: turn into quiz"
+                  className="hidden md:inline-flex gap-1"
+                >
+                  <Wand2 className="w-3.5 h-3.5" />
+                  To quiz
                 </Button>
                 <div className="w-px h-6 bg-border" />
 

@@ -599,6 +599,52 @@ function cleanAndParseJSON(rawContent: string): any {
   }
 }
 
+/** Prefer strict JSON from model (responseSchema / responseMimeType); fall back to legacy cleanup. */
+function parseModelJson(rawContent: string): any {
+  const t = (rawContent || "").trim();
+  if (!t) return null;
+  try {
+    return JSON.parse(t);
+  } catch {
+    return cleanAndParseJSON(rawContent);
+  }
+}
+
+/** Gemini structured output for plan phase (no thinking — schema enforces shape). */
+const GEMINI_PLAN_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    interpretation: { type: "STRING" },
+    plan: { type: "STRING" },
+    slideTypes: {
+      type: "ARRAY",
+      items: { type: "STRING" },
+    },
+  },
+  required: ["interpretation", "plan", "slideTypes"],
+};
+
+/** Single-slide JSON shape (content is free-form object). */
+const GEMINI_SINGLE_SLIDE_SCHEMA: Record<string, unknown> = {
+  type: "OBJECT",
+  properties: {
+    type: { type: "STRING" },
+    content: { type: "OBJECT" },
+    imagePrompt: { type: "STRING", nullable: true },
+  },
+  required: ["type", "content"],
+};
+
+/** Prompt line: optimal count in band, capped by plan (not a rigid “exactly N”). */
+function slideCountBandInstruction(maxSlidesAllowed: number): string {
+  const hi = Math.min(12, Math.max(1, maxSlidesAllowed));
+  const lo = Math.min(5, hi);
+  if (hi <= 4) {
+    return `Choose the optimal number of slides between 3 and ${hi} based on topic depth (at most ${hi}).`;
+  }
+  return `Choose the optimal number of slides between ${lo} and ${hi} based on topic depth (at most ${hi}).`;
+}
+
 /** Recursively search for slides array in nested objects. */
 function findSlidesArray(obj: any, depth = 0): any[] | null {
   if (depth > 3) return null;
@@ -1179,15 +1225,16 @@ const CLEAN_READABLE_PRINCIPLE = `
 `;
 
 function buildInstructionalDesignPrompt(description: string, audience: string, slideCount: number): string {
-  // Determine the actual slide count based on plan limits
   const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 10);
-  
+  const band = slideCountBandInstruction(effectiveSlideCount);
+
   return `
 You are a world-class Instructional Designer and Presentation Architect.
 Your goal: create a clear, memorable presentation that engages the audience without overwhelming them.
 
 ## YOUR TASK
-Create a ${effectiveSlideCount}-slide interactive presentation about: "${description}"
+${band}
+Create an interactive presentation about: "${description}"
 Target Audience: ${audience}
 ${CLEAN_READABLE_PRINCIPLE}
 
@@ -1230,10 +1277,10 @@ ${CLEAN_READABLE_PRINCIPLE}
 7. "quiz" → Multiple choice - make it CHALLENGING and EDUCATIONAL
    { "type": "quiz", "content": { "question": "Non-obvious question that teaches something?", "options": ["Plausible A", "Plausible B", "Correct C", "Plausible D"], "correctAnswer": 2 } }
 
-## MANDATORY SLIDE STRUCTURE (EXACTLY ${effectiveSlideCount} SLIDES)
+## SLIDE STRUCTURE (flexible count within band — use a strong arc: hook → teach → engage → close)
 
 ${effectiveSlideCount <= 5 ? `
-### For ${effectiveSlideCount} slides (compact format):
+### Example arc for shorter decks (compact format):
 ### Slide 1: "title" - CINEMATIC opening. Include imagePrompt for stunning abstract background.
 ### Slide 2: "split_content" - HOOK with surprising facts. MUST include imagePrompt.
 ### Slide 3: "quiz" - Test knowledge with a TRICKY question.
@@ -1247,7 +1294,7 @@ ${effectiveSlideCount >= 5 ? `### Slide 5: "yesno" - END with a PROVOCATIVE disc
 ### Slide 5: "scale" - THOUGHT-PROVOKING rating question that sparks reflection.
 ### Slide 6: "content" - DEEP DIVE with stories, examples, specific data.
 ### Slide 7: "yesno" - END with a PROVOCATIVE discussion question.
-${effectiveSlideCount > 7 ? `### Additional slides: Mix of content, quiz, and engagement slides to reach ${effectiveSlideCount} total.` : ''}
+${effectiveSlideCount > 7 ? `### Additional slides: Mix of content, quiz, and engagement as needed (stay within the band).` : ''}
 `}
 
 ## CRITICAL IMAGE RULES
@@ -1268,7 +1315,7 @@ Return a single JSON object (no markdown, no code blocks):
   "plan": "Brief plan: what each slide will cover (2-4 sentences)",
   "slides": [
     {"type":"...","content":{...},"imagePrompt":"..." optional},
-    ...exactly ${effectiveSlideCount} slides
+    ...one object per slide (count within the band above, never more than ${effectiveSlideCount})
   ]
 }
 - Valid JSON only - no trailing commas, all keys in double quotes
@@ -1288,6 +1335,7 @@ function buildProInstructionalDesignPrompt(
   difficulty = "intermediate",
 ): string {
   const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const band = slideCountBandInstruction(effectiveSlideCount);
   const difficultyNote =
     difficulty === "beginner"
       ? "Use simpler language and more accessible content depth."
@@ -1319,7 +1367,7 @@ ${CLEAN_READABLE_PRINCIPLE}
 1. DEEP REASONING: Analyze the request. What does the user want? Match content vs interactive mix (e.g. 100% interactive, 70/30, or mostly content).
 2. CHOOSE SLIDE TYPES DYNAMICALLY: Select optimal types. Types: title, split_content, content, timeline, bullet_points, bar_chart, quiz, poll, wordcloud, scale, yesno, ranking, guess_number, sentiment_meter, agree_spectrum, finish_sentence
 3. For technical topics: LaTeX ($...$), precise definitions when needed.
-4. Create EXACTLY ${effectiveSlideCount} slides.
+4. ${band}
 
 ## CONTENT QUALITY
 - Titles: clear, short (under 10 words when possible)
@@ -1347,7 +1395,7 @@ Return a single JSON object (no markdown, no code blocks):
   "slides": [
     { "type": "title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "..." },
     { "type": "split_content", "content": { "title": "...", "text": "..." }, "imagePrompt": "..." },
-    ...exactly ${effectiveSlideCount} slides
+    ...one per slide (within the band; cap at ${effectiveSlideCount})
   ]
 }
 
@@ -1362,6 +1410,7 @@ function buildInteractiveOnlyPrompt(
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
 ): string {
   const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const band = slideCountBandInstruction(effectiveSlideCount);
   const difficultyNote =
     difficulty === "beginner"
       ? "Use simple, accessible questions. Avoid jargon."
@@ -1390,8 +1439,9 @@ Difficulty level: ${difficulty}. ${difficultyNote}
 ${CLEAN_READABLE_PRINCIPLE}
 
 ## MANDATORY STRUCTURE
+${band}
 - Slide 1: "title" - CINEMATIC opening. Include imagePrompt for stunning background.
-- Slides 2..${effectiveSlideCount}: Use a DIVERSE mix of these types (at least one of each per round if possible):
+- Following slides: Use a DIVERSE mix of these types (at least one of each per round if possible); total slides within the band above (cap ${effectiveSlideCount}):
   - poll: question + options (3-4 non-empty strings)
   - quiz: question + options (3-4 non-empty strings) + correctAnswer (index 0-3)
   - yesno: question + correctIsYes (boolean)
@@ -1424,7 +1474,7 @@ ${SLIDE_TYPE_SCHEMA}
     { "type": "poll", "content": { "question": "...", "options": ["A","B","C","D"] } },
     { "type": "quiz", "content": { "question": "...", "options": ["A","B","C","D"], "correctAnswer": 2 } },
     { "type": "agree_spectrum", "content": { "statement": "I agree that...", "leftLabel": "Disagree", "rightLabel": "Agree" } },
-    ...exactly ${effectiveSlideCount} slides
+    ...one per slide within the band (at most ${effectiveSlideCount})
   ]
 }
 Valid JSON only. Add "imagePrompt" for title, poll, wordcloud when appropriate.
@@ -1438,6 +1488,7 @@ function buildInteractiveOnlyPlanPrompt(
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
 ): string {
   const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const band = slideCountBandInstruction(effectiveSlideCount);
   const userContext = userAiSettings
     ? [
         userAiSettings.who_am_i && `Instructor profile: ${userAiSettings.who_am_i}`,
@@ -1453,8 +1504,10 @@ You are a world-class Instructional Designer.
 
 The user chose **INTERACTIVE ONLY**. You MUST return slideTypes that are:
 - Slide 1: "title"
-- Slides 2..${effectiveSlideCount}: ONLY from these interactive types:
+- Remaining slots: ONLY from these interactive types:
   poll, quiz, poll_quiz, yesno, wordcloud, scale, ranking, guess_number, sentiment_meter, agree_spectrum, finish_sentence
+${band}
+Return slideTypes array length within that band (at most ${effectiveSlideCount} items total).
 
 Do NOT include content, split_content, timeline, bullet_points, or bar_chart.
 
@@ -1467,7 +1520,7 @@ Difficulty: ${difficulty}
 {
   "interpretation": "1-2 sentences: what you understood",
   "plan": "Brief plan (2-4 sentences)",
-  "slideTypes": ["title", "poll", "quiz", ...] // EXACTLY ${effectiveSlideCount} items
+  "slideTypes": ["title", "poll", "quiz", ...]
 }
 `;
 }
@@ -1547,6 +1600,7 @@ function buildProPlanOnlyPrompt(
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
 ): string {
   const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const band = slideCountBandInstruction(effectiveSlideCount);
   const userContext = userAiSettings
     ? [
         userAiSettings.who_am_i && `Instructor profile: ${userAiSettings.who_am_i}`,
@@ -1570,7 +1624,7 @@ ${userContext ? `\n## INSTRUCTOR CONTEXT\n${userContext}\n` : ""}
 1. DEEP REASONING: What does the user REALLY want? What learning goals? Adapt the mix: 100% interactive (poll/quiz/scale), 70% interactive 30% content, or mostly content (timeline/content)—based on the request.
 2. CHOOSE SLIDE TYPES DYNAMICALLY: Select optimal types and order. Do NOT use a fixed template.
    Types: title, split_content, content, timeline, bullet_points, bar_chart, quiz, poll, wordcloud, scale, yesno, ranking, guess_number, sentiment_meter, agree_spectrum, finish_sentence
-3. Create EXACTLY ${effectiveSlideCount} slides.
+3. ${band} Return one entry in slideTypes per slide (at most ${effectiveSlideCount}).
 
 ## OUTPUT FORMAT (JSON only, no markdown)
 {
@@ -1712,9 +1766,28 @@ function selectThemeForTopic(topic: string): GeneratedTheme {
 // 13. AI API CALL (Gemini)
 // =============================================================================
 
-async function callAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
+type CallAiOptions = {
+  responseSchema?: Record<string, unknown>;
+  maxOutputTokens?: number;
+};
+
+async function callAI(
+  apiKey: string,
+  systemPrompt: string,
+  userPrompt: string,
+  options?: CallAiOptions,
+): Promise<string> {
   const model = "gemini-2.5-flash";
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const generationConfig: Record<string, unknown> = {
+    temperature: 0.7,
+    maxOutputTokens: options?.maxOutputTokens ?? 8192,
+    responseMimeType: "application/json",
+  };
+  if (options?.responseSchema) {
+    generationConfig.responseSchema = options.responseSchema;
+  }
 
   const response = await fetch(apiUrl, {
     method: "POST",
@@ -1726,11 +1799,7 @@ async function callAI(apiKey: string, systemPrompt: string, userPrompt: string):
           parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }],
         },
       ],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 8192,
-        responseMimeType: "application/json",
-      },
+      generationConfig,
     }),
   });
 
@@ -1886,6 +1955,8 @@ serve(async (req) => {
       interpretation: providedInterpretation,
       slideTypes: providedSlideTypes,
       progressiveSlide,
+      /** When true (default), full-deck slide images are returned as pendingSlideImages for client-side generate-image hydration. */
+      asyncImages = true,
     } = body;
 
     const GEMINI_API_KEY = requireGeminiApiKey();
@@ -1922,9 +1993,10 @@ serve(async (req) => {
         GEMINI_API_KEY,
         systemPrompt,
         `Generate the JSON for a ${type} slide about: "${prompt}"`,
+        { responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
       );
 
-      let rawSlide = cleanAndParseJSON(rawContent);
+      let rawSlide = parseModelJson(rawContent);
       if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
       if (!rawSlide || typeof rawSlide !== "object") {
         throw new Error("Failed to parse slide from AI response");
@@ -2005,8 +2077,10 @@ serve(async (req) => {
         : desc;
       const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType);
       const sysPrompt = buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage);
-      const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${effectiveSlideType} slide: "${desc}"`);
-      let rawSlide = cleanAndParseJSON(rawContent);
+      const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${effectiveSlideType} slide: "${desc}"`, {
+        responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA,
+      });
+      let rawSlide = parseModelJson(rawContent);
       if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
       if (!rawSlide || typeof rawSlide !== "object") {
         throw new Error("Failed to parse slide from AI response");
@@ -2069,12 +2143,11 @@ serve(async (req) => {
         contentType === "interactive"
           ? buildInteractiveOnlyPlanPrompt(description, slideCount, difficulty, userAiSettings)
           : buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings);
-      const planRaw = await callAIWithThinking(
-        GEMINI_API_KEY,
-        systemPrompt,
-        `Analyze and plan: "${description}".`
-      );
-      const planParsed = cleanAndParseJSON(planRaw);
+      const planRaw = await callAI(GEMINI_API_KEY, systemPrompt, `Analyze and plan: "${description}".`, {
+        responseSchema: GEMINI_PLAN_RESPONSE_SCHEMA,
+        maxOutputTokens: 8192,
+      });
+      const planParsed = parseModelJson(planRaw);
       if (!planParsed || typeof planParsed !== "object" || !Array.isArray(planParsed.slideTypes)) {
         throw new Error("Failed to parse plan from AI response.");
       }
@@ -2103,9 +2176,7 @@ serve(async (req) => {
       );
     }
 
-    // Check balance for full generation (use effectiveSlideCount after max_slides cap)
-    const creditsToConsume = effectiveSlideCount;
-    const balanceCheck = await checkCreditsBalance(user.id, creditsToConsume);
+    const balanceCheck = await checkCreditsBalance(user.id, effectiveSlideCount);
     if (!balanceCheck.allowed) {
       return new Response(
         JSON.stringify({ 
@@ -2143,7 +2214,7 @@ serve(async (req) => {
       );
       plan = providedPlan;
       interpretation = providedInterpretation;
-      const parsed = cleanAndParseJSON(rawContent);
+      const parsed = parseModelJson(rawContent);
       rawContent = Array.isArray(parsed) ? JSON.stringify(parsed) : rawContent;
     } else {
       // Same Pro-quality path for all users (Free only differs by max_slides cap)
@@ -2162,7 +2233,7 @@ serve(async (req) => {
         systemPrompt,
         `Create the presentation with interpretation, plan, and slides for: "${description}".`,
       );
-      const proParsed = cleanAndParseJSON(rawContent);
+      const proParsed = parseModelJson(rawContent);
       if (proParsed && typeof proParsed === "object" && Array.isArray(proParsed.slides)) {
         plan = proParsed.plan;
         interpretation = proParsed.interpretation;
@@ -2172,7 +2243,7 @@ serve(async (req) => {
 
     console.log(`📝 Raw AI response length: ${rawContent.length} chars`);
 
-    const parsed = cleanAndParseJSON(rawContent);
+    const parsed = parseModelJson(rawContent);
     let rawSlides = normalizeToSlidesArray(parsed) ?? (Array.isArray(parsed) ? parsed : null);
 
     if (!rawSlides || !rawSlides.length) {
@@ -2187,6 +2258,7 @@ serve(async (req) => {
       rawSlides = enforceInteractiveOnlySlides(rawSlides, effectiveSlideCount);
       rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));
     }
+    rawSlides = rawSlides.slice(0, effectiveSlideCount);
 
     console.log(`✅ Parsed and validated ${rawSlides.length} slides`);
 
@@ -2216,6 +2288,7 @@ serve(async (req) => {
     const effectiveDetectedLanguage = contentDetectedLanguage;
 
     let imageMap = new Map<number, string>();
+    let pendingSlideImages: { index: number; prompt: string; type: string }[] = [];
 
     if (!skipImages) {
       const slidesNeedingImages = rawSlides
@@ -2224,20 +2297,29 @@ serve(async (req) => {
           ({ slide }: { slide: any }) =>
             ["title", "split_content", "poll", "wordcloud"].includes(slide.type) && slide.imagePrompt,
         )
-        .slice(0, Math.min(maxImages ?? 3, rawSlides.length));
+        .slice(0, Math.min(maxImages ?? 6, rawSlides.length));
 
-      console.log(`🖼️ Generating ${slidesNeedingImages.length} images...`);
-
-      const imageResults = await Promise.all(
-        slidesNeedingImages.map(async ({ slide, index }: { slide: any; index: number }) => {
-          const imageUrl = await generateImage(GEMINI_API_KEY, slide.imagePrompt, slide.type);
-          return { index, imageUrl };
-        }),
-      );
-
-      imageResults.forEach(({ index, imageUrl }) => {
-        if (imageUrl) imageMap.set(index, imageUrl);
-      });
+      if (asyncImages) {
+        pendingSlideImages = slidesNeedingImages
+          .map(({ slide, index }: { slide: any; index: number }) => ({
+            index,
+            prompt: String(slide.imagePrompt || ""),
+            type: String(slide.type || "title"),
+          }))
+          .filter((x) => x.prompt.length > 0);
+        console.log(`🖼️ Deferring ${pendingSlideImages.length} slide images to client`);
+      } else {
+        console.log(`🖼️ Generating ${slidesNeedingImages.length} images inline...`);
+        const imageResults = await Promise.all(
+          slidesNeedingImages.map(async ({ slide, index }: { slide: any; index: number }) => {
+            const imageUrl = await generateImage(GEMINI_API_KEY, slide.imagePrompt, slide.type);
+            return { index, imageUrl };
+          }),
+        );
+        imageResults.forEach(({ index, imageUrl }) => {
+          if (imageUrl) imageMap.set(index, imageUrl);
+        });
+      }
     }
 
     // *** KEY CHANGE: Pass full theme object instead of just theme.id ***
@@ -2245,10 +2327,10 @@ serve(async (req) => {
       mapSlideToFrontendFormat(slide, index, selectedTheme, effectiveDetectedLanguage, imageMap.get(index), description),
     );
 
-    // Deduct credits only after successful generation
+    const creditsToCharge = mappedSlides.length;
     const creditResult = await consumeCredits(
       user.id,
-      creditsToConsume,
+      creditsToCharge,
       `Presentation generation: ${mappedSlides.length} slides`
     );
     if (!creditResult.success) {
@@ -2260,7 +2342,7 @@ serve(async (req) => {
     }
     await updateUsageStats(user.id, mappedSlides.length, true);
 
-    console.log(`🚀 Mapped ${mappedSlides.length} slides. Credits consumed: ${creditsToConsume}`);
+    console.log(`🚀 Mapped ${mappedSlides.length} slides. Credits consumed: ${creditsToCharge}`);
 
     const responsePayload: Record<string, unknown> = {
       slides: mappedSlides,
@@ -2273,10 +2355,11 @@ serve(async (req) => {
       },
       slideCount: mappedSlides.length,
       detectedLanguage: effectiveDetectedLanguage,
-      creditsConsumed: creditsToConsume,
+      creditsConsumed: creditsToCharge,
     };
     if (plan !== undefined) responsePayload.plan = plan;
     if (interpretation !== undefined) responsePayload.interpretation = interpretation;
+    if (pendingSlideImages.length > 0) responsePayload.pendingSlideImages = pendingSlideImages;
 
     return new Response(
       JSON.stringify(responsePayload),
