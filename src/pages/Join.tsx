@@ -5,7 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle } from "lucide-react";
 import { DocumentHead } from "@/components/seo/DocumentHead";
-import { getLectureByCode, joinLecture } from "@/lib/lectureService";
+import {
+  decodeJoinUrlFragment,
+  extractJoinCodeFromSearchParams,
+  joinLecture,
+  lookupLectureByJoinCode,
+  normalizeLectureJoinCode,
+} from "@/lib/lectureService";
 import { supabase } from "@/integrations/supabase/client";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
@@ -36,11 +42,15 @@ const Join = () => {
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [webinarLeadId, setWebinarLeadId] = useState<string | null>(null);
+  const [leadEmail, setLeadEmail] = useState("");
+  const [leadName, setLeadName] = useState("");
   const processedUrlCodeRef = useRef<string | null>(null);
 
   const handleCodeSubmit = async (codeToCheck?: string) => {
-    const code = codeToCheck || lectureCode;
-    if (code.length !== 6) {
+    const raw = codeToCheck || lectureCode;
+    const code = normalizeLectureJoinCode(raw);
+    if (!code) {
       setError("Please enter a valid 6-digit code");
       return;
     }
@@ -49,21 +59,31 @@ const Join = () => {
     setError("");
 
     try {
-      const lecture = await getLectureByCode(code);
+      const result = await lookupLectureByJoinCode(code);
 
-      if (!lecture) {
+      if (!result.ok) {
+        if (result.reason === "network") {
+          setError("Can't reach the server. Check your connection and try again.");
+          return;
+        }
+        if (result.reason === "invalid_code") {
+          setError("Please enter a valid 6-digit code");
+          return;
+        }
         setError("Lecture not found. Please check the code and try again.");
         return;
       }
+
+      const lecture = result.lecture;
 
       if (lecture.status === "ended") {
         setError("This lecture has ended.");
         return;
       }
 
-      setLectureId(lecture.id);
-      setLectureName(lecture.title);
-      const mode = (lecture as { lecture_mode?: string }).lecture_mode;
+      setLectureId(String(lecture.id));
+      setLectureName(String(lecture.title ?? ""));
+      const mode = lecture.lecture_mode as string | undefined;
       setWebinarLeadId(null);
       setLeadEmail("");
       setLeadName("");
@@ -77,14 +97,23 @@ const Join = () => {
   };
 
   useEffect(() => {
-    const codeFromUrl = searchParams.get("code")?.trim() || "";
-    if (codeFromUrl) {
-      setLectureCode(codeFromUrl);
-      if (codeFromUrl.length === 6 && processedUrlCodeRef.current !== codeFromUrl) {
-        processedUrlCodeRef.current = codeFromUrl;
-        handleCodeSubmit(codeFromUrl);
+    const fromParams = extractJoinCodeFromSearchParams(searchParams);
+    const rawFragment =
+      searchParams.get("code")?.trim() ||
+      searchParams.get("c")?.trim() ||
+      searchParams.get("join")?.trim() ||
+      searchParams.get("lecture")?.trim() ||
+      "";
+    const displayRaw = rawFragment ? decodeJoinUrlFragment(rawFragment) : "";
+
+    if (fromParams) {
+      setLectureCode(fromParams);
+      if (processedUrlCodeRef.current !== fromParams) {
+        processedUrlCodeRef.current = fromParams;
+        void handleCodeSubmit(fromParams);
       }
     } else {
+      if (displayRaw) setLectureCode(displayRaw);
       processedUrlCodeRef.current = null;
     }
   }, [searchParams]);

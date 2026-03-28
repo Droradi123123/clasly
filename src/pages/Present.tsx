@@ -79,6 +79,16 @@ interface Question {
   answered_at: string | null;
 }
 
+/** QR and share links should use production URL when set (Vercel env), not preview/local origin. */
+function getJoinPageOrigin(): string {
+  const raw = import.meta.env?.VITE_PUBLIC_APP_URL as string | undefined;
+  if (raw && /^https?:\/\//i.test(raw.trim())) {
+    return raw.trim().replace(/\/$/, "");
+  }
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
 const Present = () => {
   const { lectureId } = useParams();
   const navigate = useNavigate();
@@ -106,6 +116,7 @@ const Present = () => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
+  const [isStartingLecture, setIsStartingLecture] = useState(false);
   const [presenceOnlineCount, setPresenceOnlineCount] = useState(0);
   const presenceStateRef = useRef<Record<string, unknown[]>>({});
   const [raffleWinnerName, setRaffleWinnerName] = useState<string | null>(null);
@@ -231,7 +242,7 @@ const Present = () => {
               payload: { ...payload, ts: Date.now() },
             });
           }
-        }, 180);
+        }, 90);
       } else {
         pendingBroadcastRef.current = payload;
       }
@@ -650,10 +661,18 @@ const Present = () => {
   }, [slides.length, currentSlideIndex]);
 
   const handleStartLecture = async () => {
-    if (lectureId) {
+    if (!lectureId || isStartingLecture) return;
+    setIsStartingLecture(true);
+    try {
       await startLecture(lectureId);
       setIsLive(true);
       setShowQRCode(false);
+      toast.success("Presentation started");
+    } catch (e) {
+      console.error("[Present] startLecture:", e);
+      toast.error(e instanceof Error ? e.message : "Failed to start presentation");
+    } finally {
+      setIsStartingLecture(false);
     }
   };
 
@@ -678,8 +697,11 @@ const Present = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Get join URL for QR code
-  const joinUrl = `${window.location.origin}/join?code=${lectureCode}`;
+  const joinUrl =
+    lectureCode.length === 6
+      ? `${getJoinPageOrigin()}/join?code=${lectureCode}`
+      : `${getJoinPageOrigin()}/join`;
+  const joinUrlDisplay = joinUrl.replace(/^https?:\/\//i, "").split("?")[0] || "join";
 
   const aggregatedResults = buildLiveResultsPayload(currentSlide, responses);
 
@@ -1069,7 +1091,7 @@ const Present = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]"
             onClick={() => setShowQRCode(false)}
           >
             <motion.div
@@ -1077,7 +1099,7 @@ const Present = () => {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border/40 max-w-[min(95vw,480px)] max-h-[90vh] overflow-y-auto flex flex-col"
+              className="relative z-[101] bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border/40 max-w-[min(95vw,480px)] max-h-[90vh] overflow-y-auto flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between p-6 pb-0 flex-shrink-0 sticky top-0 z-10 bg-card/95 backdrop-blur-md">
@@ -1108,7 +1130,7 @@ const Present = () => {
                 <div className="text-center space-y-4">
                   <div>
                     <p className="text-base text-muted-foreground mb-1">Go to</p>
-                    <p className="font-bold text-2xl text-card-foreground">clasly.app/join</p>
+                    <p className="font-bold text-2xl text-card-foreground break-all">{joinUrlDisplay}</p>
                   </div>
                   
                   <button
@@ -1131,15 +1153,27 @@ const Present = () => {
               
               {/* Start button when not live */}
               {!isLive && (
-                <Button
-                  variant="hero"
-                  size="lg"
-                  className="w-full mt-8 h-14 text-lg"
-                  onClick={handleStartLecture}
-                >
-                  <Play className="w-6 h-6" />
-                  Start Presentation
-                </Button>
+                <div className="px-6 pb-6 flex-shrink-0">
+                  <Button
+                    variant="hero"
+                    size="lg"
+                    className="w-full h-14 text-lg"
+                    onClick={handleStartLecture}
+                    disabled={isStartingLecture || !lectureId}
+                  >
+                    {isStartingLecture ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="h-5 w-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                        Starting…
+                      </span>
+                    ) : (
+                      <>
+                        <Play className="w-6 h-6" />
+                        Start Presentation
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
             </motion.div>
           </motion.div>

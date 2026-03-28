@@ -8,7 +8,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
 import {
+  decodeJoinUrlFragment,
   getLectureByCode,
+  normalizeLectureJoinCode,
   subscribeLecture,
   submitResponse,
   getResponses,
@@ -83,10 +85,41 @@ class StudentErrorBoundary extends React.Component<
   }
 }
 
+/** Isolates SlideRenderer failures so one bad slide does not blank the whole student session. */
+class SingleSlideErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[Student] Slide render error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center min-h-[200px]">
+          <p className="text-sm text-muted-foreground">
+            This slide could not be displayed. Try refreshing the page.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const emojis = ["👍", "❤️", "🎉", "🤔", "💡", "👏"];
 
 const Student = () => {
-  const { lectureCode } = useParams();
+  const rawLectureCodeParam = useParams().lectureCode ?? "";
+  const lectureJoinCode =
+    normalizeLectureJoinCode(decodeJoinUrlFragment(rawLectureCodeParam)) ?? "";
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const studentId = searchParams.get("studentId") || "";
@@ -195,11 +228,14 @@ const Student = () => {
 
   // Load lecture and subscribe to updates
   useEffect(() => {
-    if (!lectureCode) return;
+    if (!lectureJoinCode) {
+      setLoading(false);
+      return;
+    }
 
     const loadLecture = async () => {
       try {
-        const data = await getLectureByCode(lectureCode);
+        const data = await getLectureByCode(lectureJoinCode);
         if (data) {
           setLecture(data);
           setSlides((data.slides as unknown as Slide[]) || []);
@@ -213,7 +249,7 @@ const Student = () => {
     };
 
     loadLecture();
-  }, [lectureCode]);
+  }, [lectureJoinCode]);
 
   // Helper to apply lecture update - extracted for reuse
   // When fromRefetch is true (scheduled refetch after broadcast), always apply newSlides so student gets latest. Otherwise during broadcast window avoid overwriting slides with stale poll/postgres data.
@@ -467,7 +503,7 @@ const Student = () => {
           broadcastRefetchTimeoutRef.current = setTimeout(() => {
             broadcastRefetchTimeoutRef.current = null;
             refetchLectureState(lid, true);
-          }, 1100);
+          }, 550);
         }
       })
       .subscribe((status) => {
@@ -548,7 +584,7 @@ const Student = () => {
     };
   }, [studentId]);
 
-  const PRESENCE_HEARTBEAT_MS = 60_000;
+  const PRESENCE_HEARTBEAT_MS = 25_000;
   useEffect(() => {
     if (!lecture?.id || !studentId || !student?.name) return;
 
@@ -827,8 +863,11 @@ const Student = () => {
   }
 
   // Redirect to join if studentId is missing (e.g. direct link without joining)
-  if (lecture && !studentId && lectureCode) {
-    navigate(`/join?code=${lectureCode}`, { replace: true });
+  if (lecture && !studentId && (lectureJoinCode || rawLectureCodeParam)) {
+    navigate(
+      `/join?code=${encodeURIComponent(lectureJoinCode || rawLectureCodeParam)}`,
+      { replace: true },
+    );
     return null;
   }
 
@@ -975,26 +1014,28 @@ const Student = () => {
             </div>
             <div className="aspect-video w-full max-h-[70vh] min-h-[240px]">
               <SlideFrame>
-                <BuilderPreviewProvider allowContentScroll>
-                  <SlideLayoutProvider slide={currentSlide}>
-                    <SlideRenderer
-                      slide={currentSlide}
-                      isEditing={false}
-                      showResults
-                      showCorrectAnswer={isQuizSlide(currentSlide.type)}
-                      liveResults={aggregatedLiveResults}
-                      totalResponses={slideResponses.length}
-                      hideFooter
-                      forceShowStats
-                      themeId={themeId}
-                      designStyleId={
-                        ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
-                          (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
-                          "dynamic") as DesignStyleId
-                      }
-                    />
-                  </SlideLayoutProvider>
-                </BuilderPreviewProvider>
+                <SingleSlideErrorBoundary key={`${currentSlide.id}-results`}>
+                  <BuilderPreviewProvider allowContentScroll>
+                    <SlideLayoutProvider slide={currentSlide}>
+                      <SlideRenderer
+                        slide={currentSlide}
+                        isEditing={false}
+                        showResults
+                        showCorrectAnswer={isQuizSlide(currentSlide.type)}
+                        liveResults={aggregatedLiveResults}
+                        totalResponses={slideResponses.length}
+                        hideFooter
+                        forceShowStats
+                        themeId={themeId}
+                        designStyleId={
+                          ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
+                            (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
+                            "dynamic") as DesignStyleId
+                        }
+                      />
+                    </SlideLayoutProvider>
+                  </BuilderPreviewProvider>
+                </SingleSlideErrorBoundary>
               </SlideFrame>
             </div>
           </motion.div>
@@ -1322,26 +1363,28 @@ const Student = () => {
                 </div>
                 <div className="max-h-[min(50vh,420px)] min-h-[180px] overflow-y-auto">
                   <SlideFrame>
-                    <BuilderPreviewProvider allowContentScroll>
-                      <SlideLayoutProvider slide={currentSlide}>
-                        <SlideRenderer
-                          slide={currentSlide}
-                          isEditing={false}
-                          showResults
-                          showCorrectAnswer={isQuizSlide(currentSlide.type)}
-                          liveResults={aggregatedLiveResults}
-                          totalResponses={slideResponses.length}
-                          hideFooter
-                          forceShowStats
-                          themeId={themeId}
-                          designStyleId={
-                            ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
-                              (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
-                              "dynamic") as DesignStyleId
-                          }
-                        />
-                      </SlideLayoutProvider>
-                    </BuilderPreviewProvider>
+                    <SingleSlideErrorBoundary key={`${currentSlide.id}-live`}>
+                      <BuilderPreviewProvider allowContentScroll>
+                        <SlideLayoutProvider slide={currentSlide}>
+                          <SlideRenderer
+                            slide={currentSlide}
+                            isEditing={false}
+                            showResults
+                            showCorrectAnswer={isQuizSlide(currentSlide.type)}
+                            liveResults={aggregatedLiveResults}
+                            totalResponses={slideResponses.length}
+                            hideFooter
+                            forceShowStats
+                            themeId={themeId}
+                            designStyleId={
+                              ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
+                                (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
+                                "dynamic") as DesignStyleId
+                            }
+                          />
+                        </SlideLayoutProvider>
+                      </BuilderPreviewProvider>
+                    </SingleSlideErrorBoundary>
                   </SlideFrame>
                 </div>
               </div>

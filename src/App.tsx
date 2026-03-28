@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useParams } from "react-router-dom";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
@@ -44,6 +44,13 @@ const BuilderRedirect = () => {
   return <Navigate to={`/editor/new?${params.toString()}`} replace />;
 };
 
+/** QR/deep links: /join/123456 → canonical /join?code=123456 */
+const JoinCodeRedirect = () => {
+  const { code } = useParams();
+  const raw = (code ?? "").trim();
+  return <Navigate to={`/join?code=${encodeURIComponent(raw)}`} replace />;
+};
+
 // Global error handler for unhandled promise rejections
 const useGlobalErrorHandler = () => {
   useEffect(() => {
@@ -79,6 +86,7 @@ const App = () => {
               <Route path="/editor/:lectureId" element={<Suspense fallback={<PageLoader />}><Editor /></Suspense>} />
               <Route path="/present/:lectureId" element={<Suspense fallback={<PageLoader />}><Present /></Suspense>} />
               <Route path="/lecture/:lectureId/analytics" element={<Suspense fallback={<PageLoader />}><LectureAnalytics /></Suspense>} />
+              <Route path="/join/:code" element={<JoinCodeRedirect />} />
               <Route path="/join" element={<Join />} />
               <Route path="/student/:lectureCode" element={<Suspense fallback={<PageLoader />}><Student /></Suspense>} />
               <Route path="/pricing" element={<Pricing />} />

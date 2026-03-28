@@ -348,7 +348,7 @@ const Editor = () => {
   }, [isAIPanelOpen, sandboxSlides]);
 
   const runGenerateSlides = useCallback(async (prompt: string, audience: string) => {
-    const slideCount = isFree ? (maxSlides ?? 5) : 7;
+    const slideCount = Math.min(maxSlides ?? (isFree ? 5 : 8), 10);
     if (!hasAITokens(slideCount)) {
       addMessage({ role: 'assistant', content: 'אין לך מספיק קרדיטים. שדרג את התוכנית שלך או רכוש קרדיטים נוספים כדי להמשיך.\n\nYou don\'t have enough credits. Upgrade your plan or purchase more credits to continue.', isLoading: false });
       setShowOutOfCreditsModal(true);

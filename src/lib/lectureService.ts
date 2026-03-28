@@ -93,16 +93,88 @@ export async function getLecture(lectureId: string) {
   throw lastError ?? new Error('Failed to load lecture');
 }
 
-// Get lecture by code (for students joining)
-export async function getLectureByCode(code: string) {
+/** Normalize join codes: digits only, exactly 6 (handles paste/QR quirks). */
+export function normalizeLectureJoinCode(raw: string): string | null {
+  const digits = String(raw || '').replace(/\D/g, '').slice(0, 6);
+  return digits.length === 6 ? digits : null;
+}
+
+export function decodeJoinUrlFragment(raw: string): string {
+  try {
+    return decodeURIComponent(raw.replace(/\+/g, ' '));
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Extract a valid 6-digit join code from common URL query keys (QR / deep links).
+ */
+export function extractJoinCodeFromSearchParams(searchParams: URLSearchParams): string | null {
+  const keys = ['code', 'c', 'join', 'lecture'] as const;
+  for (const k of keys) {
+    const raw = searchParams.get(k)?.trim();
+    if (!raw) continue;
+    const decoded = decodeJoinUrlFragment(raw);
+    const n = normalizeLectureJoinCode(decoded);
+    if (n) return n;
+  }
+  return null;
+}
+
+export type LectureJoinLookupResult =
+  | { ok: true; lecture: Record<string, unknown> }
+  | { ok: false; reason: 'invalid_code' | 'not_found' | 'network' };
+
+type LectureRow = Record<string, unknown>;
+
+async function getLectureRowByJoinCode(normalized: string): Promise<LectureRow | null> {
+  const { data: rpcRows, error: rpcError } = await supabase.rpc('get_lecture_for_join', {
+    p_lecture_code: normalized,
+  });
+
+  if (!rpcError && Array.isArray(rpcRows) && rpcRows.length > 0) {
+    return rpcRows[0] as LectureRow;
+  }
+  if (rpcError) {
+    console.warn('[getLectureByCode] RPC get_lecture_for_join failed, using select:', rpcError.code, rpcError.message);
+  }
+
   const { data, error } = await supabase
     .from('lectures')
     .select('*')
-    .eq('lecture_code', code)
-    .single();
+    .eq('lecture_code', normalized)
+    .maybeSingle();
 
-  if (error) return null;
-  return data;
+  if (error) {
+    console.error('[getLectureByCode]', normalized, error.code, error.message);
+    return null;
+  }
+  return (data as LectureRow) ?? null;
+}
+
+/**
+ * Join / QR lookup with explicit failure reason (never throws).
+ */
+export async function lookupLectureByJoinCode(code: string): Promise<LectureJoinLookupResult> {
+  const normalized = normalizeLectureJoinCode(code);
+  if (!normalized) {
+    return { ok: false, reason: 'invalid_code' };
+  }
+  try {
+    const lecture = await getLectureRowByJoinCode(normalized);
+    if (!lecture) return { ok: false, reason: 'not_found' };
+    return { ok: true, lecture };
+  } catch (e) {
+    console.error('[lookupLectureByJoinCode] transport or unexpected error:', e);
+    return { ok: false, reason: 'network' };
+  }
+}
+
+// Get lecture by code (for students joining). RPC first (bypasses broken RLS in prod), then table read.
+export async function getLectureByCode(code: string) {
+  const r = await lookupLectureByJoinCode(code);
+  return r.ok ? r.lecture : null;
 }
 
 const UPDATE_LECTURE_MAX_RETRIES = 2;

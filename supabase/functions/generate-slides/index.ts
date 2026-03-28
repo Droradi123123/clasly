@@ -635,14 +635,21 @@ const GEMINI_SINGLE_SLIDE_SCHEMA: Record<string, unknown> = {
   required: ["type", "content"],
 };
 
+/** Product cap: AI chooses count in band, never more than 10 slides (except Free plan cap below). */
+const AI_OPTIMAL_SLIDES_MAX = 10;
+
 /** Prompt line: optimal count in band, capped by plan (not a rigid “exactly N”). */
 function slideCountBandInstruction(maxSlidesAllowed: number): string {
-  const hi = Math.min(12, Math.max(1, maxSlidesAllowed));
+  const planCap = Math.max(1, maxSlidesAllowed);
+  const hi = Math.min(AI_OPTIMAL_SLIDES_MAX, planCap);
   const lo = Math.min(5, hi);
-  if (hi <= 4) {
-    return `Choose the optimal number of slides between 3 and ${hi} based on topic depth (at most ${hi}).`;
+  if (hi <= 3) {
+    return `Choose the optimal number of slides between 3 and ${hi} based on topic depth (at most ${hi}). Every slide must have rich, topic-specific content—no generic placeholders.`;
   }
-  return `Choose the optimal number of slides between ${lo} and ${hi} based on topic depth (at most ${hi}).`;
+  if (lo >= hi) {
+    return `Use ${hi} slide(s). Each must be substantive: real examples, full quiz/poll with 4 meaningful options, concrete titles—never filler like "Point 1", "Detail", or "Option A" without context.`;
+  }
+  return `Choose the optimal number of slides between ${lo} and ${hi} based on topic depth (never more than ${hi}). Every slide must have substantive, specific content: real examples, clear bullets, full quiz/poll options (4 distinct, meaningful choices), and a vivid imagePrompt for title/split_content/poll/wordcloud. Forbidden: generic placeholders ("Point 1", "Detail", empty options).`;
 }
 
 /** Recursively search for slides array in nested objects. */
@@ -677,8 +684,259 @@ interface RawSlide {
   imagePrompt?: string;
 }
 
-function validateAndFixSlide(slide: RawSlide, index: number, topic: string): RawSlide {
+/**
+ * Pull the teachable topic from long Hebrew/English requests, e.g.
+ * "אני מעביר וובינר על שוק ההון - תכין לי הרצאה שתערב את הקהל" → "שוק ההון".
+ */
+function extractCoreTopicPhraseFromInstruction(raw: string): string | null {
+  const t = String(raw || "").trim();
+  if (!t) return null;
+
+  const hePatterns: RegExp[] = [
+    /\b(?:מעביר|מנהל|נותן|עושה|מכין|מציג)\s+(?:וובינר|וובינאר|webinar|הרצאה|מצגת|פרזנטציה)\s+על\s+(.+?)(?:\s*[-–—]\s*|\s+תכין\s+לי|\s+תייצר|\s+תבנה\s+לי|\s+תעשה\s+לי|\s+שתערב|\s*$)/i,
+    /\b(?:וובינר|וובינאר|webinar)\s+על\s+(.+?)(?:\s*[-–—]\s*|\s+תכין\s+לי|\s+תייצר|\s+תבנה|\s+שתערב|\s*$)/i,
+    /\b(?:הרצאה|מצגת|פרזנטציה|מצגות|הצגת)\s+(?:על|אודות|בנושא|לגבי)\s+(.+?)(?:\s*[-–—]\s*|\s+תכין|\s+תייצר|\s+שתערב|\s*$)/i,
+    /\bבנושא\s+(.+?)(?:\s*[-–—]\s*|\s+תכין|\s+תייצר|\s+שתערב|\s*$)/i,
+    /\b(?:אודות|לגבי)\s+(.+?)(?:\s*[-–—]\s*|\s+תכין|\s+תייצר|\s*$)/i,
+  ];
+  for (const p of hePatterns) {
+    const m = t.match(p);
+    if (m?.[1]) {
+      const phrase = m[1].replace(/\s+/g, " ").trim();
+      if (phrase.length >= 2 && phrase.length <= 120) return phrase;
+    }
+  }
+
+  const enPatterns = [
+    /\b(?:webinar|talk|lecture|presentation|deck)\s+(?:on|about|regarding)\s+(.+?)(?:\s*[-–—]\s*|\s+prepare|\s+help\s+me|\s+engage|$)/i,
+  ];
+  for (const p of enPatterns) {
+    const m = t.match(p);
+    if (m?.[1]) {
+      const phrase = m[1].replace(/\s+/g, " ").trim();
+      if (phrase.length >= 2 && phrase.length <= 120) return phrase;
+    }
+  }
+  return null;
+}
+
+/** Strip instruction boilerplate so "תייצר הרצאה על שוק ההון" → "שוק ההון". */
+function extractPresentationSubject(raw: string): string {
+  let t = String(raw || "")
+    .trim()
+    .replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/g, "");
+  if (!t) return "Presentation";
+
+  const coreTopic = extractCoreTopicPhraseFromInstruction(t);
+  if (coreTopic) t = coreTopic;
+
+  // Common typo: הצגת instead of מצגת (e.g. "תייצר הצגת על שוק ההון")
+  t = t.replace(/\bהצגת(\s+(על|אודות|בנושא|לגבי))\b/gi, "מצגת$1");
+
+  const patterns: RegExp[] = [
+    /^(תייצר|תכין|תבנה|תעשה|תיצור|תכינו|בנה\s+לי|בנו\s+לי|עשה\s+לי|עשו\s+לי|יצור\s+לי|יצרו\s+לי|תבנו\s+לי)\s+/gi,
+    /^(הכן|הכינו)\s+(לי\s+)?(הרצאה|מצגת|פרזנטציה)\s+/gi,
+    /^(אני\s+)?(מעביר|מנהל|נותן|עושה|מכין|מציג)\s+(וובינר|וובינאר|webinar|הרצאה|מצגת|פרזנטציה)\s+על\s+/gi,
+    /^(create|build|make|generate)\s+(me\s+)?(a\s+)?(an\s+)?(interactive\s+)?(presentation|lecture|deck|slideshow|slides?)\s+(about|on|for|regarding)\s+/gi,
+    /^(i\s+)?(want|need|would\s+like)\s+(you\s+)?(to\s+)?(create|build|make|generate)\s+(a\s+)?(presentation|lecture|deck)?\s*(about|on|for)?\s*/gi,
+    /^(create|build|make|generate)\s+(me\s+)?(a\s+)?/gi,
+    /\b(הרצאה|מצגת|מצגות|הצגת|פרזנטציה)\s+(על|אודות|בנושא|לגבי)\s+/gi,
+    /\b(presentation|lecture|deck)\s+(about|on|for)\s+/gi,
+  ];
+  for (let pass = 0; pass < 3; pass++) {
+    for (const p of patterns) {
+      const next = t.replace(p, "").trim();
+      if (next.length >= 2) t = next;
+    }
+  }
+  t = t.replace(/\s+/g, " ").trim();
+
+  // Fallback: text before em/en dash is often the topic clause
+  if (t.length > 70 || /אני\s+מעביר|תכין\s+לי|שתערב|וובינר\s+על/i.test(t)) {
+    const beforeDash = t.split(/\s*[-–—]\s*/)[0]?.trim() ?? "";
+    if (beforeDash.length >= 3 && beforeDash.length < t.length) {
+      const sub = extractCoreTopicPhraseFromInstruction(beforeDash) ?? beforeDash
+        .replace(/^(אני\s+)?(מעביר|מנהל|נותן|עושה|מכין)\s+(וובינר|וובינאר|webinar|הרצאה|מצגת)\s+על\s+/i, "")
+        .trim();
+      if (sub.length >= 2 && sub.length <= 120) t = sub;
+    }
+  }
+
+  if (t.length < 2) return String(raw || "").trim().slice(0, 240);
+  return t.slice(0, 320);
+}
+
+function topicContractBlock(rawUserInput: string, subject: string): string {
+  return `
+## TOPIC EXTRACTION (CRITICAL — OVERRIDES MODEL DEFAULTS)
+The user's message (verbatim): ${JSON.stringify(rawUserInput)}
+
+**Teachable subject (use this for ALL slide content, questions, and options):** ${JSON.stringify(subject)}
+
+MANDATORY:
+1. **First slide (type "title"):** \`content.title\` = a professional presentation headline about the subject only. **Never** use the full user message, instruction verbs (תייצר/תכין/create/make/generate), or the phrase "הרצאה על …" / "lecture about …" as the title.
+2. **First slide:** \`content.subtitle\` = concrete learning outcomes for this subject (never empty).
+3. **All slides:** Every question, statement, bullet, and quiz/poll option must be **about the subject** in the lecture language. No English template strings if the subject is Hebrew.
+4. **Forbidden boilerplate** unless rewritten for the subject: "I agree with this statement.", "Yes or No?", generic "What comes to mind when you think of …?" with the raw prompt pasted in.
+`;
+}
+
+function looksLikeUserInstructionEcho(text: string, raw: string): boolean {
+  const a = String(text || "").trim();
+  const b = String(raw || "").trim();
+  if (!a) return false;
+  if (/אני\s+מעביר|אני\s+מרצה|אני\s+מנהל|תכין\s+לי\s+הרצאה|תכין\s+לי\s+מצגת|שתערב\s+את\s+הקהל|תערב\s+את\s+הקהל|שתערב\s+את|וובינר\s+על|וובינאר|תייצר\s+לי|הכן\s+לי|prepare\s+me\s+a|help\s+me\s+create|engage\s+(my\s+)?audience|interactive\s+presentation\s+about/i.test(a)) {
+    return true;
+  }
+  if (!b) return false;
+  if (a === b) return true;
+  const prefix = b.slice(0, Math.min(48, b.length));
+  if (prefix.length >= 12 && a.includes(prefix)) return true;
+  if (b.length >= 18) {
+    const win = Math.min(56, b.length);
+    if (a.includes(b.slice(0, win))) return true;
+  }
+  return /תייצר|תכין|תבנה|בנה\s+לי|create\s+(a\s+)?(lecture|presentation)|make\s+(a\s+)?(lecture|presentation)|generate\s+(a\s+)?(lecture|presentation)?/i
+    .test(a);
+}
+
+/** Slide copy still contains the user's full request instead of the teachable topic. */
+function slideFieldEchoesRawUserMessage(field: string, raw: string, cleanSubject: string): boolean {
+  const f = String(field || "").trim();
+  const r = String(raw || "").trim();
+  if (!f) return false;
+  if (looksLikeUserInstructionEcho(f, r)) return true;
+  if (r.length >= 20 && f.length > cleanSubject.length + 15) {
+    const chunk = r.slice(0, Math.min(72, r.length));
+    if (chunk.length >= 18 && f.includes(chunk)) return true;
+  }
+  return false;
+}
+
+function subjectLanguageIsHebrew(subject: string): boolean {
+  return /[\u0590-\u05FF]/.test(subject);
+}
+
+/** Fix title/wordcloud/agree/yesno that echo the raw prompt or English placeholders. */
+function fixEchoMetaInSlide(slide: RawSlide, rawUserInput: string, subject: string): void {
+  const isHe = subjectLanguageIsHebrew(subject);
+  const c = slide.content;
+
+  if (slide.type === "title") {
+    const ti = String(c.title || "").trim();
+    if (!ti || looksLikeUserInstructionEcho(ti, rawUserInput) || ti.length > 140) {
+      c.title = isHe
+        ? `${subject} — עקרונות, סיכונים והזדמנויות`
+        : `${subject.charAt(0).toUpperCase() + subject.slice(1)}: foundations, risks, and opportunities`;
+    }
+    const sub = String(c.subtitle || "").trim();
+    if (!sub || sub.length < 12 || looksLikeUserInstructionEcho(sub, rawUserInput)) {
+      c.subtitle = isHe
+        ? `מושגים מרכזיים וכלים פרקטיים בנושא ${subject}`
+        : `Key concepts and practical takeaways on ${subject}`;
+    }
+  }
+
+  if (slide.type === "wordcloud") {
+    const q = String(c.question || "");
+    if (
+      looksLikeUserInstructionEcho(q, rawUserInput) ||
+      slideFieldEchoesRawUserMessage(q, rawUserInput, subject) ||
+      /what comes to mind when you think of/i.test(q) ||
+      (rawUserInput.length > 15 && q.includes(rawUserInput.slice(0, 30)))
+    ) {
+      c.question = isHe
+        ? `איזה מושג או מילה קופצים לכם כשאתם חושבים על ${subject}?`
+        : `What word or concept comes to mind first when you think about ${subject}?`;
+    }
+  }
+
+  if (slide.type === "agree_spectrum") {
+    const st = String(c.statement || "").trim();
+    if (/^i agree with this statement\.?$/i.test(st) || st.length < 18 || looksLikeUserInstructionEcho(st, rawUserInput)) {
+      c.statement = isHe
+        ? `חשוב להבין את הסיכונים ב־${subject} לפני שמחליטים להשקיע`
+        : `Understanding risks in ${subject} should come before major investment decisions`;
+    }
+  }
+
+  if (slide.type === "yesno") {
+    const q = String(c.question || "").trim();
+    if (
+      /^yes or no\??$/i.test(q) ||
+      q.length < 18 ||
+      looksLikeUserInstructionEcho(q, rawUserInput) ||
+      slideFieldEchoesRawUserMessage(q, rawUserInput, subject)
+    ) {
+      c.question = isHe
+        ? `האם אתם מרגישים שיש לכם בסיס מספיק חזק בנושא ${subject}?`
+        : `Do you feel you already have a solid enough foundation in ${subject}?`;
+    }
+  }
+
+  if (slide.type === "sentiment_meter") {
+    const q = String(c.question || "").trim();
+    if (/how do you feel about this\??$/i.test(q) || q.length < 18) {
+      c.question = isHe
+        ? `עד כמה אתם מרגישים בנוח עם המושגים הבסיסיים של ${subject}?`
+        : `How comfortable are you with the core ideas in ${subject}?`;
+    }
+  }
+
+  if (slide.type === "scale") {
+    const q = String(c.question || "").trim();
+    if (/^rate this:?\s*$/i.test(q) || q.length < 18 || slideFieldEchoesRawUserMessage(q, rawUserInput, subject)) {
+      c.question = isHe
+        ? `עד כמה ${subject} רלוונטי ליעדים הפיננסיים שלכם?`
+        : `How relevant is ${subject} to your financial goals right now?`;
+    }
+  }
+
+  if (slide.type === "quiz" || slide.type === "poll_quiz") {
+    const q = String(c.question || "").trim();
+    if (slideFieldEchoesRawUserMessage(q, rawUserInput, subject)) {
+      c.question = isHe
+        ? `איזה מהבאים מתאר בצורה הטובה ביותר נקודת מפתח בנושא ${subject}?`
+        : `Which of the following best captures a key idea in ${subject}?`;
+    }
+  }
+
+  if (slide.type === "poll") {
+    const q = String(c.question || "").trim();
+    if (slideFieldEchoesRawUserMessage(q, rawUserInput, subject)) {
+      c.question = isHe
+        ? `איזו נקודת מבט על ${subject} הכי קרובה לכם?`
+        : `Which perspective on ${subject} fits you best right now?`;
+    }
+  }
+
+  if (slide.type === "sentiment_meter") {
+    const q = String(c.question || "").trim();
+    if (slideFieldEchoesRawUserMessage(q, rawUserInput, subject)) {
+      c.question = isHe
+        ? `עד כמה אתם מרגישים בנוח עם המושגים הבסיסיים של ${subject}?`
+        : `How comfortable are you with the core ideas in ${subject}?`;
+    }
+  }
+
+  if (slide.type === "ranking") {
+    const q = String(c.question || "").trim();
+    if (slideFieldEchoesRawUserMessage(q, rawUserInput, subject)) {
+      c.question = isHe
+        ? `דרגו לפי חשיבות עבורכם בנושא ${subject} (החשוב ביותר למעלה):`
+        : `Rank these by importance for you in ${subject} (most important first):`;
+    }
+  }
+}
+
+function validateAndFixSlide(
+  slide: RawSlide,
+  index: number,
+  subject: string,
+  rawUserInput?: string,
+): RawSlide {
   const fixedSlide = { ...slide, content: { ...slide.content } };
+  const isHe = subjectLanguageIsHebrew(subject);
 
   if (!fixedSlide.type) {
     fixedSlide.type = index === 0 ? "title" : "content";
@@ -686,8 +944,16 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
 
   switch (fixedSlide.type) {
     case "title":
-      if (!fixedSlide.content.title) fixedSlide.content.title = topic || "Presentation";
-      if (!fixedSlide.content.subtitle) fixedSlide.content.subtitle = "";
+      if (!fixedSlide.content.title) {
+        fixedSlide.content.title = isHe
+          ? `${subject} — מבוא מעשי`
+          : `${subject.charAt(0).toUpperCase() + subject.slice(1)}: a practical introduction`;
+      }
+      if (!fixedSlide.content.subtitle) {
+        fixedSlide.content.subtitle = isHe
+          ? `מושגים וכלים סביב ${subject}`
+          : `Concepts and tools around ${subject}`;
+      }
       break;
 
     case "split_content":
@@ -698,9 +964,11 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
       break;
 
     case "content":
-      if (!fixedSlide.content.title) fixedSlide.content.title = "Content";
+      if (!fixedSlide.content.title) fixedSlide.content.title = isHe ? "תוכן מרכזי" : "Core ideas";
       if (!fixedSlide.content.text || !String(fixedSlide.content.text).trim()) {
-        fixedSlide.content.text = topic ? `Key insight about ${topic}` : "Add your content here.";
+        fixedSlide.content.text = isHe
+          ? `בשקופית הזו נעמיק במושג מרכזי אחד בנושא ${subject}, עם דוגמה קצרה והקשר פרקטי.`
+          : `This slide focuses on one core idea in ${subject}, with a short example and practical context.`;
       }
       break;
 
@@ -745,12 +1013,18 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
 
     case "wordcloud":
       if (!fixedSlide.content.question || !String(fixedSlide.content.question).trim()) {
-        fixedSlide.content.question = topic ? `What comes to mind when you think of ${topic}?` : "Share your thoughts...";
+        fixedSlide.content.question = isHe
+          ? `איזה מושג לגבי ${subject} הכי בולט עבורכם כרגע?`
+          : `Which idea about ${subject} stands out most for you right now?`;
       }
       break;
 
     case "quiz": {
-      if (!fixedSlide.content.question) fixedSlide.content.question = "Question?";
+      if (!fixedSlide.content.question) {
+        fixedSlide.content.question = isHe
+          ? `איזה מהבאים מתאר בצורה הטובה ביותר נקודת מפתח בנושא ${subject}?`
+          : `Which of the following best captures a key idea in ${subject}?`;
+      }
       const defOpts = ["Option A", "Option B", "Option C", "Option D"];
       const opts = fixedSlide.content.options || [];
       const hasEmpty = opts.length < 2 || opts.some((o: any) => !String(o || "").trim());
@@ -795,13 +1069,21 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
       break;
 
     case "scale":
-      if (!fixedSlide.content.question) fixedSlide.content.question = "Rate this:";
-      if (!fixedSlide.content.minLabel) fixedSlide.content.minLabel = "Low";
-      if (!fixedSlide.content.maxLabel) fixedSlide.content.maxLabel = "High";
+      if (!fixedSlide.content.question) {
+        fixedSlide.content.question = isHe
+          ? `עד כמה ${subject} רלוונטי לכם אישית?`
+          : `How personally relevant is ${subject} to you?`;
+      }
+      if (!fixedSlide.content.minLabel) fixedSlide.content.minLabel = isHe ? "בכלל לא" : "Not at all";
+      if (!fixedSlide.content.maxLabel) fixedSlide.content.maxLabel = isHe ? "מאוד" : "Very much";
       break;
 
     case "poll": {
-      if (!fixedSlide.content.question) fixedSlide.content.question = "What do you think?";
+      if (!fixedSlide.content.question) {
+        fixedSlide.content.question = isHe
+          ? `איזו נקודת מבט על ${subject} הכי קרובה לכם?`
+          : `Which perspective on ${subject} fits you best right now?`;
+      }
       const pollDefOpts = ["Option 1", "Option 2", "Option 3", "Option 4"];
       const pollOpts = fixedSlide.content.options || [];
       const pollHasEmpty = pollOpts.length < 2 || pollOpts.some((o: any) => !String(o || "").trim());
@@ -812,7 +1094,11 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
     }
 
     case "poll_quiz": {
-      if (!fixedSlide.content.question) fixedSlide.content.question = "What do you think?";
+      if (!fixedSlide.content.question) {
+        fixedSlide.content.question = isHe
+          ? `בוחן קצר: מה נכון לגבי ${subject}?`
+          : `Quick quiz: which statement about ${subject} is most accurate?`;
+      }
       const pqDefOpts = ["Option 1", "Option 2", "Option 3", "Option 4"];
       const pqOpts = fixedSlide.content.options || [];
       const pqHasEmpty = pqOpts.length < 2 || pqOpts.some((o: any) => !String(o || "").trim());
@@ -830,7 +1116,11 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
     }
 
     case "yesno":
-      if (!fixedSlide.content.question) fixedSlide.content.question = "Yes or No?";
+      if (!fixedSlide.content.question) {
+        fixedSlide.content.question = isHe
+          ? `האם ${subject} רלוונטי ליעדים שלכם בשנה הקרובה?`
+          : `Is ${subject} relevant to your goals for the next year?`;
+      }
       if (typeof fixedSlide.content.correctIsYes !== "boolean") {
         fixedSlide.content.correctIsYes = true;
       }
@@ -856,20 +1146,358 @@ function validateAndFixSlide(slide: RawSlide, index: number, topic: string): Raw
 
     case "sentiment_meter":
       if (!fixedSlide.content.question || !String(fixedSlide.content.question).trim()) {
-        fixedSlide.content.question = "How do you feel about this?";
+        fixedSlide.content.question = isHe
+          ? `עד כמה אתם מרגישים בנוח עם הנושא ${subject}?`
+          : `How comfortable do you feel with ${subject} right now?`;
       }
-      if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = "Not great";
-      if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = "Amazing";
+      if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = isHe ? "לא בנוח" : "Uncomfortable";
+      if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = isHe ? "בנוח מאוד" : "Very comfortable";
       break;
 
     case "agree_spectrum":
-      if (!fixedSlide.content.statement) fixedSlide.content.statement = "I agree with this statement.";
-      if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = "Disagree";
-      if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = "Agree";
+      if (!fixedSlide.content.statement) {
+        fixedSlide.content.statement = isHe
+          ? `הבנת ${subject} היא תנאי לקבלת החלטות השקעה חכמות`
+          : `Understanding ${subject} is necessary for smarter investment decisions`;
+      }
+      if (!fixedSlide.content.leftLabel) fixedSlide.content.leftLabel = isHe ? "לא מסכים" : "Disagree";
+      if (!fixedSlide.content.rightLabel) fixedSlide.content.rightLabel = isHe ? "מסכים" : "Agree";
       break;
   }
 
+  if (rawUserInput) {
+    fixEchoMetaInSlide(fixedSlide, rawUserInput, subject);
+  }
+
   return fixedSlide;
+}
+
+const THIN_GENERIC_LABEL = /^(point\s*\d+|detail|introduction|content|item\s*\d+|event\s*\d+)$/i;
+
+function optionLooksGeneric(s: string): boolean {
+  const t = String(s || "").trim();
+  if (t.length < 4) return true;
+  if (/^(option\s*[0-9a-d]?|choice\s*\d+)$/i.test(t)) return true;
+  if (/^option\s+[a-d]$/i.test(t)) return true;
+  if (/^item\s*\d+$/i.test(t)) return true;
+  return /^[abcd]$/i.test(t);
+}
+
+function quizPollOptionsAreDeficient(slide: RawSlide): boolean {
+  const ty = String(slide.type || "");
+  if (ty !== "quiz" && ty !== "poll" && ty !== "poll_quiz") return false;
+  const opts = slide.content?.options;
+  if (!Array.isArray(opts) || opts.length < 4) return true;
+  return opts.every((o: unknown) => optionLooksGeneric(String(o)));
+}
+
+/** Substantive fallback options in lecture language (better than "Option 1"). */
+function applyTopicQuizPollFallbackOptions(slide: RawSlide, subject: string, variant: number): void {
+  if (!slide.content) slide.content = {};
+  const ty = String(slide.type || "");
+  if (ty !== "quiz" && ty !== "poll" && ty !== "poll_quiz") return;
+  const isHe = subjectLanguageIsHebrew(subject);
+  const v = Math.abs(variant) % 4;
+  if (isHe) {
+    const banks: string[][] = [
+      [
+        `מושגי יסוד והגדרות מרכזיות ב־${subject}`,
+        `השלכות פרקטיות לקבלת החלטות`,
+        `סיכונים נפוצים ואיך מצמצמים אותם`,
+        `מדדים או מקורות מידע רלוונטיים`,
+      ],
+      [
+        `גישה שמרנית ומבוקרת`,
+        `גישה מאוזנת עם פיזור`,
+        `גישה אגרסיבית ללא ניהול סיכון`,
+        `תלות מלאה בתחזיות קצרות טווח בלבד`,
+      ],
+      [
+        `שיקולי רגולציה והגנה למשקיע`,
+        `שיקולי נזילות ומחיר`,
+        `שיקולי תזרים והרחבה`,
+        `שיקולי אופק השקעה והתאמה אישית`,
+      ],
+      [
+        `ללמוד עוד לפני פעולה`,
+        `ליישם כלי פשוט היום`,
+        `לחפש ייעוץ מקצועי`,
+        `לדחות החלטה עד שיש מידע מלא`,
+      ],
+    ];
+    slide.content.options = [...banks[v]];
+  } else {
+    const banks: string[][] = [
+      [
+        `Core definitions that shape ${subject}`,
+        `Practical implications for decisions`,
+        `Typical risks and how to manage them`,
+        `Useful metrics or signals to track`,
+      ],
+      [
+        `A cautious, rules-first approach`,
+        `A balanced approach with diversification`,
+        `A high-risk approach without guardrails`,
+        `Relying only on short-term price moves`,
+      ],
+      [
+        `Regulatory or investor-protection angles`,
+        `Liquidity and pricing considerations`,
+        `Cash-flow and growth considerations`,
+        `Time horizon and personal fit`,
+      ],
+      [
+        `Learn more before acting`,
+        `Apply a simple framework today`,
+        `Seek professional guidance`,
+        `Wait until information is complete`,
+      ],
+    ];
+    slide.content.options = [...banks[v]];
+  }
+  if (ty === "quiz" || ty === "poll_quiz") {
+    slide.content.correctAnswer = 0;
+  }
+}
+
+async function ensureQuizPollOptionsFilled(
+  apiKey: string,
+  slide: RawSlide,
+  index: number,
+  subject: string,
+  mode: "education" | "webinar",
+  rawUser?: string,
+): Promise<RawSlide> {
+  if (!quizPollOptionsAreDeficient(slide)) return slide;
+  try {
+    const repaired = await repairSlideWithAI(apiKey, slide, index, subject, mode, rawUser);
+    let out = validateAndFixSlide(repaired, index, subject, rawUser);
+    if (!quizPollOptionsAreDeficient(out)) return out;
+    applyTopicQuizPollFallbackOptions(out, subject, index);
+    return validateAndFixSlide(out, index, subject, rawUser);
+  } catch (e) {
+    console.warn(`[generate-slides] ensureQuizPollOptionsFilled failed idx ${index}:`, e);
+    applyTopicQuizPollFallbackOptions(slide, subject, index);
+    return validateAndFixSlide(slide, index, subject, rawUser);
+  }
+}
+
+function wordCountRough(s: string): number {
+  return String(s || "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+/** True if slide still looks like placeholders, prompt echo, or too shallow after validateAndFixSlide. */
+function slideContentIsThin(slide: any, subject: string, rawUserInput?: string): boolean {
+  const c = slide?.content || {};
+  const t = String(slide?.type || "");
+  if (t === "title") {
+    const title = String(c.title || "").trim();
+    const sub = String(c.subtitle || "").trim();
+    if (!sub || sub.length < 12) return true;
+    if (title.length < 10) return true;
+    if (rawUserInput && looksLikeUserInstructionEcho(title, rawUserInput)) return true;
+  }
+  if (t === "content") {
+    const text = String(c.text || "");
+    if (!text.trim()) return true;
+    if (text.length < 90) return true;
+    if (wordCountRough(text) < 18) return true;
+    if (/^key insight about/i.test(text) || /^key point \d/i.test(text)) return true;
+  }
+  if (t === "split_content") {
+    const text = String(c.text || "").trim();
+    const bps = Array.isArray(c.bulletPoints) ? c.bulletPoints : [];
+    if (text) {
+      const lines = text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+      if (text.length < 80 || lines.length < 3) return true;
+      if (lines.some((l) => l.length < 22)) return true;
+    } else if (bps.length) {
+      if (bps.length < 3 || bps.some((b: unknown) => String(b).trim().length < 18)) return true;
+    } else return true;
+    if (/^key point \d/i.test(text)) return true;
+    if (bps.some((b: unknown) => /^key point/i.test(String(b)))) return true;
+  }
+  if (t === "quiz" || t === "poll" || t === "poll_quiz") {
+    const q = String(c.question || "").trim();
+    const opts = Array.isArray(c.options) ? c.options : [];
+    if (q.length < 38) return true;
+    if (opts.length < 4) return true;
+    if (opts.some((o: unknown) => String(o || "").trim().length < 10)) return true;
+    if (opts.some((o: unknown) => optionLooksGeneric(String(o)))) return true;
+  }
+  if (t === "wordcloud" || t === "scale" || t === "yesno" || t === "sentiment_meter") {
+    const q = String(c.question || "").trim();
+    if (q.length < 28) return true;
+    if (rawUserInput && looksLikeUserInstructionEcho(q, rawUserInput)) return true;
+    if (/^yes or no\??$/i.test(q) || /what comes to mind when you think of/i.test(q)) return true;
+  }
+  if (t === "agree_spectrum") {
+    const st = String(c.statement || "").trim();
+    if (st.length < 35) return true;
+    if (/^i agree with this statement\.?$/i.test(st)) return true;
+  }
+  if (t === "bullet_points") {
+    const pts = Array.isArray(c.points) ? c.points : [];
+    if (pts.length < 3) return true;
+    for (const p of pts) {
+      const title = String((p as { title?: string })?.title ?? p ?? "").trim();
+      const desc = String((p as { description?: string })?.description ?? "").trim();
+      if (THIN_GENERIC_LABEL.test(title)) return true;
+      if (desc === "Detail" || THIN_GENERIC_LABEL.test(desc)) return true;
+      if (title.length < 8) return true;
+      if (desc.length > 0 && desc.length < 18) return true;
+    }
+  }
+  if (t === "timeline") {
+    const ev = Array.isArray(c.events) ? c.events : [];
+    if (ev.length < 4) return true;
+    if (ev.some((e: { description?: string }) => String(e?.description || "").toLowerCase() === "description")) {
+      return true;
+    }
+    if (ev.some((e: { description?: string }) => String(e?.description || "").trim().length < 22)) return true;
+  }
+  if (t === "bar_chart") {
+    const bars = Array.isArray(c.bars) ? c.bars : [];
+    if (bars.length < 4) return true;
+    if (bars.some((b: { label?: string }) => /^item\s*\d+$/i.test(String(b?.label || "").trim()))) return true;
+  }
+  if (t === "ranking") {
+    const items = Array.isArray(c.items) ? c.items : [];
+    if (items.length < 4) return true;
+    if (items.some((it: unknown) => /^item\s*\d+$/i.test(String(it || "").trim()))) return true;
+  }
+  if (["title", "split_content", "poll", "wordcloud"].includes(t)) {
+    const ip = String(slide?.imagePrompt || "").trim();
+    if (ip.length < 42) return true;
+  }
+  return false;
+}
+
+async function repairSlideWithAI(
+  apiKey: string,
+  slide: RawSlide,
+  index: number,
+  subject: string,
+  mode: "education" | "webinar",
+  rawUserInput?: string,
+): Promise<RawSlide> {
+  const ctx = fixedLectureModeContext(mode);
+  const sys =
+    `You output ONE slide as JSON only. Keep the same "type" as the input slide. ${ctx}
+Teachable SUBJECT (all content must be about this, correct language for the subject): ${JSON.stringify(subject)}
+${rawUserInput ? `Original user message (do NOT paste as title or wordcloud prompt): ${JSON.stringify(rawUserInput)}` : ""}
+Replace shallow, generic, or English-template text with **expert-level, subject-specific** material.
+For type "title": headline is a real deck name about the subject—not the user's instruction text.
+For quiz/poll/poll_quiz: stem ≥40 characters; 4 options ≥12 characters each; correctAnswer valid for quiz.
+For title/split_content/poll/wordcloud: imagePrompt ≥45 characters, cinematic, no readable text in the image.`;
+  const payload = { type: slide.type, content: slide.content, imagePrompt: slide.imagePrompt };
+  const user =
+    `SUBJECT: ${JSON.stringify(subject)}\nSlide index ${index + 1}. Rewrite this slide to meet the substance contract.\n\nCURRENT_SLIDE_JSON:\n${JSON.stringify(payload)}`;
+  const raw = await callAI(apiKey, sys, user, {
+    responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA,
+    maxOutputTokens: 4096,
+    temperature: 0.38,
+  });
+  let parsed = parseModelJson(raw);
+  if (Array.isArray(parsed) && parsed.length > 0) parsed = parsed[0];
+  if (!parsed || typeof parsed !== "object" || !parsed.type) {
+    throw new Error("repairSlideWithAI: invalid parse");
+  }
+  return parsed as RawSlide;
+}
+
+async function enrichThinSlides(
+  apiKey: string,
+  slides: RawSlide[],
+  subject: string,
+  mode: "education" | "webinar",
+  rawUserInput?: string,
+): Promise<RawSlide[]> {
+  const out: RawSlide[] = slides.map((s) => ({
+    ...s,
+    content: { ...(s.content || {}) },
+  }));
+  let repairs = 0;
+  const maxRepairs = 12;
+  for (let round = 0; round < 2; round++) {
+    for (let i = 0; i < out.length && repairs < maxRepairs; i++) {
+      if (!slideContentIsThin(out[i], subject, rawUserInput)) continue;
+      repairs++;
+      try {
+        const repaired = await repairSlideWithAI(apiKey, out[i], i, subject, mode, rawUserInput);
+        out[i] = validateAndFixSlide(repaired, i, subject, rawUserInput);
+        console.log(`[generate-slides] Enriched thin slide at index ${i} (round ${round + 1})`);
+      } catch (e) {
+        console.warn(`[generate-slides] enrich slide ${i} failed:`, e);
+      }
+    }
+  }
+  return out;
+}
+
+const INTERACTIVE_QUESTION_DEDUPE_TYPES = new Set([
+  "quiz",
+  "poll",
+  "poll_quiz",
+  "yesno",
+  "wordcloud",
+  "scale",
+  "ranking",
+  "guess_number",
+  "sentiment_meter",
+  "agree_spectrum",
+]);
+
+function normalizeInteractiveQuestionFingerprint(slide: RawSlide): string {
+  const c = slide?.content || {};
+  const t = String(slide?.type || "");
+  if (t === "agree_spectrum") {
+    return String(c.statement || "").trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
+  }
+  return String(c.question || "").trim().toLowerCase().replace(/\s+/g, " ").slice(0, 200);
+}
+
+async function dedupeInteractiveQuestions(
+  apiKey: string,
+  slides: RawSlide[],
+  subject: string,
+  mode: "education" | "webinar",
+  rawUser: string,
+): Promise<RawSlide[]> {
+  const seen = new Set<string>();
+  const out = slides.map((s) => ({ ...s, content: { ...(s.content || {}) } }));
+  for (let i = 0; i < out.length; i++) {
+    const typ = String(out[i]?.type || "");
+    if (!INTERACTIVE_QUESTION_DEDUPE_TYPES.has(typ)) continue;
+    const fp = normalizeInteractiveQuestionFingerprint(out[i]);
+    if (fp.length < 12) continue;
+    if (!seen.has(fp)) {
+      seen.add(fp);
+      continue;
+    }
+    try {
+      const repaired = await repairSlideWithAI(apiKey, out[i], i, subject, mode, rawUser);
+      out[i] = validateAndFixSlide(repaired, i, subject, rawUser);
+    } catch (e) {
+      console.warn(`[generate-slides] dedupe repair failed at ${i}:`, e);
+    }
+    let fp2 = normalizeInteractiveQuestionFingerprint(out[i]);
+    if (fp2.length >= 12 && fp2 === fp) {
+      const c = out[i].content;
+      const isHe = subjectLanguageIsHebrew(subject);
+      if (typ === "agree_spectrum" && c.statement) {
+        c.statement = `${String(c.statement).trim()} · ${i + 1}`;
+      } else if (c.question) {
+        c.question = `${String(c.question).trim()}${isHe ? ` (שקף ${i + 1})` : ` (slide ${i + 1})`}`;
+      }
+      fp2 = normalizeInteractiveQuestionFingerprint(out[i]);
+    }
+    seen.add(fp2.length >= 12 ? fp2 : `${fp}-${i}`);
+  }
+  return out;
 }
 
 // =============================================================================
@@ -1194,9 +1822,9 @@ function mapSlideToFrontendFormat(
 
 const SLIDE_TYPE_SCHEMA = `
 ## REQUIRED CONTENT PER SLIDE TYPE (NEVER OMIT)
-- **title**: title, subtitle. Optional imagePrompt.
-- **split_content**: title, text (or bulletPoints). 3-4 bullets max.
-- **content**: title, text. Short paragraph.
+- **title**: title, subtitle (outcomes, non-empty). imagePrompt strongly recommended.
+- **split_content**: title, text (or bulletPoints). 3-4 bullets; each bullet substantive.
+- **content**: title, text. Minimum ~90 characters or equivalent depth—not a single vague sentence.
 - **timeline**: title, events (4 items: year, title, description each).
 - **bullet_points**: title, points (3-5 items: {title, description} each).
 - **bar_chart**: title, bars (4-6 items: {label, value} each).
@@ -1215,13 +1843,22 @@ CRITICAL: Never return a slide with missing or empty required fields. If unsure,
 `;
 
 const CLEAN_READABLE_PRINCIPLE = `
-## DESIGN PRINCIPLE - CLEAN & READABLE
-- One main idea per slide. Avoid cramming.
-- Prefer fewer, stronger points over many weak ones (3-4 bullet points max, not 6).
-- Leave breathing room - short text that fits on screen without overflow.
-- Titles: short and punchy (under 10 words when possible).
-- Bullet points: one line each, avoid nesting or long paragraphs.
-- Clear and readable over dense and overwhelming.
+## DESIGN — READABLE BUT SUBSTANTIVE (NOT “BASIC”)
+- One main idea per slide, but that idea must be **specific to the user’s topic**. Never a deck that could apply to any subject.
+- On-screen text stays scannable (no walls of text), yet each field must carry **real teaching value**: definitions, steps, trade-offs, examples, or numbers where the topic allows.
+- Titles: punchy (often under 12 words) but **concrete** (name the concept, audience, or outcome)—not “Introduction” or the raw topic string alone.
+- Bullets: 3–5 lines; each line a **complete thought** (fact, implication, or action)—not “Key point” labels.
+
+## SUBSTANCE CONTRACT (NON-NEGOTIABLE — ALL PLANS)
+- **Anchor every slide to the user request**: reuse terminology from their topic; if they asked for “stock market”, include markets, indices, risk, liquidity, regulation, or similar—not generic “finance is good”.
+- **content** slides: at least **90+ characters** of body text OR **4+ substantive bullets**; include **one** of: a number, a date, a named entity, or a clear definition.
+- **split_content**: **3–4 bullets**, each **25+ characters** with a real claim or example—not single-word bullets.
+- **quiz / poll / poll_quiz**: stem **40+ characters**, clearly about this topic; **4 options**, each **12+ characters**, mutually distinct; quiz **correctAnswer** must match a truly correct option for the stem.
+- **timeline**: each event description **25+ characters**, real years when possible—not “Description”.
+- **bar_chart / ranking**: labels name **real categories** for this topic—not “Item 1”, “Label A”.
+- **title**: subtitle **must** state what learners will get (outcomes)—never empty.
+- **imagePrompt** (title, split_content, poll, wordcloud): **45+ characters**, cinematic and on-topic; no text in the image.
+- Forbidden anywhere: “Point 1/2/3”, body text that is only “Detail”, options that are just “Option A/B/C/D”, or empty arrays.
 `;
 
 function buildInstructionalDesignPrompt(description: string, audience: string, slideCount: number): string {
@@ -1334,7 +1971,7 @@ function buildProInstructionalDesignPrompt(
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null,
   difficulty = "intermediate",
 ): string {
-  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), AI_OPTIMAL_SLIDES_MAX);
   const band = slideCountBandInstruction(effectiveSlideCount);
   const difficultyNote =
     difficulty === "beginner"
@@ -1370,10 +2007,9 @@ ${CLEAN_READABLE_PRINCIPLE}
 4. ${band}
 
 ## CONTENT QUALITY
-- Titles: clear, short (under 10 words when possible)
-- Bullet points: 3-4 strong points per slide, not 6. One line each.
-- Quiz: educational, 4 plausible options. Always non-empty.
-- Content: brief, readable. Avoid long paragraphs.
+- Follow SUBSTANCE CONTRACT in the design principle: every slide teaches something specific to "${description}".
+- Content/split_content: real depth (not generic filler); quiz/poll stems and options must read like an expert wrote them.
+- Titles: concrete; body text scannable but never empty or vague.
 
 ## LANGUAGE
 - If topic is in Hebrew → ALL content in Hebrew
@@ -1383,8 +2019,8 @@ ${CLEAN_READABLE_PRINCIPLE}
 - imagePrompt: NO TEXT, NO WORDS in images. Describe visuals only.
 ${SLIDE_TYPE_SCHEMA}
 
-## CONCISE CONTENT
-- Quiz/Poll: exactly 4 non-empty options. Short (1-2 lines).
+## INTERACTIVE DETAIL
+- Quiz/Poll: exactly 4 options, each ≥12 characters, all distinct; questions ≥40 characters and on-topic.
 - EVERY option/item/choice MUST have real text. NEVER leave empty. Finish_sentence: always sentenceStart.
 
 ## OUTPUT FORMAT (CRITICAL)
@@ -1409,7 +2045,7 @@ function buildInteractiveOnlyPrompt(
   difficulty: string,
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
 ): string {
-  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), AI_OPTIMAL_SLIDES_MAX);
   const band = slideCountBandInstruction(effectiveSlideCount);
   const difficultyNote =
     difficulty === "beginner"
@@ -1442,8 +2078,8 @@ ${CLEAN_READABLE_PRINCIPLE}
 ${band}
 - Slide 1: "title" - CINEMATIC opening. Include imagePrompt for stunning background.
 - Following slides: Use a DIVERSE mix of these types (at least one of each per round if possible); total slides within the band above (cap ${effectiveSlideCount}):
-  - poll: question + options (3-4 non-empty strings)
-  - quiz: question + options (3-4 non-empty strings) + correctAnswer (index 0-3)
+  - poll: question (≥40 chars) + **4** options (each ≥12 chars, topic-specific)
+  - quiz: question (≥40 chars) + **4** options (each ≥12 chars) + correctAnswer (index 0-3)
   - yesno: question + correctIsYes (boolean)
   - sentiment_meter: question (optional leftLabel, rightLabel)
   - agree_spectrum: statement (required) + leftLabel + rightLabel
@@ -1487,7 +2123,7 @@ function buildInteractiveOnlyPlanPrompt(
   difficulty: string,
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
 ): string {
-  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), AI_OPTIMAL_SLIDES_MAX);
   const band = slideCountBandInstruction(effectiveSlideCount);
   const userContext = userAiSettings
     ? [
@@ -1539,27 +2175,34 @@ const INTERACTIVE_ONLY_SLIDE_TYPES = new Set([
   "finish_sentence",
 ]);
 
-function enforceInteractiveOnlySlideTypes(slideTypes: string[], count: number): string[] {
-  const effectiveCount = Math.min(Math.max(count, 3), 12);
+/**
+ * Normalize plan slide types: never pad up to maxCap when the model already returned a full in-band list
+ * (fixes "plan says 6 slides" but UI shows "Slide 1 of 10").
+ */
+function enforceInteractiveOnlySlideTypes(slideTypes: string[], maxPlanCap: number): string[] {
+  const maxAllowed = Math.min(Math.max(maxPlanCap, 3), AI_OPTIMAL_SLIDES_MAX);
   const out: string[] = [];
   out.push("title");
   const desired = slideTypes.filter((t) => typeof t === "string").map((t) => t.trim());
   for (const t of desired) {
-    if (out.length >= effectiveCount) break;
+    if (out.length >= maxAllowed) break;
     if (out.length === 1 && t === "title") continue;
     out.push(INTERACTIVE_ONLY_SLIDE_TYPES.has(t) ? t : "poll");
   }
+  const naturalLen = out.length;
+  const targetLen = Math.min(maxAllowed, Math.max(3, naturalLen));
   const fallbackSeq = ["poll", "quiz", "scale", "wordcloud", "yesno", "agree_spectrum", "ranking", "sentiment_meter", "finish_sentence", "poll_quiz"];
   let i = 0;
-  while (out.length < effectiveCount) {
+  while (out.length < targetLen) {
     out.push(fallbackSeq[i % fallbackSeq.length]);
     i++;
   }
-  return out.slice(0, effectiveCount);
+  return out.slice(0, targetLen);
 }
 
-function enforceInteractiveOnlySlides(rawSlides: any[], slideCount: number): any[] {
-  const desiredCount = Math.min(Math.max(slideCount, 3), 12);
+function enforceInteractiveOnlySlides(rawSlides: any[], slideCount: number, userTopic?: string): any[] {
+  const desiredCount = Math.min(Math.max(slideCount, 3), AI_OPTIMAL_SLIDES_MAX);
+  const hint = (userTopic || "this topic").trim().slice(0, 100);
   const result: any[] = [];
   for (let i = 0; i < rawSlides.length && result.length < desiredCount; i++) {
     const s = rawSlides[i] || {};
@@ -1577,17 +2220,42 @@ function enforceInteractiveOnlySlides(rawSlides: any[], slideCount: number): any
       result.push({
         type: "poll",
         content: {
-          question: topic ? `Quick check: ${topic}?` : "Quick check: what do you think?",
-          options: ["Option A", "Option B", "Option C", "Option D"],
+          question: topic
+            ? `In the context of “${hint}”, which statement best reflects: ${topic}?`
+            : `Which angle on “${hint}” should we explore next in this session?`,
+          options: [
+            "Foundations: definitions and how it works",
+            "Practical use cases and examples",
+            "Risks, limits, and common mistakes",
+            "What to learn or do next",
+          ],
         },
+        imagePrompt: `Abstract professional background suggesting the theme of ${hint}, no text, no letters`,
       });
     }
   }
   // Pad if AI returned too few slides
+  let padIdx = 0;
+  const padQuestions = [
+    `What part of “${hint}” do you want to go deeper on next?`,
+    `After “${hint}”, which takeaway matters most to you?`,
+    `How confident do you feel applying ideas from “${hint}”?`,
+  ];
   while (result.length < desiredCount) {
+    const q = padQuestions[padIdx % padQuestions.length];
+    padIdx++;
     result.push({
       type: "poll",
-      content: { question: "Quick check: which option best fits?", options: ["A", "B", "C", "D"] },
+      content: {
+        question: q,
+        options: [
+          "Core concepts and definitions",
+          "Examples and real-world use",
+          "Pitfalls and how to avoid them",
+          "Next steps and resources",
+        ],
+      },
+      imagePrompt: `Soft abstract gradient related to learning and discussion, no text, no letters`,
     });
   }
   return result;
@@ -1599,7 +2267,7 @@ function buildProPlanOnlyPrompt(
   slideCount: number,
   userAiSettings: { who_am_i?: string; what_i_lecture?: string; teaching_style?: string; additional_context?: string } | null
 ): string {
-  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), 12);
+  const effectiveSlideCount = Math.min(Math.max(slideCount, 3), AI_OPTIMAL_SLIDES_MAX);
   const band = slideCountBandInstruction(effectiveSlideCount);
   const userContext = userAiSettings
     ? [
@@ -1661,7 +2329,7 @@ ${SLIDE_TYPE_SCHEMA}
 
 ## REQUIRED FIELDS CHECKLIST - BEFORE RETURNING
 For each slide, verify: quiz→question+options(4)+correctAnswer; poll→question+options(4); finish_sentence→sentenceStart; timeline→title+events(4); bullet_points→title+points(3-5); bar_chart→title+bars(4-6); ranking→question+items(4); content→title+text; wordcloud→question; etc.
-Empty = failure. Use topic-relevant defaults if unsure.
+Empty = failure. Every string must be **substantive** for "${description}"—not labels like "Point 1" or "Option A".
 
 ## OUTPUT
 Return a JSON array of ${slideTypes.length} slides. Each: {"type":"...","content":{...},"imagePrompt":"..." when needed}
@@ -1769,6 +2437,8 @@ function selectThemeForTopic(topic: string): GeneratedTheme {
 type CallAiOptions = {
   responseSchema?: Record<string, unknown>;
   maxOutputTokens?: number;
+  /** Lower = more factual/dense; default tuned for teaching content. */
+  temperature?: number;
 };
 
 async function callAI(
@@ -1781,7 +2451,7 @@ async function callAI(
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const generationConfig: Record<string, unknown> = {
-    temperature: 0.7,
+    temperature: options?.temperature ?? 0.52,
     maxOutputTokens: options?.maxOutputTokens ?? 8192,
     responseMimeType: "application/json",
   };
@@ -1826,7 +2496,7 @@ async function callAIWithThinking(apiKey: string, systemPrompt: string, userProm
       },
     ],
     generationConfig: {
-      temperature: 0.7,
+      temperature: 0.52,
       maxOutputTokens: 16384,
       responseMimeType: "application/json",
       thinkingConfig: {
@@ -2010,12 +2680,17 @@ serve(async (req) => {
         );
       }
 
+      const slideSubject = extractPresentationSubject(prompt);
+      const subjectBlock = topicContractBlock(prompt, slideSubject);
       const systemPrompt =
-        buildSingleSlidePrompt(type, prompt, style, includeImage) + fixedLectureModeContext(resolvedLectureMode);
+        subjectBlock +
+        "\n\n" +
+        buildSingleSlidePrompt(type, slideSubject, style, includeImage) +
+        fixedLectureModeContext(resolvedLectureMode);
       const rawContent = await callAI(
         GEMINI_API_KEY,
         systemPrompt,
-        `Generate the JSON for a ${type} slide about: "${prompt}"`,
+        `Generate the JSON for a ${type} slide about the SUBJECT: ${JSON.stringify(slideSubject)} (not the instruction wording).`,
         { responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
       );
 
@@ -2025,24 +2700,35 @@ serve(async (req) => {
         throw new Error("Failed to parse slide from AI response");
       }
 
-      rawSlide = validateAndFixSlide(rawSlide, 0, prompt);
+      rawSlide = validateAndFixSlide(rawSlide, 0, slideSubject, prompt);
+      if (["quiz", "poll", "poll_quiz"].includes(type)) {
+        rawSlide = await ensureQuizPollOptionsFilled(
+          GEMINI_API_KEY,
+          rawSlide as RawSlide,
+          0,
+          slideSubject,
+          resolvedLectureMode,
+          prompt,
+        );
+      }
 
       let generatedImageUrl: string | null = null;
       const slidesNeedingImages = ["title", "split_content", "poll", "wordcloud"];
 
       if (!skipImages && (includeImage || slidesNeedingImages.includes(type))) {
-        const imagePromptText = rawSlide.imagePrompt || `Professional visual for ${type} slide about: ${prompt}`;
+        const imagePromptText = rawSlide.imagePrompt ||
+          `Professional visual for ${type} slide about: ${slideSubject}`;
         generatedImageUrl = await generateImage(GEMINI_API_KEY, imagePromptText, type);
       }
 
-      const selectedTheme = selectThemeForTopic(prompt);
+      const selectedTheme = selectThemeForTopic(slideSubject);
       const mappedSlide = mapSlideToFrontendFormat(
         rawSlide as RawSlide,
         0,
         selectedTheme,
         detectedLanguage,
         generatedImageUrl || undefined,
-        prompt,
+        slideSubject,
       );
 
       // Deduct credits only after successful generation
@@ -2095,30 +2781,70 @@ serve(async (req) => {
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      const slideSubject = extractPresentationSubject(desc);
+      const subjectBlock = topicContractBlock(desc, slideSubject);
       const ctxPrompt = plan && interpretation
-        ? `Presentation: "${desc}". Plan: ${plan}. This is slide ${(index || 0) + 1}. Context: ${interpretation}`
-        : desc;
+        ? `Presentation subject: "${slideSubject}" (raw request: "${desc}"). Plan: ${plan}. Slide ${(index || 0) + 1}. Context: ${interpretation}`
+        : `Subject: "${slideSubject}". Original request: "${desc}".`;
       const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType);
       const sysPrompt =
+        subjectBlock +
+        "\n\n" +
         buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage) +
         fixedLectureModeContext(resolvedLectureMode);
-      const rawContent = await callAI(GEMINI_API_KEY, sysPrompt, `Generate ${effectiveSlideType} slide: "${desc}"`, {
-        responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA,
-      });
+      const rawContent = await callAI(
+        GEMINI_API_KEY,
+        sysPrompt,
+        `Generate ${effectiveSlideType} slide for SUBJECT ${JSON.stringify(slideSubject)} only.`,
+        { responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
+      );
       let rawSlide = parseModelJson(rawContent);
       if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
       if (!rawSlide || typeof rawSlide !== "object") {
         throw new Error("Failed to parse slide from AI response");
       }
-      rawSlide = validateAndFixSlide(rawSlide, index || 0, desc);
+      rawSlide = validateAndFixSlide(rawSlide, index || 0, slideSubject, desc);
+      if (slideContentIsThin(rawSlide, slideSubject, desc)) {
+        try {
+          const repaired = await repairSlideWithAI(
+            GEMINI_API_KEY,
+            rawSlide,
+            index || 0,
+            slideSubject,
+            resolvedLectureMode,
+            desc,
+          );
+          rawSlide = validateAndFixSlide(repaired, index || 0, slideSubject, desc);
+          console.log(`[generate-slides] Progressive slide ${(index || 0) + 1} enriched (was thin)`);
+        } catch (e) {
+          console.warn("[generate-slides] Progressive enrich failed:", e);
+        }
+      }
+      if (["quiz", "poll", "poll_quiz"].includes(effectiveSlideType)) {
+        rawSlide = await ensureQuizPollOptionsFilled(
+          GEMINI_API_KEY,
+          rawSlide as RawSlide,
+          index || 0,
+          slideSubject,
+          resolvedLectureMode,
+          desc,
+        );
+      }
       let generatedImageUrl: string | null = null;
       if (!skipImages && ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType) && rawSlide.imagePrompt) {
         generatedImageUrl = await generateImage(GEMINI_API_KEY, rawSlide.imagePrompt, effectiveSlideType);
       }
-      const selectedTheme = selectThemeForTopic(desc);
+      const selectedTheme = selectThemeForTopic(slideSubject);
       const hebrewRegex = /[\u0590-\u05FF]/;
-      const detectedLanguage = hebrewRegex.test(desc) ? "hebrew" : "english";
-      const mappedSlide = mapSlideToFrontendFormat(rawSlide as RawSlide, index || 0, selectedTheme, detectedLanguage, generatedImageUrl || undefined, desc);
+      const detectedLanguage = hebrewRegex.test(slideSubject + desc) ? "hebrew" : "english";
+      const mappedSlide = mapSlideToFrontendFormat(
+        rawSlide as RawSlide,
+        index || 0,
+        selectedTheme,
+        detectedLanguage,
+        generatedImageUrl || undefined,
+        slideSubject,
+      );
       const creditResult = await consumeCredits(user.id, 1, `Progressive slide ${(index || 0) + 1}`);
       if (!creditResult.success) {
         return new Response(JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -2137,6 +2863,9 @@ serve(async (req) => {
     }
 
     console.log(`🎯 Generating full presentation: "${description}"`);
+    const contentSubject = extractPresentationSubject(description);
+    const subjectBlock = topicContractBlock(description, contentSubject);
+    console.log(`📌 Extracted subject for slides: "${contentSubject}"`);
 
     // Early checks BEFORE any AI call: credits + max_slides
     const maxSlidesAllowed = await getUserMaxSlides(user.id);
@@ -2150,7 +2879,14 @@ serve(async (req) => {
         { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
-    const effectiveSlideCount = Math.min(slideCount, maxSlidesAllowed);
+    const effectiveSlideCount = Math.min(slideCount, maxSlidesAllowed, AI_OPTIMAL_SLIDES_MAX);
+
+    let resolvedInteractiveSlideTypes: string[] | null = null;
+    let deckSlideCount = effectiveSlideCount;
+    if (contentType === "interactive" && Array.isArray(providedSlideTypes) && providedSlideTypes.length > 0) {
+      resolvedInteractiveSlideTypes = enforceInteractiveOnlySlideTypes(providedSlideTypes, effectiveSlideCount);
+      deckSlideCount = resolvedInteractiveSlideTypes.length;
+    }
 
     const { isPro } = await getUserPlan(user.id);
     const userAiSettings = isPro ? await getUserAiSettings(user.id) : null;
@@ -2164,12 +2900,16 @@ serve(async (req) => {
           { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+      const productPlanCap = Math.min(maxSlidesAllowed, AI_OPTIMAL_SLIDES_MAX);
+      const planSlideCount = Math.min(slideCount, productPlanCap);
       const systemPrompt =
+        subjectBlock +
+        "\n\n" +
         (contentType === "interactive"
-          ? buildInteractiveOnlyPlanPrompt(description, slideCount, difficulty, userAiSettings)
-          : buildProPlanOnlyPrompt(description, targetAudience, slideCount, userAiSettings)) +
+          ? buildInteractiveOnlyPlanPrompt(description, planSlideCount, difficulty, userAiSettings)
+          : buildProPlanOnlyPrompt(description, targetAudience, planSlideCount, userAiSettings)) +
         fixedLectureModeContext(resolvedLectureMode);
-      const planRaw = await callAI(GEMINI_API_KEY, systemPrompt, `Analyze and plan: "${description}".`, {
+      const planRaw = await callAI(GEMINI_API_KEY, systemPrompt, `Analyze and plan for SUBJECT ${JSON.stringify(contentSubject)}. Raw user message: ${JSON.stringify(description)}`, {
         responseSchema: GEMINI_PLAN_RESPONSE_SCHEMA,
         maxOutputTokens: 8192,
       });
@@ -2178,10 +2918,9 @@ serve(async (req) => {
         throw new Error("Failed to parse plan from AI response.");
       }
       if (contentType === "interactive") {
-        planParsed.slideTypes = enforceInteractiveOnlySlideTypes(planParsed.slideTypes || [], maxSlidesAllowed);
+        planParsed.slideTypes = enforceInteractiveOnlySlideTypes(planParsed.slideTypes || [], productPlanCap);
       }
-      // Cap slide types to user's max_slides
-      const cappedSlideTypes = (planParsed.slideTypes || []).slice(0, maxSlidesAllowed);
+      const cappedSlideTypes = (planParsed.slideTypes || []).slice(0, productPlanCap);
       const planCreditResult = await consumeCredits(user.id, 1, "Presentation plan");
       if (!planCreditResult.success) {
         return new Response(
@@ -2202,7 +2941,7 @@ serve(async (req) => {
       );
     }
 
-    const balanceCheck = await checkCreditsBalance(user.id, effectiveSlideCount);
+    const balanceCheck = await checkCreditsBalance(user.id, deckSlideCount);
     if (!balanceCheck.allowed) {
       return new Response(
         JSON.stringify({ 
@@ -2215,7 +2954,7 @@ serve(async (req) => {
       );
     }
 
-    const selectedTheme = selectThemeForTopic(description);
+    const selectedTheme = selectThemeForTopic(contentSubject);
     console.log(`🎨 Selected theme: ${selectedTheme.name}. Pro mode: ${isPro}`);
 
     let rawContent: string;
@@ -2225,9 +2964,12 @@ serve(async (req) => {
     if (isPro && providedPlan && providedInterpretation && Array.isArray(providedSlideTypes) && providedSlideTypes.length > 0) {
       const slideTypes =
         contentType === "interactive"
-          ? enforceInteractiveOnlySlideTypes(providedSlideTypes, effectiveSlideCount)
+          ? (resolvedInteractiveSlideTypes ??
+            enforceInteractiveOnlySlideTypes(providedSlideTypes, effectiveSlideCount))
           : providedSlideTypes;
       const slidesFromPlanPrompt =
+        subjectBlock +
+        "\n\n" +
         buildProSlidesFromPlanPrompt(
           description,
           providedInterpretation,
@@ -2237,7 +2979,7 @@ serve(async (req) => {
       rawContent = await callAI(
         GEMINI_API_KEY,
         slidesFromPlanPrompt,
-        `Generate slide content for: "${description}".`
+        `Generate slide content for SUBJECT ${JSON.stringify(contentSubject)} only. Raw request: ${JSON.stringify(description)}`
       );
       plan = providedPlan;
       interpretation = providedInterpretation;
@@ -2246,6 +2988,8 @@ serve(async (req) => {
     } else {
       // Same Pro-quality path for all users (Free only differs by max_slides cap)
       const systemPrompt =
+        subjectBlock +
+        "\n\n" +
         (contentType === "interactive"
           ? buildInteractiveOnlyPrompt(description, effectiveSlideCount, difficulty, userAiSettings)
           : buildProInstructionalDesignPrompt(
@@ -2258,7 +3002,7 @@ serve(async (req) => {
       rawContent = await callAIWithThinking(
         GEMINI_API_KEY,
         systemPrompt,
-        `Create the presentation with interpretation, plan, and slides for: "${description}".`,
+        `Create interpretation, plan, and slides for SUBJECT ${JSON.stringify(contentSubject)}. Do not use the raw instruction text as any slide title. Raw user message: ${JSON.stringify(description)}`,
       );
       const proParsed = parseModelJson(rawContent);
       if (proParsed && typeof proParsed === "object" && Array.isArray(proParsed.slides)) {
@@ -2280,12 +3024,45 @@ serve(async (req) => {
       throw new Error("Failed to parse slides from AI response. Please try again or use a shorter topic.");
     }
 
-    rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));
+    rawSlides = rawSlides.map((slide: any, index: number) =>
+      validateAndFixSlide(slide, index, contentSubject, description)
+    );
     if (contentType === "interactive") {
-      rawSlides = enforceInteractiveOnlySlides(rawSlides, effectiveSlideCount);
-      rawSlides = rawSlides.map((slide: any, index: number) => validateAndFixSlide(slide, index, description));
+      rawSlides = enforceInteractiveOnlySlides(rawSlides, deckSlideCount, contentSubject);
+      rawSlides = rawSlides.map((slide: any, index: number) =>
+        validateAndFixSlide(slide, index, contentSubject, description)
+      );
+      for (let i = 0; i < rawSlides.length; i++) {
+        const st = String(rawSlides[i]?.type || "");
+        if (st === "quiz" || st === "poll" || st === "poll_quiz") {
+          rawSlides[i] = await ensureQuizPollOptionsFilled(
+            GEMINI_API_KEY,
+            rawSlides[i] as RawSlide,
+            i,
+            contentSubject,
+            resolvedLectureMode,
+            description,
+          );
+        }
+      }
     }
-    rawSlides = rawSlides.slice(0, effectiveSlideCount);
+    rawSlides = rawSlides.slice(0, deckSlideCount);
+    rawSlides = await enrichThinSlides(
+      GEMINI_API_KEY,
+      rawSlides,
+      contentSubject,
+      resolvedLectureMode,
+      description,
+    );
+    if (contentType === "interactive") {
+      rawSlides = await dedupeInteractiveQuestions(
+        GEMINI_API_KEY,
+        rawSlides as RawSlide[],
+        contentSubject,
+        resolvedLectureMode,
+        description,
+      );
+    }
 
     console.log(`✅ Parsed and validated ${rawSlides.length} slides`);
 
@@ -2351,7 +3128,7 @@ serve(async (req) => {
 
     // *** KEY CHANGE: Pass full theme object instead of just theme.id ***
     const mappedSlides = rawSlides.map((slide: any, index: number) =>
-      mapSlideToFrontendFormat(slide, index, selectedTheme, effectiveDetectedLanguage, imageMap.get(index), description),
+      mapSlideToFrontendFormat(slide, index, selectedTheme, effectiveDetectedLanguage, imageMap.get(index), contentSubject),
     );
 
     const creditsToCharge = mappedSlides.length;

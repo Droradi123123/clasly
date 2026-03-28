@@ -497,6 +497,10 @@ export type Database = {
         }
         Returns: string
       }
+      get_lecture_for_join: {
+        Args: { p_lecture_code: string }
+        Returns: Database["public"]["Tables"]["lectures"]["Row"][]
+      }
     }
     Enums: {
       app_role: "admin" | "user"

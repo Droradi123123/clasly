@@ -15,5 +15,11 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-  }
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 32,
+    },
+    heartbeatIntervalMs: 15000,
+  },
 });
