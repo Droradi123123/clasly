@@ -83,6 +83,7 @@ const Join = () => {
 
       setLectureId(String(lecture.id));
       setLectureName(String(lecture.title ?? ""));
+      setLectureCode(code);
       const mode = lecture.lecture_mode as string | undefined;
       setWebinarLeadId(null);
       setLeadEmail("");

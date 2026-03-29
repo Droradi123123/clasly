@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { CLASLY_AUTH_PRODUCT_KEY } from '@/lib/constants';
 
 /**
  * After OAuth redirect, user lands on homepage with session but AuthModal isn't open.
@@ -43,8 +44,14 @@ export function PostLoginRedirect() {
         { replace: true },
       );
     } else {
-      // Logged-in user on homepage -> redirect to Dashboard (their "home")
-      navigate('/dashboard', { replace: true });
+      const ap =
+        typeof sessionStorage !== 'undefined'
+          ? sessionStorage.getItem(CLASLY_AUTH_PRODUCT_KEY)
+          : null;
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(CLASLY_AUTH_PRODUCT_KEY);
+      }
+      navigate(ap === 'webinar' ? '/webinar/dashboard' : '/dashboard', { replace: true });
     }
   }, [user, isAuthLoading, location.pathname, navigate]);
 

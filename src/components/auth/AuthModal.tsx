@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { supabase } from "@/integrations/supabase/client";
 import { getOAuthAllowedHosts } from "@/lib/authUtils";
+import { CLASLY_AUTH_PRODUCT_KEY } from "@/lib/constants";
 import { toast } from "sonner";
 import { Sparkles, Mail, ArrowRight, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -26,6 +27,8 @@ interface AuthModalProps {
   redirectTo?: 'dashboard' | 'builder';
   /** When redirecting to builder, which product track (affects ?track= and localStorage for OAuth return). */
   builderTrack?: 'education' | 'webinar';
+  /** After sign-in without builder flow, which dashboard to open. */
+  signInProduct?: 'education' | 'webinar';
 }
 
 function builderTrackQuery(track: 'education' | 'webinar' | undefined): string {
@@ -39,6 +42,7 @@ export const AuthModal = ({
   promptText,
   redirectTo = 'dashboard',
   builderTrack = 'education',
+  signInProduct = 'education',
 }: AuthModalProps) => {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -92,11 +96,17 @@ export const AuthModal = ({
     return () => {
       subscription.unsubscribe();
     };
-  }, [isOpen, onClose, onSuccess, promptText, redirectTo, builderTrack, navigate, isMobile]);
+  }, [isOpen, onClose, onSuccess, promptText, redirectTo, builderTrack, signInProduct, navigate, isMobile]);
   
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(
+          CLASLY_AUTH_PRODUCT_KEY,
+          signInProduct === "webinar" ? "webinar" : "education",
+        );
+      }
       // Store prompt for after redirect (only if going to builder)
       if (promptText && redirectTo === 'builder') {
         localStorage.setItem("clasly_pending_prompt", promptText);

@@ -134,6 +134,7 @@ serve(async (req) => {
         user_id: user.id,
         plan_id: plan_id,
         interval: interval,
+        product: plan.product ?? "education",
       }),
     };
 
@@ -147,11 +148,12 @@ serve(async (req) => {
             currency_code: "USD",
             value: price.toFixed(2),
           },
-          description: `Clasly ${plan.name} Plan (${interval}ly)`,
+          description: `Clasly ${plan.name} (${plan.product ?? "education"}, ${interval}ly)`,
           custom_id: JSON.stringify({
             user_id: user.id,
             plan_id: plan_id,
             interval: interval,
+            product: plan.product ?? "education",
           }),
         },
       ],

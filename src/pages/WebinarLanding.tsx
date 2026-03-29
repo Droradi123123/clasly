@@ -49,7 +49,7 @@ const WebinarLanding = () => {
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
       <DocumentHead
-        title="Clasly for Webinars – Interactive Webinar Platform"
+        title="Clasly for Webinar – Interactive Webinars & Lead Capture"
         description="Turn your topic into an interactive webinar in seconds. AI builds the deck, attendees participate from their phones—no downloads."
         path="/webinar"
       />

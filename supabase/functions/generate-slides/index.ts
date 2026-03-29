@@ -774,10 +774,11 @@ The user's message (verbatim): ${JSON.stringify(rawUserInput)}
 **Teachable subject (use this for ALL slide content, questions, and options):** ${JSON.stringify(subject)}
 
 MANDATORY:
-1. **First slide (type "title"):** \`content.title\` = a professional presentation headline about the subject only. **Never** use the full user message, instruction verbs (תייצר/תכין/create/make/generate), or the phrase "הרצאה על …" / "lecture about …" as the title.
-2. **First slide:** \`content.subtitle\` = concrete learning outcomes for this subject (never empty).
-3. **All slides:** Every question, statement, bullet, and quiz/poll option must be **about the subject** in the lecture language. No English template strings if the subject is Hebrew.
-4. **Forbidden boilerplate** unless rewritten for the subject: "I agree with this statement.", "Yes or No?", generic "What comes to mind when you think of …?" with the raw prompt pasted in.
+1. **Never paste the user's message** (or long fragments of it) into any slide field: not title, subtitle, body text, bullets, quiz/poll options, statements, imagePrompt, or labels. The message is ONLY for understanding the topic—output must be **new** pedagogical copy about "${subject}".
+2. **First slide (type "title"):** \`content.title\` = a professional presentation headline about the subject only. **Never** use the full user message, instruction verbs (תייצר/תכין/create/make/generate), or the phrase "הרצאה על …" / "lecture about …" as the title. Keep the headline **short** (about **80 characters or fewer**—never a pasted instruction paragraph).
+3. **First slide:** \`content.subtitle\` = concrete learning outcomes for this subject (never empty). Same length discipline: concise, not the raw user prompt.
+4. **All slides:** Every question, statement, bullet, and quiz/poll option must be **about the subject** in the lecture language. No English template strings if the subject is Hebrew.
+5. **Forbidden boilerplate** unless rewritten for the subject: "I agree with this statement.", "Yes or No?", generic "What comes to mind when you think of …?" with the raw prompt pasted in.
 `;
 }
 
@@ -810,7 +811,191 @@ function slideFieldEchoesRawUserMessage(field: string, raw: string, cleanSubject
     const chunk = r.slice(0, Math.min(72, r.length));
     if (chunk.length >= 18 && f.includes(chunk)) return true;
   }
+  if (r.length >= 28) {
+    const prefix = r.slice(0, Math.min(100, r.length));
+    if (prefix.length >= 40 && f.includes(prefix)) return true;
+  }
+  if (r.length >= 40 && f.length >= r.length * 0.75 && f.includes(r.slice(0, Math.min(80, r.length)))) {
+    return true;
+  }
   return false;
+}
+
+/** True when body copy is mostly the user's request, not teachable content. */
+function textSubstantiallyEchoesRaw(f: string, r: string): boolean {
+  const a = String(f || "").trim();
+  const b = String(r || "").trim();
+  if (!a || !b || b.length < 24) return false;
+  if (a.length >= b.length * 0.88 && b.slice(0, Math.min(64, b.length)).length >= 24) {
+    if (a.includes(b.slice(0, Math.min(64, b.length)))) return true;
+  }
+  const win = Math.min(96, b.length);
+  if (win >= 36 && a.includes(b.slice(0, win))) return true;
+  // Mid-string chunks (model pasted instruction in the middle of a "paragraph" slide)
+  if (b.length >= 28) {
+    for (let start = 0; start <= Math.min(80, b.length - 28); start += 8) {
+      const chunk = b.slice(start, start + 40);
+      if (chunk.length >= 24 && a.includes(chunk)) return true;
+    }
+  }
+  return false;
+}
+
+/** Replace any string that still echoes the raw user instruction (all slide fields). */
+function sanitizeSlideStringField(
+  text: string,
+  rawUserInput: string,
+  subject: string,
+  slideType: string,
+  fieldKey: string,
+): string {
+  const r = String(rawUserInput || "").trim();
+  const t = String(text || "");
+  if (!r || !t) return t;
+  const isHe = subjectLanguageIsHebrew(subject);
+  const bad =
+    looksLikeUserInstructionEcho(t, r) ||
+    slideFieldEchoesRawUserMessage(t, r, subject) ||
+    textSubstantiallyEchoesRaw(t, r);
+  if (!bad) return t;
+
+  const k = fieldKey.toLowerCase();
+  if (k.includes("imageprompt")) {
+    return isHe
+      ? `איור מקצועי ואבסטרקטי בנושא ${subject}, ללא טקסט קריא בתמונה`
+      : `Professional abstract illustration about ${subject}, no readable text in the image`;
+  }
+  if (k === "title") {
+    if (slideType === "title") {
+      return isHe
+        ? `${subject} — עקרונות, סיכונים והזדמנויות`
+        : `${subject.charAt(0).toUpperCase() + subject.slice(1)}: foundations, risks, and opportunities`;
+    }
+    return isHe ? `נקודת מפתח: ${subject}` : `Key angle: ${subject}`;
+  }
+  if (k === "subtitle") {
+    return isHe
+      ? `מושגים מרכזיים וכלים פרקטיים בנושא ${subject}`
+      : `Key concepts and practical takeaways on ${subject}`;
+  }
+  if (k === "text" || k === "sentencestart" || k === "description") {
+    return isHe
+      ? `כאן מוצג רעיון מרכזי אחד בנושא ${subject}, עם דוגמה קצרה והקשר פרקטי לקהל.`
+      : `This slide develops one core idea in ${subject}, with a short example and practical context for the audience.`;
+  }
+  if (k === "question") {
+    if (slideType === "wordcloud") {
+      return isHe
+        ? `איזה מושג או מילה קופצים לכם כשאתם חושבים על ${subject}?`
+        : `What word or concept comes to mind first when you think about ${subject}?`;
+    }
+    if (slideType === "quiz" || slideType === "poll" || slideType === "poll_quiz") {
+      return isHe
+        ? `איזו אמירה הכי מדויקת לגבי ${subject}?`
+        : `Which statement best fits ${subject}?`;
+    }
+    if (slideType === "yesno") {
+      return isHe
+        ? `האם אתם מרגישים שיש לכם בסיס מספיק חזק בנושא ${subject}?`
+        : `Do you feel you already have a solid enough foundation in ${subject}?`;
+    }
+    if (slideType === "scale" || slideType === "sentiment_meter") {
+      return isHe
+        ? `עד כמה ${subject} רלוונטי ליעדים שלכם כרגע?`
+        : `How relevant is ${subject} to your goals right now?`;
+    }
+    return isHe ? `איך ${subject} נוגע לכם אישית?` : `How does ${subject} relate to you personally?`;
+  }
+  if (k === "statement") {
+    return isHe
+      ? `חשוב להבין את המורכבות של ${subject} לפני החלטות משמעותיות`
+      : `Understanding the nuances of ${subject} matters before major decisions`;
+  }
+  if (
+    k === "label" ||
+    k === "minlabel" ||
+    k === "maxlabel" ||
+    k === "leftlabel" ||
+    k === "rightlabel"
+  ) {
+    if (k === "minlabel" || k === "leftlabel") {
+      return isHe ? "נמוך" : "Low";
+    }
+    if (k === "maxlabel" || k === "rightlabel") {
+      return isHe ? "גבוה" : "High";
+    }
+    return isHe ? `קטגוריה · ${subject}` : `Category · ${subject}`;
+  }
+  if (k === "year") {
+    return new Date().getFullYear().toString();
+  }
+  if (k === "name" && slideType === "bar_chart") {
+    return isHe ? `מדד ${subject}` : `${subject} metric`;
+  }
+  if (slideType === "quiz" || slideType === "poll" || slideType === "poll_quiz") {
+    return isHe
+      ? `אפשרות רלוונטית ל${subject}`
+      : `A relevant angle on ${subject}`;
+  }
+  return isHe
+    ? `תוכן בנושא ${subject}`
+    : `Content about ${subject}`;
+}
+
+function mutateEchoSanitizeDeep(
+  node: unknown,
+  rawUserInput: string,
+  subject: string,
+  slideType: string,
+): void {
+  if (node === null || node === undefined) return;
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      const item = node[i];
+      if (typeof item === "string") {
+        const next = sanitizeSlideStringField(item, rawUserInput, subject, slideType, `item${i}`);
+        if (next !== item) node[i] = next;
+      } else {
+        mutateEchoSanitizeDeep(item, rawUserInput, subject, slideType);
+      }
+    }
+    return;
+  }
+  if (typeof node === "object") {
+    for (const k of Object.keys(node as object)) {
+      const v = (node as Record<string, unknown>)[k];
+      if (typeof v === "string") {
+        const next = sanitizeSlideStringField(v, rawUserInput, subject, slideType, k);
+        if (next !== v) (node as Record<string, unknown>)[k] = next;
+      } else {
+        mutateEchoSanitizeDeep(v, rawUserInput, subject, slideType);
+      }
+    }
+  }
+}
+
+/** After type-specific fixes, strip any remaining prompt echo from all string fields. */
+function stripPromptEchoFromSlideDeep(slide: RawSlide, rawUserInput: string, subject: string): void {
+  const r = String(rawUserInput || "").trim();
+  if (!r) return;
+  mutateEchoSanitizeDeep(slide.content, r, subject, String(slide.type || "content"));
+  if (typeof slide.imagePrompt === "string" && slide.imagePrompt.trim()) {
+    const next = sanitizeSlideStringField(slide.imagePrompt, r, subject, String(slide.type || "content"), "imagePrompt");
+    if (next !== slide.imagePrompt) slide.imagePrompt = next;
+  }
+}
+
+/** Run deep echo sanitization on every slide (after enrich, dedupe, or any AI repair path). */
+function sanitizeSlideDeckForPromptEcho(
+  slides: RawSlide[],
+  rawUserInput: string,
+  subject: string,
+): void {
+  const r = String(rawUserInput || "").trim();
+  if (!r || !slides?.length) return;
+  for (let i = 0; i < slides.length; i++) {
+    stripPromptEchoFromSlideDeep(slides[i], r, subject);
+  }
 }
 
 function subjectLanguageIsHebrew(subject: string): boolean {
@@ -824,13 +1009,23 @@ function fixEchoMetaInSlide(slide: RawSlide, rawUserInput: string, subject: stri
 
   if (slide.type === "title") {
     const ti = String(c.title || "").trim();
-    if (!ti || looksLikeUserInstructionEcho(ti, rawUserInput) || ti.length > 140) {
+    if (
+      !ti ||
+      looksLikeUserInstructionEcho(ti, rawUserInput) ||
+      slideFieldEchoesRawUserMessage(ti, rawUserInput, subject) ||
+      ti.length > 90
+    ) {
       c.title = isHe
         ? `${subject} — עקרונות, סיכונים והזדמנויות`
         : `${subject.charAt(0).toUpperCase() + subject.slice(1)}: foundations, risks, and opportunities`;
     }
     const sub = String(c.subtitle || "").trim();
-    if (!sub || sub.length < 12 || looksLikeUserInstructionEcho(sub, rawUserInput)) {
+    if (
+      !sub ||
+      sub.length < 12 ||
+      looksLikeUserInstructionEcho(sub, rawUserInput) ||
+      slideFieldEchoesRawUserMessage(sub, rawUserInput, subject)
+    ) {
       c.subtitle = isHe
         ? `מושגים מרכזיים וכלים פרקטיים בנושא ${subject}`
         : `Key concepts and practical takeaways on ${subject}`;
@@ -927,6 +1122,14 @@ function fixEchoMetaInSlide(slide: RawSlide, rawUserInput: string, subject: stri
         : `Rank these by importance for you in ${subject} (most important first):`;
     }
   }
+}
+
+/** Final pass on slide 1 so the opening title never echoes the raw prompt after enrichment. */
+function ensureOpeningTitleSlideEchoFix(slides: RawSlide[], rawUserInput: string, subject: string): void {
+  if (!slides?.length || !String(rawUserInput || "").trim()) return;
+  const first = slides[0];
+  if (String(first?.type) !== "title") return;
+  fixEchoMetaInSlide(first, rawUserInput, subject);
 }
 
 function validateAndFixSlide(
@@ -1167,6 +1370,7 @@ function validateAndFixSlide(
 
   if (rawUserInput) {
     fixEchoMetaInSlide(fixedSlide, rawUserInput, subject);
+    stripPromptEchoFromSlideDeep(fixedSlide as RawSlide, rawUserInput, subject);
   }
 
   return fixedSlide;
@@ -1298,7 +1502,21 @@ function slideContentIsThin(slide: any, subject: string, rawUserInput?: string):
     const sub = String(c.subtitle || "").trim();
     if (!sub || sub.length < 12) return true;
     if (title.length < 10) return true;
-    if (rawUserInput && looksLikeUserInstructionEcho(title, rawUserInput)) return true;
+    if (title.length > 90) return true;
+    if (
+      rawUserInput &&
+      (looksLikeUserInstructionEcho(title, rawUserInput) ||
+        slideFieldEchoesRawUserMessage(title, rawUserInput, subject))
+    ) {
+      return true;
+    }
+    if (
+      rawUserInput &&
+      (looksLikeUserInstructionEcho(sub, rawUserInput) ||
+        slideFieldEchoesRawUserMessage(sub, rawUserInput, subject))
+    ) {
+      return true;
+    }
   }
   if (t === "content") {
     const text = String(c.text || "");
@@ -1390,6 +1608,7 @@ async function repairSlideWithAI(
 Teachable SUBJECT (all content must be about this, correct language for the subject): ${JSON.stringify(subject)}
 ${rawUserInput ? `Original user message (do NOT paste as title or wordcloud prompt): ${JSON.stringify(rawUserInput)}` : ""}
 Replace shallow, generic, or English-template text with **expert-level, subject-specific** material.
+Never paste the "Original user message" string (or long fragments of it) into any output field—only new copy about the SUBJECT.
 For type "title": headline is a real deck name about the subject—not the user's instruction text.
 For quiz/poll/poll_quiz: stem ≥40 characters; 4 options ≥12 characters each; correctAnswer valid for quiz.
 For title/split_content/poll/wordcloud: imagePrompt ≥45 characters, cinematic, no readable text in the image.`;
@@ -1406,7 +1625,9 @@ For title/split_content/poll/wordcloud: imagePrompt ≥45 characters, cinematic,
   if (!parsed || typeof parsed !== "object" || !parsed.type) {
     throw new Error("repairSlideWithAI: invalid parse");
   }
-  return parsed as RawSlide;
+  const out = parsed as RawSlide;
+  if (rawUserInput) stripPromptEchoFromSlideDeep(out, rawUserInput, subject);
+  return out;
 }
 
 async function enrichThinSlides(
@@ -1435,6 +1656,7 @@ async function enrichThinSlides(
       }
     }
   }
+  if (rawUserInput) sanitizeSlideDeckForPromptEcho(out, rawUserInput, subject);
   return out;
 }
 
@@ -1497,6 +1719,7 @@ async function dedupeInteractiveQuestions(
     }
     seen.add(fp2.length >= 12 ? fp2 : `${fp}-${i}`);
   }
+  if (rawUser) sanitizeSlideDeckForPromptEcho(out, rawUser, subject);
   return out;
 }
 
@@ -1859,6 +2082,11 @@ const CLEAN_READABLE_PRINCIPLE = `
 - **title**: subtitle **must** state what learners will get (outcomes)—never empty.
 - **imagePrompt** (title, split_content, poll, wordcloud): **45+ characters**, cinematic and on-topic; no text in the image.
 - Forbidden anywhere: “Point 1/2/3”, body text that is only “Detail”, options that are just “Option A/B/C/D”, or empty arrays.
+
+## ANTI-ECHO (NON-NEGOTIABLE — EVERY GENERATION PATH)
+- The user's **full request** may appear in your system prompt — you must **never** paste it verbatim (or as a long paragraph) into any slide field: title, subtitle, body, bullets, questions, options, statements, scale labels, timeline text, bar labels, ranking items, imagePrompt, or word-bank strings.
+- Produce **new** teaching copy about the **teachable topic** only. You may use a short topic phrase (e.g. the subject name), not the instruction paragraph, meta-requests (“תייצר לי…”, “create a deck…”), or checklist wording.
+- Prefer a short expert headline plus concrete detail over repeating the user's wording. If a field would mirror the request, rewrite it as audience-facing content instead.
 `;
 
 function buildInstructionalDesignPrompt(description: string, audience: string, slideCount: number): string {
@@ -2316,6 +2544,7 @@ ${CLEAN_READABLE_PRINCIPLE}
 
 ## ORIGINAL REQUEST
 "${description}"
+**Do not paste this paragraph into any slide.** Use it only to infer the topic; all on-screen text must be new teaching copy.
 
 ## INTERPRETATION
 ${interpretation}
@@ -2371,6 +2600,7 @@ Type: ${slideType}
 ${CLEAN_READABLE_PRINCIPLE}
 
 ## LANGUAGE: Match the topic language (Hebrew→Hebrew, English→English)
+The Topic line is for context only — **never** paste it verbatim into title, body, bullets, questions, options, or imagePrompt.
 
 ## CONTENT QUALITY
 - Titles must be COMPELLING - use power words, questions, or bold statements
@@ -2804,6 +3034,9 @@ serve(async (req) => {
         throw new Error("Failed to parse slide from AI response");
       }
       rawSlide = validateAndFixSlide(rawSlide, index || 0, slideSubject, desc);
+      if ((index || 0) === 0 && String(rawSlide.type) === "title") {
+        fixEchoMetaInSlide(rawSlide as RawSlide, desc, slideSubject);
+      }
       if (slideContentIsThin(rawSlide, slideSubject, desc)) {
         try {
           const repaired = await repairSlideWithAI(
@@ -2815,6 +3048,9 @@ serve(async (req) => {
             desc,
           );
           rawSlide = validateAndFixSlide(repaired, index || 0, slideSubject, desc);
+          if ((index || 0) === 0 && String(rawSlide.type) === "title") {
+            fixEchoMetaInSlide(rawSlide as RawSlide, desc, slideSubject);
+          }
           console.log(`[generate-slides] Progressive slide ${(index || 0) + 1} enriched (was thin)`);
         } catch (e) {
           console.warn("[generate-slides] Progressive enrich failed:", e);
@@ -2849,10 +3085,16 @@ serve(async (req) => {
       if (!creditResult.success) {
         return new Response(JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      return new Response(
-        JSON.stringify({ slide: mappedSlide, theme: { id: selectedTheme.id, themeName: selectedTheme.name, colors: selectedTheme.colors, font: selectedTheme.font, mood: selectedTheme.mood } }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      const progressivePayload: Record<string, unknown> = {
+        slide: mappedSlide,
+        theme: { id: selectedTheme.id, themeName: selectedTheme.name, colors: selectedTheme.colors, font: selectedTheme.font, mood: selectedTheme.mood },
+      };
+      if ((index || 0) === 0) {
+        const mt = (mappedSlide as { content?: { title?: string } })?.content?.title;
+        progressivePayload.lectureTitle =
+          typeof mt === "string" && mt.trim() ? mt.trim().slice(0, 200) : slideSubject.slice(0, 200);
+      }
+      return new Response(JSON.stringify(progressivePayload), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ==========================================================================
@@ -3064,6 +3306,10 @@ serve(async (req) => {
       );
     }
 
+    ensureOpeningTitleSlideEchoFix(rawSlides as RawSlide[], description, contentSubject);
+
+    sanitizeSlideDeckForPromptEcho(rawSlides as RawSlide[], description, contentSubject);
+
     console.log(`✅ Parsed and validated ${rawSlides.length} slides`);
 
     // WYSIWYG: Detect language from actual slide content (not just prompt) for correct direction/textAlign
@@ -3164,6 +3410,12 @@ serve(async (req) => {
     if (plan !== undefined) responsePayload.plan = plan;
     if (interpretation !== undefined) responsePayload.interpretation = interpretation;
     if (pendingSlideImages.length > 0) responsePayload.pendingSlideImages = pendingSlideImages;
+
+    const firstTitle = (mappedSlides[0] as { content?: { title?: string } })?.content?.title;
+    responsePayload.lectureTitle =
+      typeof firstTitle === "string" && firstTitle.trim()
+        ? firstTitle.trim().slice(0, 200)
+        : String(contentSubject || "Presentation").slice(0, 200);
 
     return new Response(
       JSON.stringify(responsePayload),

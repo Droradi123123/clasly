@@ -8,9 +8,10 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import type { SubscriptionPlan } from "@/types/subscription";
+import { normalizePlanNameForFeatures } from "@/types/subscription";
 import { CONTACT_EMAIL } from "@/lib/constants";
 
 const Pricing = () => {
@@ -18,30 +19,36 @@ const Pricing = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [billingInterval, setBillingInterval] = useState<"month" | "year">("month");
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  const { planName, isPro } = useSubscriptionContext();
+  const { planName, currentPlanId } = useSubscriptionContext();
   const { user } = useAuth();
-  const navigate = useNavigate();
+  const location = useLocation();
+  const isWebinarPricing = location.pathname.startsWith("/webinar/pricing");
+  const productLine = isWebinarPricing ? "webinar" : "education";
 
   useEffect(() => {
-    fetchPlans();
-  }, []);
+    let cancelled = false;
+    setIsLoading(true);
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("subscription_plans")
+          .select("*")
+          .eq("product", productLine)
+          .order("price_monthly_usd", { ascending: true });
 
-  const fetchPlans = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("subscription_plans")
-        .select("*")
-        .order("price_monthly_usd", { ascending: true });
-
-      if (error) throw error;
-      setPlans(data || []);
-    } catch (error) {
-      console.error("Error fetching plans:", error);
-      toast.error("Failed to load pricing plans");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+        if (error) throw error;
+        if (!cancelled) setPlans(data || []);
+      } catch (error) {
+        console.error("Error fetching plans:", error);
+        if (!cancelled) toast.error("Failed to load pricing plans");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [productLine]);
 
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     if (!user) {
@@ -49,17 +56,20 @@ const Pricing = () => {
       return;
     }
 
-    if (plan.name === "Free") {
+    if (normalizePlanNameForFeatures(plan.name) === "Free") {
       toast.info("You're already on the Free plan");
       return;
     }
 
-    if (plan.name === planName) {
+    if (plan.id === currentPlanId) {
       toast.info(`You're already on the ${planName} plan`);
       return;
     }
 
     setCheckoutLoading(plan.id);
+
+    const origin = window.location.origin;
+    const cancelPath = isWebinarPricing ? "/webinar/pricing" : "/pricing";
 
     try {
       const { data, error } = await supabase.functions.invoke(
@@ -68,6 +78,8 @@ const Pricing = () => {
           body: {
             plan_id: plan.id,
             interval: billingInterval,
+            return_url: `${origin}/billing?success=true`,
+            cancel_url: `${origin}${cancelPath}?canceled=true`,
           },
         }
       );
@@ -88,7 +100,8 @@ const Pricing = () => {
   };
 
   const getPlanIcon = (name: string) => {
-    switch (name) {
+    const tier = normalizePlanNameForFeatures(name);
+    switch (tier) {
       case "Free":
         return Zap;
       case "Standard":
@@ -101,11 +114,11 @@ const Pricing = () => {
   };
 
   const getPlanFeatures = (plan: SubscriptionPlan): string[] => {
-    const features = plan.features as Record<string, boolean> | null;
+    const tier = normalizePlanNameForFeatures(plan.name);
     const baseFeatures: string[] = [];
 
     // Value prop: slide limit (e.g. "15 slides free" for Free)
-    if (plan.name === "Free") {
+    if (tier === "Free") {
       baseFeatures.push("15 slides free");
     } else if (plan.max_slides) {
       baseFeatures.push(`Up to ${plan.max_slides} slides per presentation`);
@@ -114,22 +127,22 @@ const Pricing = () => {
     }
 
     // Add AI credits – Free gets one-time 15, paid get monthly refill
-    if (plan.name === "Free") {
+    if (tier === "Free") {
       baseFeatures.push("15 AI credits to start (one-time)");
     } else {
       baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
     }
     // Plan-specific features
-    if (plan.name === "Free") {
+    if (tier === "Free") {
       baseFeatures.push("Basic slide types (Poll, WordCloud)");
       baseFeatures.push("7-day analytics retention");
-    } else if (plan.name === "Standard") {
+    } else if (tier === "Standard") {
       baseFeatures.push("Advanced AI model");
       baseFeatures.push("Import PowerPoint & PDF");
       baseFeatures.push("All basic slide types + Scale, Sentiment");
       baseFeatures.push("30-day analytics retention");
       baseFeatures.push("Buy additional credits");
-    } else if (plan.name === "Pro") {
+    } else if (tier === "Pro") {
       baseFeatures.push("Advanced AI model");
       baseFeatures.push("All slide types (Quiz, Timeline, etc.)");
       baseFeatures.push("Import PowerPoint & PDF");
@@ -166,12 +179,20 @@ const Pricing = () => {
     );
   }
 
+  const docPath = isWebinarPricing ? "/webinar/pricing" : "/pricing";
+  const pageTitle = isWebinarPricing
+    ? "Pricing – Clasly for Webinar"
+    : "Pricing – Clasly for Educator";
+  const pageDescription = isWebinarPricing
+    ? "Webinar plans and pricing. Separate product from Clasly for Educator."
+    : "Educator plans and pricing. Free tier, Standard, and Pro.";
+
   return (
     <div className="min-h-screen bg-gradient-hero">
       <DocumentHead
-        title="Pricing – Clasly"
-        description="Plans and pricing. Free trial, Pro, and enterprise options."
-        path="/pricing"
+        title={pageTitle}
+        description={pageDescription}
+        path={docPath}
       />
       <Header />
 
@@ -184,10 +205,14 @@ const Pricing = () => {
             className="text-center mb-12"
           >
             <h1 className="text-4xl md:text-5xl font-display font-bold text-foreground mb-4">
-              Simple, Transparent Pricing
+              {isWebinarPricing
+                ? "Webinar pricing"
+                : "Simple, transparent pricing"}
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
-              Start free, upgrade when you need more power. 30% cheaper than competitors.
+              {isWebinarPricing
+                ? "Built for live webinars and large audiences. Billed separately from Clasly for Educator."
+                : "Start free, upgrade when you need more power. 30% cheaper than competitors."}
             </p>
 
             {/* Billing Toggle */}
@@ -222,8 +247,9 @@ const Pricing = () => {
           <div className="grid md:grid-cols-3 gap-6">
             {plans.map((plan, index) => {
               const Icon = getPlanIcon(plan.name);
-              const isPopular = plan.name === "Standard";
-              const isCurrent = plan.name === planName;
+              const tier = normalizePlanNameForFeatures(plan.name);
+              const isPopular = tier === "Standard";
+              const isCurrent = plan.id === currentPlanId;
               const features = getPlanFeatures(plan);
               const savings = billingInterval === "year" ? getYearlySavings(plan) : null;
 
@@ -304,14 +330,14 @@ const Pricing = () => {
                         disabled={
                           checkoutLoading === plan.id ||
                           isCurrent ||
-                          plan.name === "Free"
+                          tier === "Free"
                         }
                       >
                         {checkoutLoading === plan.id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
                         ) : isCurrent ? (
                           "Current Plan"
-                        ) : plan.name === "Free" ? (
+                        ) : tier === "Free" ? (
                           "Free Forever"
                         ) : (
                           "Get Started"

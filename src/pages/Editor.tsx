@@ -182,6 +182,8 @@ const Editor = () => {
   const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
   const [aiProgressStage, setAiProgressStage] = useState(0);
   const hasTriggeredInitialGen = useRef(false);
+  /** Where to send the user if lecture load fails (matches track / loaded lecture_mode). */
+  const editorErrorHomeRef = useRef<"/dashboard" | "/webinar/dashboard">("/dashboard");
   // Start with logical size so no layout shift when ResizeObserver runs
   const [slideSize, setSlideSize] = useState<{ width: number; height: number; scale?: number } | null>({ width: 960, height: 540, scale: 1 });
 
@@ -234,6 +236,7 @@ const Editor = () => {
   const displaySlides = useSandbox ? sandboxSlides : slides;
   const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
   const currentSlide = displaySlides[safeIndex];
+  const slidesGenerationLocked = isGenerating || isInitialGenerating;
   const slidePreviewRef = useRef<HTMLDivElement>(null);
   const isConstrainedViewport = useConstrainedViewport();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -255,6 +258,8 @@ const Editor = () => {
   useEffect(() => {
     if (lectureId !== "new") return;
     setLectureMode(searchParams.get("track") === "webinar" ? "webinar" : "education");
+    editorErrorHomeRef.current =
+      searchParams.get("track") === "webinar" ? "/webinar/dashboard" : "/dashboard";
   }, [lectureId, searchParams]);
 
   // When entering /editor/new with prompt+ai=1 (from Dashboard "Generate with AI"), reset all state so we always create a fresh presentation
@@ -420,6 +425,7 @@ const Editor = () => {
         plan?: string;
         interpretation?: string;
         pendingSlideImages?: PendingSlideImage[];
+        lectureTitle?: string;
       };
 
       if (isPro && planData?.slideTypes?.length) {
@@ -461,7 +467,7 @@ const Editor = () => {
             if (getEdgeFunctionStatus(progRes.error) === 402) setShowOutOfCreditsModal(true);
             throw new Error(await getEdgeFunctionErrorMessage(progRes.error, `Failed to generate slide ${i + 1}.`));
           }
-          const progPayload = progRes.data as { slide?: unknown; theme?: unknown; error?: string };
+          const progPayload = progRes.data as { slide?: unknown; theme?: unknown; error?: string; lectureTitle?: string };
           if (progPayload?.error) throw new Error(progPayload.error);
           if (progPayload?.slide) {
             const s = progPayload.slide as Record<string, unknown>;
@@ -471,6 +477,12 @@ const Editor = () => {
               order: i,
             } as Slide);
             if (progPayload.theme) generatedTheme = progPayload.theme;
+            if (i === 0 && typeof progPayload.lectureTitle === 'string' && progPayload.lectureTitle.trim()) {
+              setLectureTitle(progPayload.lectureTitle.trim().slice(0, 200));
+            } else if (i === 0) {
+              const tit = (s.content as { title?: string } | undefined)?.title;
+              if (typeof tit === 'string' && tit.trim()) setLectureTitle(tit.trim().slice(0, 200));
+            }
             setSandboxSlides(ensureSlidesDesignDefaults(accumulated.map((slide, idx) => ({ ...slide, order: idx }))));
             updateLastMessage(
               (planData.interpretation ? `**What I understood:** ${planData.interpretation}\n\n**My plan:** ${planData.plan}\n\n` : '') +
@@ -531,15 +543,24 @@ const Editor = () => {
           plan?: string;
           interpretation?: string;
           pendingSlideImages?: PendingSlideImage[];
+          lectureTitle?: string;
         };
         if (resData.error) throw new Error(resData.error);
         if (!resData?.slides?.length) throw new Error('No slides returned');
+
+        if (typeof resData.lectureTitle === 'string' && resData.lectureTitle.trim()) {
+          setLectureTitle(resData.lectureTitle.trim().slice(0, 200));
+        }
 
         processedSlides = (resData.slides as any[]).map((slide: any, index: number) => ({
           ...slide,
           id: slide.id || `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
           order: index,
         }));
+        if (!resData.lectureTitle?.trim() && processedSlides[0]?.type === 'title') {
+          const tit = (processedSlides[0].content as { title?: string } | undefined)?.title;
+          if (typeof tit === 'string' && tit.trim()) setLectureTitle(tit.trim().slice(0, 200));
+        }
       }
 
       let normalizedSlides = ensureSlidesDesignDefaults(processedSlides);
@@ -842,6 +863,7 @@ const Editor = () => {
     if (settings?.designStyleId) setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
     const lm = (lecture as { lecture_mode?: string }).lecture_mode;
     setLectureMode(lm === "webinar" ? "webinar" : "education");
+    editorErrorHomeRef.current = lm === "webinar" ? "/webinar/dashboard" : "/dashboard";
     const wc = settings?.webinarCta as { label?: string; url?: string } | undefined;
     setWebinarCtaLabel(typeof wc?.label === "string" ? wc.label : "");
     setWebinarCtaUrl(typeof wc?.url === "string" ? wc.url : "");
@@ -873,7 +895,7 @@ const Editor = () => {
           applyLectureData(lecture);
         } else {
           toast.error('Lecture not found');
-          navigate("/dashboard", { replace: true });
+          navigate(editorErrorHomeRef.current, { replace: true });
         }
       } catch (error) {
         if (cancelled) return;
@@ -882,7 +904,7 @@ const Editor = () => {
           ? 'Lecture load timed out. Please try again.'
           : 'Failed to load lecture';
         toast.error(msg);
-        navigate("/dashboard", { replace: true });
+        navigate(editorErrorHomeRef.current, { replace: true });
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -1097,81 +1119,6 @@ const Editor = () => {
     ));
     setSandboxSlides([]); // so display uses slides (edited version)
     setHasChanges(true);
-  };
-
-  const handleSingleSlideAIContent = (content: SlideContent) => {
-    // Check if AI also generated design properties (like background image)
-    const contentWithDesign = content as SlideContent & { _generatedDesign?: Partial<SlideDesign> };
-    const generatedDesign = contentWithDesign._generatedDesign;
-    
-    // Remove the internal _generatedDesign field before saving content
-    const cleanContent = { ...content };
-    delete (cleanContent as any)._generatedDesign;
-    
-    // Update both content and design if needed
-    setSlides(slides.map((slide, index) => {
-      if (index !== currentSlideIndex) return slide;
-      
-      const updatedSlide = { ...slide, content: cleanContent };
-      
-      // Merge generated design (like overlay image) with existing design
-      if (generatedDesign) {
-        updatedSlide.design = {
-          ...slide.design,
-          ...generatedDesign,
-        };
-      }
-      
-      return updatedSlide;
-    }));
-    setHasChanges(true);
-  };
-
-  const handleInlineMagicWand = async (mode: "shorter" | "quiz") => {
-    if (!hasAITokens(1)) {
-      setShowOutOfCreditsModal(true);
-      return;
-    }
-    const cs = currentSlide?.content as Record<string, unknown> | undefined;
-    const snippet = String(cs?.title ?? cs?.question ?? cs?.text ?? "").trim();
-    if (!snippet) {
-      toast.error("Add text on this slide first.");
-      return;
-    }
-    setIsGenerating(true);
-    try {
-      const { data: { session }, error: se } = await supabase.auth.refreshSession();
-      if (se || !session) throw new Error("Please sign in to use AI.");
-      const slideType = mode === "quiz" ? "quiz" : "content";
-      const instruction =
-        mode === "shorter"
-          ? "Rewrite shorter and clearer in the same language."
-          : "Turn into one concise multiple-choice quiz with 4 options and correctAnswer index.";
-      const res = await supabase.functions.invoke("generate-slides", {
-        body: {
-          lectureMode,
-          singleSlide: {
-            type: slideType,
-            prompt: `${instruction}\n\n${snippet.slice(0, 800)}`,
-            style: "professional",
-            includeImage: false,
-          },
-          skipImages: true,
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (res.error) throw new Error(await getEdgeFunctionErrorMessage(res.error, "AI edit failed."));
-      const payload = res.data as { slides?: { content?: SlideContent }[]; error?: string };
-      if (payload?.error) throw new Error(payload.error);
-      const newContent = payload?.slides?.[0]?.content;
-      if (!newContent) throw new Error("No content returned.");
-      handleSingleSlideAIContent(newContent);
-      toast.success("Slide updated");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "AI edit failed.");
-    } finally {
-      setIsGenerating(false);
-    }
   };
 
   const updateSlideDesign = (design: SlideDesign) => {
@@ -1396,49 +1343,45 @@ const Editor = () => {
               ? isConstrainedViewport
                 ? 'w-[min(320px,22vw)] opacity-100'
                 : 'w-[min(360px,26vw)] opacity-100'
-              : 'w-52 opacity-100'
+              : 'w-64 opacity-100'
           }`}
         >
-          {/* Slides list vs AI chat — radiogroup so both options read as equal, tappable choices */}
+          {/* Slides list vs AI chat */}
           <div className="flex-shrink-0 p-2.5 pb-2">
-            <p
-              id="editor-left-panel-heading"
-              className="text-[11px] font-medium text-foreground/85 mb-2 px-0.5 leading-snug"
-            >
-              Show your slide list or the AI assistant below
-            </p>
             <div
               className="flex rounded-xl bg-muted/70 p-1 gap-1 ring-1 ring-border/50 shadow-sm"
               role="radiogroup"
-              aria-labelledby="editor-left-panel-heading"
+              aria-label="Choose slide list or AI assistant"
             >
               <button
                 type="button"
                 role="radio"
                 aria-checked={!isAIPanelOpen}
+                title="Slide list and add slide"
                 onClick={() => setIsAIPanelOpen(false)}
-                className={`flex flex-1 items-center justify-center gap-2 py-2.5 px-2 sm:px-3 rounded-lg text-sm font-semibold transition-all min-h-[44px] border ${
+                className={`flex flex-1 flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 px-1.5 sm:px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[44px] border ${
                   !isAIPanelOpen
                     ? "bg-background text-foreground shadow-sm border-border/60"
                     : "bg-muted/40 text-foreground/85 border-transparent hover:bg-muted/70 hover:border-border/40"
                 }`}
               >
                 <Plus className="w-4 h-4 shrink-0 opacity-90" aria-hidden />
-                <span className="truncate">Add slide</span>
+                <span className="text-center leading-tight">Slides</span>
               </button>
               <button
                 type="button"
                 role="radio"
                 aria-checked={isAIPanelOpen}
+                title="AI Assistant"
                 onClick={() => setIsAIPanelOpen(true)}
-                className={`flex flex-1 items-center justify-center gap-2 py-2.5 px-2 sm:px-3 rounded-lg text-sm font-semibold transition-all min-h-[44px] border ${
+                className={`flex flex-1 flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 px-1.5 sm:px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[44px] border ${
                   isAIPanelOpen
                     ? "bg-background text-foreground shadow-sm border-border/60"
                     : "bg-muted/40 text-foreground/85 border-transparent hover:bg-muted/70 hover:border-border/40"
                 }`}
               >
                 <Sparkles className="w-4 h-4 shrink-0 text-primary opacity-90" aria-hidden />
-                <span className="truncate">AI Assistant</span>
+                <span className="text-center leading-tight">AI</span>
               </button>
             </div>
           </div>
@@ -1489,7 +1432,8 @@ const Editor = () => {
                 <button
                   type="button"
                   onClick={() => setShowAddSlidePicker(true)}
-                  className="w-full flex items-center justify-center gap-2 p-4 mb-2 min-h-[44px] rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 text-primary text-sm font-semibold transition-all"
+                  disabled={slidesGenerationLocked}
+                  className="w-full flex items-center justify-center gap-2 p-4 mb-2 min-h-[44px] rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 text-primary text-sm font-semibold transition-all disabled:opacity-50 disabled:pointer-events-none"
                 >
                   <Plus className="w-5 h-5 flex-shrink-0" />
                   Add slide
@@ -1511,6 +1455,7 @@ const Editor = () => {
                           index={index}
                           isSelected={index === currentSlideIndex}
                           onClick={() => setCurrentSlideIndex(index)}
+                          dragDisabled={slidesGenerationLocked}
                         />
                       ))}
                     </div>
@@ -1523,6 +1468,18 @@ const Editor = () => {
 
         {/* Main Editor - Canvas + Fixed Bottom Toolbar */}
         <div className="flex-1 flex flex-col overflow-hidden bg-muted/50 relative">
+          {slidesGenerationLocked && displaySlides.length > 0 && (
+            <div
+              className="flex-shrink-0 z-20 flex items-center justify-center gap-2 px-3 py-2.5 bg-amber-500/15 border-b border-amber-500/25 text-sm text-foreground"
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 className="w-4 h-4 animate-spin text-amber-700 dark:text-amber-400 shrink-0" aria-hidden />
+              <span className="text-center leading-snug">
+                Creating slides — editing is paused · יוצרים שקופיות — העריכה מושבתת זמנית
+              </span>
+            </div>
+          )}
           {/* Canvas: scroll-based (no phone) or single-slide (with phone) - allowContentScroll for WYSIWYG with Present */}
           <div ref={slidePreviewRef} className="flex-1 overflow-hidden flex gap-6 min-h-0 relative">
             <BuilderPreviewProvider allowContentScroll>
@@ -1569,7 +1526,11 @@ const Editor = () => {
                               <SlideRenderer
                                 key={slide.id}
                                 slide={slide}
-                                isEditing={index === currentSlideIndex && !simulationData ? isEditing : false}
+                                isEditing={
+                                  index === currentSlideIndex && !simulationData && !slidesGenerationLocked
+                                    ? isEditing
+                                    : false
+                                }
                                 showResults={index === currentSlideIndex ? (showResults || !!simulationData) : false}
                                 onUpdateContent={updateSlideContent}
                                 liveResults={index === currentSlideIndex ? simulationData : undefined}
@@ -1587,7 +1548,11 @@ const Editor = () => {
                             <SlideRenderer
                               key={slide.id}
                               slide={slide}
-                              isEditing={index === currentSlideIndex && !simulationData ? isEditing : false}
+                              isEditing={
+                                index === currentSlideIndex && !simulationData && !slidesGenerationLocked
+                                  ? isEditing
+                                  : false
+                              }
                               showResults={index === currentSlideIndex ? (showResults || !!simulationData) : false}
                               onUpdateContent={updateSlideContent}
                               liveResults={index === currentSlideIndex ? simulationData : undefined}
@@ -1644,40 +1609,21 @@ const Editor = () => {
                   <Eye className="w-4 h-4" />
                   View
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isGenerating}
-                  onClick={() => void handleInlineMagicWand("shorter")}
-                  title="AI: shorten main text"
-                  className="hidden sm:inline-flex gap-1"
-                >
-                  <Wand2 className="w-3.5 h-3.5" />
-                  Shorten
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isGenerating}
-                  onClick={() => void handleInlineMagicWand("quiz")}
-                  title="AI: turn into quiz"
-                  className="hidden md:inline-flex gap-1"
-                >
-                  <Wand2 className="w-3.5 h-3.5" />
-                  To quiz
-                </Button>
                 <div className="w-px h-6 bg-border" />
 
-                <AnimateButton
-                  slide={currentSlide}
-                  onSimulationData={setSimulationData}
-                  hasSimulationData={!!simulationData}
-                />
+                <div className={slidesGenerationLocked ? "pointer-events-none opacity-50" : ""}>
+                  <AnimateButton
+                    slide={currentSlide}
+                    onSimulationData={setSimulationData}
+                    hasSimulationData={!!simulationData}
+                  />
+                </div>
 
                 <Button
                   variant="secondary"
                   size="default"
                   onClick={() => setIsAIPanelOpen(true)}
+                  disabled={slidesGenerationLocked}
                   className="gap-2 border-primary/30 bg-primary/5 hover:bg-primary/10 text-primary font-medium"
                 >
                   <Wand2 className="w-4 h-4" />
@@ -1687,6 +1633,7 @@ const Editor = () => {
                   variant="outline"
                   size="default"
                   onClick={() => setShowAddSlidePicker(true)}
+                  disabled={slidesGenerationLocked}
                   className="gap-2 font-medium"
                 >
                   <Plus className="w-5 h-5" />
@@ -1710,7 +1657,7 @@ const Editor = () => {
                 size="sm"
                 className="text-destructive hover:text-destructive"
                 onClick={deleteSlide}
-                disabled={slides.length <= 1}
+                disabled={slides.length <= 1 || slidesGenerationLocked}
               >
                 <Trash2 className="w-4 h-4" />
                 Delete

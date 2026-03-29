@@ -86,6 +86,12 @@ interface Slide {
   layout?: string;
 }
 
+/** Planner output from the model (validated server-side against commands). */
+interface PlannerTask {
+  targetSlideNumbers?: number[];
+  intent?: string;
+}
+
 // =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
@@ -423,8 +429,10 @@ When user asks to move MULTIPLE slides (e.g. "move the 4 quiz slides to the end"
 
 ### COMPOSITE REQUESTS - One message, multiple actions
 Parse the user message for multiple distinct requests (e.g. "slide X do A, slide Y do B, create slide about Z"). Return one command per distinct request. You can return up to 10 commands.
+Also return a **tasks** array in your JSON: one task per distinct sub-request, each with **targetSlideNumbers** (1-based slides you will touch) and **intent** (short). Every slide number in tasks must have at least one command with matching slideIndex (slideIndex = slideNumber − 1).
 Example - User: "בשקופית 2 שנה את התמונה, בשקופית 4 הוסף תמונה של כריש מימין, וצור לי שקופית חדשה על מלחמת האזרחים"
 → Return 3 commands: update_slide slideIndex 1 (imagePrompt), update_slide slideIndex 3 (imagePrompt + imagePosition), insert_slide slideIndex slides.length (content about Civil War).
+→ tasks: [{ "targetSlideNumbers": [2], "intent": "change image slide 2" }, { "targetSlideNumbers": [4], "intent": "shark image right" }, { "targetSlideNumbers": [], "intent": "new Civil War slide" }]
 
 ## SLIDE NUMBER MAPPING (CRITICAL)
 - Each slide has "slideNumber" (1-based) and "index" (0-based). User says "slide 5" / "שקופית 5" / "בשקופית מספר 5" → Find slide with slideNumber: 5 → use slideIndex: 4 (slideIndex = slideNumber - 1).
@@ -608,7 +616,8 @@ async function callAI(
   originalPrompt?: string,
   visionImages: VisionImage[] = [],
   lectureMode: "education" | "webinar" = "education",
-): Promise<{ responseMessage: string; commands: any[]; reasoning?: string }> {
+  retryHint?: string,
+): Promise<{ responseMessage: string; commands: any[]; reasoning?: string; tasks?: PlannerTask[] }> {
   const apiKey = requireGeminiApiKey();
 
   const systemPrompt = buildSystemPrompt(
@@ -626,8 +635,9 @@ async function callAI(
 
   const jsonInstruction = `You must respond with a single JSON object matching this TypeScript type:
 {
-  "reasoning": string;  // REQUIRED: 1-2 sentences based ONLY on the CURRENT user message (the latest request)—what you understood and what you will do. Do NOT include tasks from previous messages.
-  "responseMessage": string;
+  "reasoning": string;  // REQUIRED: 1-2 sentences based ONLY on the CURRENT user message—what you understood and what you will do.
+  "tasks": { "targetSlideNumbers": number[]; "intent": string }[];  // REQUIRED: one entry per distinct sub-request; list every 1-based slide number you will change (empty array if only chatting).
+  "responseMessage": string;  // Brief tone note only; the server will append factual "what was applied". Do NOT claim slides were updated unless your commands actually target those slideIndex values.
   "commands": {
     "action": "update_slide" | "insert_slide" | "delete_slide" | "duplicate_slide" | "reorder_slide";
     "slideIndex": number;
@@ -655,6 +665,9 @@ Do not include any markdown, commentary, or extra text. Return ONLY the JSON.`;
 
   const lastMessageParts: { text?: string; inlineData?: { mimeType: string; data: string } }[] = [];
   let requestText = `User request:\n${message}\n\n`;
+  if (retryHint) {
+    requestText += `Server validation (you must fix this in your JSON):\n${retryHint}\n\n`;
+  }
   if (visionImages.length > 0) {
     requestText += `[We've included the actual image(s) for the slide(s) you need to edit. Analyze each image and create imagePrompt that applies the user's requested change while keeping the scene/structure.]\n\n`;
   }
@@ -704,10 +717,17 @@ Do not include any markdown, commentary, or extra text. Return ONLY the JSON.`;
         const parsed = JSON.parse(contentText);
         if (parsed.commands && Array.isArray(parsed.commands)) {
           console.log(`✅ Parsed ${parsed.commands.length} commands from Gemini JSON`);
+          const tasks: PlannerTask[] = Array.isArray(parsed.tasks)
+            ? parsed.tasks.map((t: any) => ({
+              targetSlideNumbers: Array.isArray(t?.targetSlideNumbers) ? t.targetSlideNumbers : [],
+              intent: typeof t?.intent === "string" ? t.intent : "",
+            }))
+            : [];
           return {
             responseMessage: parsed.responseMessage || (isHe ? "בוצע ✅" : "Done ✅"),
             commands: parsed.commands,
             reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning.trim() : undefined,
+            tasks,
           };
         }
       } catch (e) {
@@ -721,6 +741,7 @@ Do not include any markdown, commentary, or extra text. Return ONLY the JSON.`;
         ? "לא הצלחתי להבין את הבקשה. אפשר לנסח אחרת? 🤔"
         : "I couldn't understand the request. Could you rephrase? 🤔",
       commands: [],
+      tasks: [],
     };
   } catch (e) {
     if (
@@ -1175,29 +1196,81 @@ async function consumeCredits(
 // SLIDE NUMBER VALIDATION - Correct off-by-one when user explicitly says "slide X"
 // =============================================================================
 
-/** Extract explicit 1-based slide numbers from user message (e.g. "slide 5", "שקופית 5"). */
-function extractExplicitSlideNumbers(message: string): number[] {
-  const nums: number[] = [];
-  const normalized = message.toLowerCase();
-  // "slide 5", "slide5", "שקופית 5", "בשקופית מספר 5", "בשקופית 5"
-  const patterns = [
-    /\b(?:slide|שקופית)\s*(?:מספר\s*)?(\d+)/gi,
-    /(?:slide|שקופית)(\d+)/gi,
-    /\b(?:the\s+)?(\d+)(?:st|nd|rd|th)\s+slide/gi,
+const MAX_EXPLICIT_SLIDE_NUMBERS = 15;
+
+/** Collect (position, slide number) pairs, sort by position, dedupe preserving first mention order. */
+function extractExplicitSlideNumbersInOrder(message: string): number[] {
+  const matches: { pos: number; n: number }[] = [];
+  const pushGroup = (m: RegExpExecArray, groups: number[]) => {
+    const pos = m.index;
+    for (const g of groups) {
+      const n = parseInt(String(m[g]), 10);
+      if (n >= 1 && n <= 50) matches.push({ pos, n });
+    }
+  };
+
+  const pairRes: RegExp[] = [
+    /\bslides?\s+(\d+)\s*(?:,|and|&|\/|ו(?:גם)?)\s+(\d+)\b/gi,
+    /\bslides?\s+(\d+)\s+ו-?\s*(\d+)\b/gi,
+    /שקופיות\s+(\d+)\s*ו-?\s*(\d+)/gi,
+    /שקופית\s+(\d+)\s*ו-?\s*(?:שקופית\s+)?(\d+)/gi,
+    /בין\s+שקופית\s+(\d+)\s+ל-?\s*(\d+)/gi,
+    /(?:slide|שקופית)\s*(\d+)\s*(?:,|and|&|\/|ו(?:גם)?)\s*(?:slide|שקופית)?\s*(\d+)/gi,
   ];
-  for (const p of patterns) {
-    let m;
-    while ((m = p.exec(normalized)) !== null) {
-      const n = parseInt(m[1], 10);
-      if (n >= 1 && n <= 50 && !nums.includes(n)) nums.push(n);
+  for (const re of pairRes) {
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(message)) !== null) {
+      pushGroup(m, [1, 2]);
     }
   }
-  return nums;
+
+  const normalized = message.toLowerCase();
+  const singlePatterns = [
+    /\b(?:slide|שקופית|שקופיות)\s*(?:מספר\s*)?(\d+)/gi,
+    /(?:slide|שקופית)(\d+)/gi,
+    /\b(?:the\s+)?(\d+)(?:st|nd|rd|th)\s+slides?\b/gi,
+  ];
+  for (const p of singlePatterns) {
+    let m: RegExpExecArray | null;
+    p.lastIndex = 0;
+    while ((m = p.exec(normalized)) !== null) {
+      pushGroup(m, [1]);
+    }
+  }
+
+  matches.sort((a, b) => a.pos - b.pos || a.n - b.n);
+  const ordered: number[] = [];
+  const seen = new Set<number>();
+  for (const { n } of matches) {
+    if (!seen.has(n)) {
+      seen.add(n);
+      ordered.push(n);
+    }
+  }
+  return ordered.slice(0, MAX_EXPLICIT_SLIDE_NUMBERS);
+}
+
+/** Unique slide numbers mentioned (order not guaranteed — prefer extractExplicitSlideNumbersInOrder). */
+function extractExplicitSlideNumbers(message: string): number[] {
+  return [...extractExplicitSlideNumbersInOrder(message)];
+}
+
+function setsOfNumbersEqual(a: Set<number>, b: Set<number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+
+function hasStructuralSlideCommands(commands: any[]): boolean {
+  return commands.some((c) =>
+    c.action === "delete_slide" || c.action === "reorder_slide" || c.action === "duplicate_slide"
+  );
 }
 
 /** When user explicitly says "slide X" and we have one slide-modifying command with wrong slideIndex, correct it. */
 function correctSlideIndexIfMismatch(commands: any[], message: string, totalSlides: number): any[] {
-  const explicit = extractExplicitSlideNumbers(message);
+  const explicit = extractExplicitSlideNumbersInOrder(message);
   if (explicit.length !== 1) return commands;
 
   const expectedSlideIndex = explicit[0] - 1;
@@ -1216,6 +1289,174 @@ function correctSlideIndexIfMismatch(commands: any[], message: string, totalSlid
     );
   }
   return commands;
+}
+
+/**
+ * When the user names multiple slides and the model emits multiple update_slide commands with the wrong
+ * (or duplicate) slideIndex, remap command order → explicit slide order (1-based from message).
+ */
+function correctMultiUpdateSlideIndices(commands: any[], message: string, totalSlides: number): any[] {
+  const explicitOrdered = extractExplicitSlideNumbersInOrder(message);
+  const updateCmdIndices: number[] = [];
+  commands.forEach((c, i) => {
+    if (c.action === "update_slide") updateCmdIndices.push(i);
+  });
+  const updateCmds = updateCmdIndices.map((i) => commands[i]);
+
+  if (
+    hasStructuralSlideCommands(commands) ||
+    explicitOrdered.length < 2 ||
+    updateCmds.length !== explicitOrdered.length ||
+    !explicitOrdered.every((n) => n >= 1 && n <= totalSlides)
+  ) {
+    return commands;
+  }
+
+  const expectedSeq = explicitOrdered.map((n) => n - 1);
+  const actualSeq = updateCmds.map((c) => Number(c.slideIndex));
+  if (actualSeq.some((x) => !Number.isFinite(x))) return commands;
+
+  const expectedSet = new Set(expectedSeq);
+  const actualSet = new Set(actualSeq);
+  const allSameWrong = updateCmds.length > 1 && actualSet.size === 1;
+  const setMismatch = !setsOfNumbersEqual(expectedSet, actualSet);
+
+  if (!allSameWrong && !setMismatch) return commands;
+
+  const next = [...commands];
+  for (let k = 0; k < updateCmdIndices.length; k++) {
+    const cmdI = updateCmdIndices[k];
+    next[cmdI] = { ...next[cmdI], slideIndex: explicitOrdered[k] - 1 };
+  }
+  console.log(`🔧 Multi-slide update_slide remap → slides: ${explicitOrdered.join(", ")}`);
+  return next;
+}
+
+function correctSlideIndices(commands: any[], message: string, totalSlides: number): any[] {
+  const afterMulti = correctMultiUpdateSlideIndices(commands, message, totalSlides);
+  return correctSlideIndexIfMismatch(afterMulti, message, totalSlides);
+}
+
+// =============================================================================
+// Truthful diff + task validation (no false "done")
+// =============================================================================
+
+function slidePayloadForDiff(s: Slide): unknown {
+  return {
+    type: s.type,
+    content: s.content,
+    design: s.design,
+    layout: s.layout,
+    activitySettings: s.activitySettings,
+  };
+}
+
+function summarizeSlideDiff(before: Slide[], after: Slide[]): {
+  changedNumbers: number[];
+  inserted: number;
+  deleted: number;
+  reordered: boolean;
+} {
+  const inserted = Math.max(0, after.length - before.length);
+  const deleted = Math.max(0, before.length - after.length);
+  const changedNumbers: number[] = [];
+  const minLen = Math.min(before.length, after.length);
+  for (let i = 0; i < minLen; i++) {
+    if (JSON.stringify(slidePayloadForDiff(before[i])) !== JSON.stringify(slidePayloadForDiff(after[i]))) {
+      changedNumbers.push(i + 1);
+    }
+  }
+  let reordered = false;
+  if (before.length === after.length && before.length > 0) {
+    const idsBefore = before.map((s) => s.id).join("\0");
+    const idsAfter = after.map((s) => s.id).join("\0");
+    if (idsBefore !== idsAfter) reordered = true;
+  }
+  return { changedNumbers, inserted, deleted, reordered };
+}
+
+function buildFactualAppliedMessage(
+  language: "he" | "en",
+  d: ReturnType<typeof summarizeSlideDiff>,
+): string {
+  const isHe = language === "he";
+  const parts: string[] = [];
+  if (d.changedNumbers.length) {
+    parts.push(
+      isHe
+        ? `**בוצע בפועל:** עודכנו שקופיות: ${d.changedNumbers.join(", ")}.`
+        : `**Applied:** Updated slide(s): ${d.changedNumbers.join(", ")}.`,
+    );
+  }
+  if (d.inserted) {
+    parts.push(isHe ? `נוספו ${d.inserted} שקופיות.` : `Added ${d.inserted} slide(s).`);
+  }
+  if (d.deleted) {
+    parts.push(isHe ? `הוסרו ${d.deleted} שקופיות.` : `Removed ${d.deleted} slide(s).`);
+  }
+  if (d.reordered && (d.changedNumbers.length > 0 || d.inserted > 0 || d.deleted > 0)) {
+    parts.push(isHe ? `סדר השקופיות עודכן.` : `Slide order was updated.`);
+  } else if (d.reordered && d.changedNumbers.length === 0 && d.inserted === 0 && d.deleted === 0) {
+    parts.push(isHe ? `**בוצע בפועל:** סדר השקופיות עודכן.` : `**Applied:** Slide order was updated.`);
+  }
+  if (
+    d.changedNumbers.length === 0 &&
+    d.inserted === 0 &&
+    d.deleted === 0 &&
+    !d.reordered
+  ) {
+    parts.push(
+      isHe
+        ? "**בוצע בפועל:** לא זוהו שינויים בשקופיות (ייתכן שהבקשה לא יושמה, אינדקס שגוי, או שהתוכן כבר היה זהה)."
+        : "**Applied:** No slide changes were detected (the request may not have applied, indices may be wrong, or content was unchanged).",
+    );
+  }
+  return parts.join(" ");
+}
+
+function findTaskSlidesMissingCommands(
+  tasks: PlannerTask[] | undefined,
+  commands: any[],
+  totalSlides: number,
+): number[] {
+  if (!tasks?.length) return [];
+  const required = new Set<number>();
+  for (const t of tasks) {
+    const nums = t?.targetSlideNumbers;
+    if (!Array.isArray(nums)) continue;
+    for (const raw of nums) {
+      const n = typeof raw === "number" ? raw : parseInt(String(raw), 10);
+      if (n >= 1 && n <= totalSlides) required.add(n);
+    }
+  }
+  if (required.size === 0) return [];
+
+  const touched = new Set<number>();
+  for (const cmd of commands) {
+    if (!cmd || typeof cmd.slideIndex !== "number") continue;
+    const idx = cmd.slideIndex;
+    if (idx < 0 || idx >= totalSlides) continue;
+    const num = idx + 1;
+    if (cmd.action === "update_slide" || cmd.action === "delete_slide" || cmd.action === "duplicate_slide") {
+      touched.add(num);
+    }
+    if (cmd.action === "reorder_slide") {
+      touched.add(num);
+      if (typeof cmd.targetIndex === "number") {
+        const t = cmd.targetIndex + 1;
+        if (t >= 1 && t <= totalSlides) touched.add(t);
+      }
+    }
+    if (cmd.action === "insert_slide") {
+      touched.add(Math.min(num, totalSlides));
+    }
+  }
+
+  const missing: number[] = [];
+  for (const n of required) {
+    if (!touched.has(n)) missing.push(n);
+  }
+  return missing;
 }
 
 // =============================================================================
@@ -1320,8 +1561,8 @@ serve(async (req) => {
     // Vision: include slide images when user asks to change something IN the image
     const visionImages = getSlidesWithImagesForVision(safeSlides, message);
 
-    // Call AI
-    const aiResult = await callAI(
+    // Call AI (optional one retry if tasks promise slides that commands omit)
+    let aiResult = await callAI(
       message,
       safeSlides,
       safeIndex,
@@ -1333,6 +1574,31 @@ serve(async (req) => {
       lectureMode,
     );
 
+    const missingAfterFirst = findTaskSlidesMissingCommands(
+      aiResult.tasks,
+      aiResult.commands,
+      safeSlides.length,
+    );
+    if (missingAfterFirst.length > 0) {
+      const hint =
+        language === "he"
+          ? `חובה לכלול פקודות (למשל update_slide עם slideIndex נכון) עבור שקופיות מספר: ${missingAfterFirst.join(", ")} (מספור מ-1). ציינת אותן ב-tasks אבל אין פקודה שמיישמת אותן. החזר JSON מלא מתוקן עם reasoning, tasks, responseMessage, commands.`
+          : `You MUST include commands (e.g. update_slide with correct 0-based slideIndex) for slide number(s): ${missingAfterFirst.join(", ")} (1-based). They appear in tasks but no command applies them. Return full corrected JSON with reasoning, tasks, responseMessage, and commands.`;
+      console.log(`🔁 Retrying AI: missing slides ${missingAfterFirst.join(", ")}`);
+      aiResult = await callAI(
+        message,
+        safeSlides,
+        safeIndex,
+        language,
+        safeHistory,
+        userAiContext,
+        originalPrompt,
+        visionImages,
+        lectureMode,
+        hint,
+      );
+    }
+
     console.log(
       `🤖 AI response: "${aiResult.responseMessage.slice(0, 60)}..." | Commands: ${aiResult.commands.length}`,
     );
@@ -1340,13 +1606,13 @@ serve(async (req) => {
     // Execute commands if any
     let updatedSlides: Slide[] | null = null;
     let creditsConsumed = 0;
-    let outputMessage = aiResult.reasoning
-      ? `**What I understood:** ${aiResult.reasoning}\n\n${aiResult.responseMessage}`
-      : aiResult.responseMessage;
+    const reasoningBlock = aiResult.reasoning
+      ? `**What I understood:** ${aiResult.reasoning}\n\n`
+      : "";
+    let outputMessage = `${reasoningBlock}${aiResult.responseMessage}`;
 
     if (aiResult.commands.length > 0) {
-      // Apply slide number correction when user explicitly said "slide X" and AI used wrong index
-      let commandsToUse = correctSlideIndexIfMismatch(aiResult.commands, message, safeSlides.length);
+      let commandsToUse = correctSlideIndices(aiResult.commands, message, safeSlides.length);
 
       // Filter out any invalid commands
       let validCommands = commandsToUse.filter((cmd: any) => {
@@ -1380,7 +1646,7 @@ serve(async (req) => {
       });
 
       if (slideLimitMessage) {
-        outputMessage = `${aiResult.responseMessage}\n\n${slideLimitMessage}`;
+        outputMessage = `${reasoningBlock}${aiResult.responseMessage}\n\n${slideLimitMessage}`;
       }
 
       if (validCommands.length > 0) {
@@ -1438,6 +1704,20 @@ serve(async (req) => {
         } else {
           console.warn(`⚠️ Failed to deduct credits after execution: ${creditResult.error}`);
         }
+
+        const diff = summarizeSlideDiff(safeSlides, updatedSlides);
+        const factual = buildFactualAppliedMessage(language, diff);
+        outputMessage = `${reasoningBlock}${aiResult.responseMessage}\n\n${factual}`;
+      } else {
+        const factual = buildFactualAppliedMessage(language, {
+          changedNumbers: [],
+          inserted: 0,
+          deleted: 0,
+          reordered: false,
+        });
+        outputMessage = `${reasoningBlock}${aiResult.responseMessage}${
+          slideLimitMessage ? `\n\n${slideLimitMessage}` : ""
+        }\n\n${factual}`;
       }
     }
 

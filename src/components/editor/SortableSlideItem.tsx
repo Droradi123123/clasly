@@ -10,6 +10,8 @@ interface SortableSlideItemProps {
   index: number;
   isSelected: boolean;
   onClick: () => void;
+  /** When true, slide cannot be reordered (e.g. while AI is generating the deck). */
+  dragDisabled?: boolean;
 }
 
 export function SortableSlideItem({
@@ -17,6 +19,7 @@ export function SortableSlideItem({
   index,
   isSelected,
   onClick,
+  dragDisabled = false,
 }: SortableSlideItemProps) {
   const {
     attributes,
@@ -25,7 +28,7 @@ export function SortableSlideItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: slide.id });
+  } = useSortable({ id: slide.id, disabled: dragDisabled });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -66,9 +69,14 @@ export function SortableSlideItem({
         <div className="flex items-center gap-1.5">
           <div
             {...attributes}
-            {...listeners}
-            className="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-muted rounded"
+            {...(dragDisabled ? {} : listeners)}
+            className={
+              dragDisabled
+                ? "p-0.5 -ml-1 rounded opacity-40 cursor-not-allowed"
+                : "cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-muted rounded"
+            }
             onClick={(e) => e.stopPropagation()}
+            aria-hidden={dragDisabled}
           >
             <GripVertical className="w-3 h-3 text-muted-foreground/50" />
           </div>

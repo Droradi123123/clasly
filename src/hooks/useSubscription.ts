@@ -9,7 +9,11 @@ import type {
   SubscriptionPlan,
   UserCredits,
 } from "@/types/subscription";
-import { PLAN_FEATURES } from "@/types/subscription";
+import {
+  PLAN_FEATURES,
+  normalizePlanNameForFeatures,
+  type PlanProduct,
+} from "@/types/subscription";
 
 export function useSubscription(): SubscriptionState & SubscriptionHelpers {
   const { user, isLoading: authLoading } = useAuth();
@@ -149,14 +153,25 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
 
   // Compute helper values
   const planName = state.plan?.name || "Free";
-  const isFree = planName === "Free";
-  const isStandard = planName === "Standard";
-  const isPro = planName === "Pro";
+  const featureTierName = normalizePlanNameForFeatures(planName);
+  const planProduct: PlanProduct =
+    state.plan?.product === "webinar" ? "webinar" : "education";
+  const isFree = featureTierName === "Free";
+  const isStandard = featureTierName === "Standard";
+  const isPro = featureTierName === "Pro";
 
-  const canUse = useCallback((feature: FeatureKey): boolean => {
-    const allowedFeatures = PLAN_FEATURES[planName] || [];
-    return allowedFeatures.includes(feature);
-  }, [planName]);
+  const isEducationFree = planProduct === "education" && isFree;
+  const canAccessWebinarDashboard =
+    planProduct === "webinar" || isEducationFree;
+  const canAccessEducatorDashboard = planProduct === "education";
+
+  const canUse = useCallback(
+    (feature: FeatureKey): boolean => {
+      const allowedFeatures = PLAN_FEATURES[featureTierName] || [];
+      return allowedFeatures.includes(feature);
+    },
+    [featureTierName]
+  );
 
   const hasAITokens = useCallback((amount: number = 1): boolean => {
     return (state.credits?.ai_tokens_balance ?? 0) >= amount;
@@ -172,6 +187,11 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
     maxSlides: state.plan?.max_slides ?? 5,
     aiTokensRemaining: state.credits?.ai_tokens_balance ?? 0,
     planName,
+    featureTierName,
+    planProduct,
+    canAccessWebinarDashboard,
+    canAccessEducatorDashboard,
+    currentPlanId: state.plan?.id ?? null,
     isSubLoading: state.isLoading,
   };
 }

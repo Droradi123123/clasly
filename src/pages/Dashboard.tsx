@@ -106,6 +106,11 @@ const Dashboard = () => {
 
   const queryClient = useQueryClient();
   const {
+    canAccessWebinarDashboard,
+    canAccessEducatorDashboard,
+    isSubLoading,
+  } = useSubscriptionContext();
+  const {
     data,
     isLoading,
     fetchNextPage,
@@ -157,6 +162,13 @@ const Dashboard = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (!user || isSubLoading || isWebinar) return;
+    if (!canAccessEducatorDashboard) {
+      navigate("/webinar/dashboard", { replace: true });
+    }
+  }, [user, isSubLoading, isWebinar, canAccessEducatorDashboard, navigate]);
+
   const resetCreateDialog = () => {
     setCreateMode('choose');
     setNewLectureTitle("");
@@ -182,7 +194,8 @@ const Dashboard = () => {
       queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
       resetCreateDialog();
       setIsCreateOpen(false);
-      navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
+      const edQ = isWebinar ? "?track=webinar" : "";
+      navigate(`/editor/${newLecture.id}${edQ}`, { state: { preloadedLecture: newLecture } });
     } catch (error) {
       console.error('Error creating lecture:', error);
       toast.error('Failed to create lecture');
@@ -217,7 +230,8 @@ const Dashboard = () => {
       const newLecture = await duplicateLecture(lectureId);
       queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
       toast.success("Lecture duplicated. Only content was copied; analytics are not included.");
-      navigate(`/editor/${newLecture.id}`, { state: { preloadedLecture: newLecture } });
+      const edQ = isWebinar ? "?track=webinar" : "";
+      navigate(`/editor/${newLecture.id}${edQ}`, { state: { preloadedLecture: newLecture } });
     } catch (error) {
       console.error("Duplicate failed:", error);
       toast.error("Failed to duplicate lecture");
@@ -305,10 +319,55 @@ const Dashboard = () => {
     );
   }
 
+  if (!isSubLoading && isWebinar && !canAccessWebinarDashboard) {
+    return (
+      <div className="min-h-screen bg-background">
+        <DocumentHead
+          title="Clasly for Webinar – Upgrade"
+          description="Webinar is a separate product from Clasly for Educator."
+          path="/webinar/dashboard"
+        />
+        <Header />
+        <main className="pt-32 pb-20 px-4">
+          <div className="container mx-auto max-w-lg">
+            <Card className="border-border/60">
+              <CardContent className="p-8 space-y-4 text-center">
+                <h1 className="text-2xl font-display font-bold text-foreground">
+                  Webinars need a webinar plan
+                </h1>
+                <p className="text-muted-foreground">
+                  Your subscription is <strong>For Educator</strong>. Live webinar
+                  decks and the webinar dashboard are part of{" "}
+                  <strong>Clasly for Webinar</strong>, which is billed separately.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+                  <Button variant="hero" onClick={() => navigate("/webinar/pricing")}>
+                    View webinar pricing
+                  </Button>
+                  <Button variant="outline" onClick={() => navigate("/dashboard")}>
+                    Go to educator dashboard
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!isSubLoading && !isWebinar && !canAccessEducatorDashboard) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <DocumentHead
-        title={isWebinar ? "Webinars – Clasly" : "Dashboard – Clasly"}
+        title={isWebinar ? "Clasly for Webinar – Dashboard" : "Clasly for Educator – Dashboard"}
         description={
           isWebinar
             ? "Your interactive webinar decks and live sessions."
@@ -686,7 +745,13 @@ const Dashboard = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => navigate(`/editor/${lecture.id}`)}
+                        onClick={() =>
+                          navigate(
+                            `/editor/${lecture.id}${
+                              lecture.lecture_mode === "webinar" ? "?track=webinar" : ""
+                            }`,
+                          )
+                        }
                       >
                         <Edit3 className="w-4 h-4" />
                         Edit

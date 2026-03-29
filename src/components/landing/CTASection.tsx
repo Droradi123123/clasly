@@ -60,10 +60,10 @@ export default function CTASection({ variant = "default" }: CTASectionProps) {
                 <Sparkles className="w-5 h-5" />
                 Start Creating Free
               </Button>
-              <Button 
-                size="xl" 
+              <Button
+                size="xl"
                 className="bg-white/95 text-primary hover:bg-white border-2 border-white font-medium"
-                onClick={() => navigate("/pricing")}
+                onClick={() => navigate(variant === "webinar" ? "/webinar/pricing" : "/pricing")}
               >
                 View Plans
                 <ArrowRight className="w-5 h-5" />
@@ -72,9 +72,10 @@ export default function CTASection({ variant = "default" }: CTASectionProps) {
           </div>
         </motion.div>
       </div>
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)} 
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        signInProduct={variant === "webinar" ? "webinar" : "education"}
       />
     </section>
   );

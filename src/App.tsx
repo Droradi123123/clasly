@@ -90,6 +90,7 @@ const App = () => {
               <Route path="/join" element={<Join />} />
               <Route path="/student/:lectureCode" element={<Suspense fallback={<PageLoader />}><Student /></Suspense>} />
               <Route path="/pricing" element={<Pricing />} />
+              <Route path="/webinar/pricing" element={<Pricing />} />
               <Route path="/billing" element={<Billing />} />
               <Route path="/builder" element={<BuilderRedirect />} />
               <Route path="/continue-on-desktop" element={<ContinueOnDesktop />} />

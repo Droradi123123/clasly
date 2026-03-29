@@ -28,9 +28,9 @@ const Header = () => {
   const location = useLocation();
   const isHome = location.pathname === "/";
   const isWebinar = location.pathname === "/webinar";
-  const dashboardPath = location.pathname.startsWith("/webinar/") || location.pathname === "/webinar"
-    ? "/webinar/dashboard"
-    : "/dashboard";
+  const isWebinarProductContext =
+    location.pathname === "/webinar" || location.pathname.startsWith("/webinar/");
+  const dashboardPath = isWebinarProductContext ? "/webinar/dashboard" : "/dashboard";
   const { user, isLoading, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -39,7 +39,9 @@ const Header = () => {
   // Subscription data
   const { 
     planName, 
-    isFree, 
+    isFree,
+    isPro,
+    isStandard,
     aiTokensRemaining, 
     isLoading: isSubLoading,
     plan
@@ -62,8 +64,8 @@ const Header = () => {
   };
 
   const getPlanBadgeVariant = () => {
-    if (planName === "Pro") return "default";
-    if (planName === "Standard") return "secondary";
+    if (isPro) return "default";
+    if (isStandard) return "secondary";
     return "outline";
   };
 
@@ -79,20 +81,20 @@ const Header = () => {
           </Link>
 
           <nav className="hidden md:flex items-center gap-6">
-            <Link 
-              to="/" 
-              className={`text-sm font-medium transition-colors hover:text-primary ${isHome ? 'text-primary' : 'text-muted-foreground'}`}
+            <Link
+              to="/"
+              className={`text-sm font-medium transition-colors hover:text-primary ${isHome ? "text-primary" : "text-muted-foreground"}`}
             >
-              Home
+              For Educator
             </Link>
-            <Link 
-              to="/webinar" 
-              className={`text-sm font-medium transition-colors hover:text-primary ${isWebinar ? 'text-primary' : 'text-muted-foreground'}`}
+            <Link
+              to="/webinar"
+              className={`text-sm font-medium transition-colors hover:text-primary ${isWebinar ? "text-primary" : "text-muted-foreground"}`}
             >
-              Clasly for Webinars
+              For Webinar
             </Link>
-            <Link 
-              to="/pricing" 
+            <Link
+              to={isWebinarProductContext ? "/webinar/pricing" : "/pricing"}
               className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
             >
               Pricing
@@ -180,7 +182,7 @@ const Header = () => {
                         </span>
                       </div>
                       <Badge variant={getPlanBadgeVariant()} className="shrink-0">
-                        {planName === "Pro" && <Crown className="w-3 h-3 mr-1" />}
+                        {isPro && <Crown className="w-3 h-3 mr-1" />}
                         {planName}
                       </Badge>
                     </div>
@@ -292,9 +294,10 @@ const Header = () => {
         </div>
       </header>
 
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)} 
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        signInProduct={isWebinarProductContext ? "webinar" : "education"}
       />
     </>
   );

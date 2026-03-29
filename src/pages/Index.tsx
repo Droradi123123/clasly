@@ -61,7 +61,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
       <DocumentHead
-        title="Clasly – AI Interactive Presentations & Live Lectures"
+        title="Clasly for Educator – AI Interactive Lectures & Live Classes"
         description="AI builds interactive presentations in seconds. Create live lectures, quizzes, polls—students join from their phones."
         path="/"
       />

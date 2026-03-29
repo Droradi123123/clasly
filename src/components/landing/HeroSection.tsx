@@ -652,8 +652,8 @@ export default function HeroSection({ onGenerate, onSeeExample, variant = "defau
       </div>
 
       {/* Auth Modal */}
-      <AuthModal 
-        isOpen={showAuthModal} 
+      <AuthModal
+        isOpen={showAuthModal}
         onClose={() => {
           setShowAuthModal(false);
           localStorage.removeItem('clasly_pending_prompt');
@@ -664,7 +664,8 @@ export default function HeroSection({ onGenerate, onSeeExample, variant = "defau
         onSuccess={handleAuthSuccess}
         promptText={pendingPrompt}
         redirectTo="builder"
-        builderTrack={isWebinar ? 'webinar' : 'education'}
+        builderTrack={isWebinar ? "webinar" : "education"}
+        signInProduct={isWebinar ? "webinar" : "education"}
       />
     </section>
   );

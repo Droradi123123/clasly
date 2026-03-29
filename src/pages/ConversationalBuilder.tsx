@@ -59,6 +59,11 @@ const ConversationalBuilder: React.FC = () => {
   const pendingPrompt = localStorage.getItem('clasly_pending_prompt') || '';
   const initialPrompt = urlPrompt || pendingPrompt;
   const contentMode = (searchParams.get('mode') || 'interactive') as 'interactive' | 'with_content';
+  const builderTrack =
+    searchParams.get('track') === 'webinar' ||
+    localStorage.getItem('clasly_pending_track') === 'webinar'
+      ? ('webinar' as const)
+      : ('education' as const);
 
   // Optional: open builder from the editor with existing slides + a focused slide
   const editorSlideIndexParam = searchParams.get('slide');
@@ -467,11 +472,14 @@ const ConversationalBuilder: React.FC = () => {
       </div>
       
       {/* Auth Modal for unauthenticated users */}
-      <AuthModal 
-        isOpen={showAuthModal} 
+      <AuthModal
+        isOpen={showAuthModal}
         onClose={() => navigate('/')}
         onSuccess={() => setShowAuthModal(false)}
         promptText={initialPrompt}
+        redirectTo="builder"
+        builderTrack={builderTrack}
+        signInProduct={builderTrack}
       />
       <OutOfCreditsModal open={showOutOfCreditsModal} onOpenChange={setShowOutOfCreditsModal} />
     </div>

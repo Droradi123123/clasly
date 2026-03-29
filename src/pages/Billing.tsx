@@ -33,6 +33,10 @@ const Billing = () => {
     isLoading,
     planName,
     aiTokensRemaining,
+    isFree,
+    isPro,
+    isStandard,
+    planProduct,
   } = useSubscriptionContext();
   const [purchaseLoading, setPurchaseLoading] = useState<string | null>(null);
 
@@ -135,7 +139,9 @@ const Billing = () => {
   }
 
   // Free plan has 0 monthly refill; show balance vs 15 (one-time signup grant)
-  const aiTokensMax = (plan?.monthly_ai_tokens ?? 0) || (planName === "Free" ? 15 : (planName === "Standard" ? 100 : 250));
+  const aiTokensMax =
+    (plan?.monthly_ai_tokens ?? 0) ||
+    (isFree ? 15 : isStandard ? 100 : isPro ? 250 : 15);
   const aiTokensPercent = aiTokensMax > 0 ? Math.min((aiTokensRemaining / aiTokensMax) * 100, 100) : 0;
 
   return (
@@ -168,7 +174,7 @@ const Billing = () => {
                 <CardHeader className="flex flex-row items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-gradient-primary flex items-center justify-center">
-                      {planName === "Pro" ? (
+                      {isPro ? (
                         <Sparkles className="w-5 h-5 text-primary-foreground" />
                       ) : (
                         <Zap className="w-5 h-5 text-primary-foreground" />
@@ -183,8 +189,13 @@ const Billing = () => {
                       </p>
                     </div>
                   </div>
-                  <Button variant="outline" onClick={() => navigate("/pricing")}>
-                    {planName === "Free" ? "Upgrade" : "Change Plan"}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      navigate(planProduct === "webinar" ? "/webinar/pricing" : "/pricing")
+                    }
+                  >
+                    {isFree ? "Upgrade" : "Change Plan"}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </CardHeader>
@@ -234,7 +245,7 @@ const Billing = () => {
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Remaining</span>
                         <span className="font-medium">
-                          {aiTokensRemaining.toLocaleString()} / {planName === "Free" ? "15 (one-time)" : aiTokensMax.toLocaleString() + "/mo"}
+                          {aiTokensRemaining.toLocaleString()} / {isFree ? "15 (one-time)" : aiTokensMax.toLocaleString() + "/mo"}
                         </span>
                       </div>
                       <Progress value={aiTokensPercent} className="h-2" />
@@ -258,10 +269,10 @@ const Billing = () => {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Plus className="w-5 h-5" />
-                    {planName === "Free" ? "Buy credits" : "Buy more credits"}
+                    {isFree ? "Buy credits" : "Buy more credits"}
                   </CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    {planName === "Free"
+                    {isFree
                       ? "One-time purchase – get AI credits now (no subscription)."
                       : "Top up your balance – get credits now, in addition to your monthly plan."}
                   </p>
@@ -312,7 +323,7 @@ const Billing = () => {
             </motion.div>
 
             {/* Free Plan: also show upgrade CTA */}
-            {planName === "Free" && (
+            {isFree && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -330,7 +341,11 @@ const Billing = () => {
                           and access premium features.
                         </p>
                       </div>
-                      <Button onClick={() => navigate("/pricing")}>
+                      <Button
+                        onClick={() =>
+                          navigate(planProduct === "webinar" ? "/webinar/pricing" : "/pricing")
+                        }
+                      >
                         View Plans
                       </Button>
                     </div>

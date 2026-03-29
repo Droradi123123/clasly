@@ -1,6 +1,16 @@
 import type { Tables } from "@/integrations/supabase/types";
 
+export type PlanProduct = "education" | "webinar";
+
 export type SubscriptionPlan = Tables<"subscription_plans">;
+
+/** Maps display names like "Webinar Standard" to PLAN_FEATURES keys ("Standard"). */
+export function normalizePlanNameForFeatures(planName: string): string {
+  if (planName.startsWith("Webinar ")) {
+    return planName.slice("Webinar ".length);
+  }
+  return planName;
+}
 export type UserSubscription = Tables<"user_subscriptions">;
 export type UserCredits = Tables<"user_credits">;
 export type CreditTransaction = Tables<"credit_transactions">;
@@ -26,6 +36,14 @@ export interface SubscriptionHelpers {
   maxSlides: number | null;
   aiTokensRemaining: number;
   planName: string;
+  /** Tier key used for PLAN_FEATURES (strips "Webinar " prefix). */
+  featureTierName: string;
+  planProduct: PlanProduct;
+  /** Education Free may use the webinar dashboard as a trial; paid educator plans may not. */
+  canAccessWebinarDashboard: boolean;
+  /** Only education product line (including Free/Standard/Pro) may use /dashboard. */
+  canAccessEducatorDashboard: boolean;
+  currentPlanId: string | null;
   /** True while subscription/credits are loading - use to avoid showing "0 remaining" during fetch */
   isSubLoading: boolean;
 }
