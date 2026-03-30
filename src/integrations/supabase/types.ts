@@ -504,6 +504,10 @@ export type Database = {
         Args: { p_lecture_code: string }
         Returns: Database["public"]["Tables"]["lectures"]["Row"][]
       }
+      insert_lecture_lead: {
+        Args: { p_lecture_id: string; p_email: string; p_name: string }
+        Returns: string
+      }
     }
     Enums: {
       app_role: "admin" | "user"

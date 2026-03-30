@@ -87,6 +87,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 interface EditorTopToolbarProps {
   slide: Slide;
@@ -103,6 +104,8 @@ interface EditorTopToolbarProps {
   onPremiumColorBlocked?: () => void;
   /** Import presentation (PPT/PDF) - opens Import dialog */
   onImportClick?: () => void;
+  /** Optional controls shown at the start of the toolbar (e.g. webinar settings). */
+  leadingSlot?: React.ReactNode;
   /** When true, use compact padding (constrained viewport) */
   compact?: boolean;
   /** Participative slides: timer length and scoring */
@@ -135,6 +138,7 @@ export function EditorTopToolbar({
   onPremiumLogoBlocked,
   onPremiumColorBlocked,
   onImportClick,
+  className,
   compact = false,
   onUpdateActivitySettings,
 }: EditorTopToolbarProps) {
@@ -181,7 +185,12 @@ export function EditorTopToolbar({
   ] as const;
 
   return (
-    <div className="flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
+    <div
+      className={cn(
+        "flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm",
+        className
+      )}
+    >
       <div className={`flex items-center gap-1 overflow-x-auto ${compact ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
         {/* Text & layout — single compact control */}
         <div className="flex items-center pr-3 border-r border-border/50 shrink-0">

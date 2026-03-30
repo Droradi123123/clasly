@@ -129,6 +129,7 @@ const Present = () => {
     currentSlideIndex: number;
     ts: number;
     activityStartedAt: string | null;
+    presenterWallClockMs: number;
   } | null>(null);
   const slideContainerRef = useRef<HTMLDivElement | null>(null);
   const currentSlideIndexRef = useRef(currentSlideIndex);
@@ -165,6 +166,7 @@ const Present = () => {
             currentSlideIndex: pending.currentSlideIndex,
             ts: pending.ts,
             activityStartedAt: pending.activityStartedAt,
+            presenterWallClockMs: pending.presenterWallClockMs,
           },
         });
       }
@@ -227,7 +229,14 @@ const Present = () => {
 
   const sendSlideBroadcast = useCallback(
     (lectureId: string, newIndex: number, activityStartedAt: string | null) => {
-      const payload = { lectureId, currentSlideIndex: newIndex, ts: Date.now(), activityStartedAt };
+      const presenterWallClockMs = Date.now();
+      const payload = {
+        lectureId,
+        currentSlideIndex: newIndex,
+        ts: presenterWallClockMs,
+        activityStartedAt,
+        presenterWallClockMs,
+      };
       if (slideSyncReadyRef.current && slideSyncChannelRef.current) {
         slideSyncChannelRef.current.send({
           type: 'broadcast',
@@ -236,10 +245,11 @@ const Present = () => {
         });
         setTimeout(() => {
           if (slideSyncChannelRef.current) {
+            const t = Date.now();
             slideSyncChannelRef.current.send({
               type: 'broadcast',
               event: 'slide_changed',
-              payload: { ...payload, ts: Date.now() },
+              payload: { ...payload, ts: t, presenterWallClockMs: t },
             });
           }
         }, 90);

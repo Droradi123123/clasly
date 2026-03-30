@@ -129,6 +129,20 @@ export type LectureJoinLookupResult =
 type LectureRow = Record<string, unknown>;
 
 async function getLectureRowByJoinCode(normalized: string): Promise<LectureRow | null> {
+  // Prefer direct table read (single round-trip; lectures SELECT is permissive for join/sync).
+  const { data: row, error: selErr } = await supabase
+    .from('lectures')
+    .select('*')
+    .eq('lecture_code', normalized)
+    .maybeSingle();
+
+  if (!selErr && row) {
+    return row as LectureRow;
+  }
+  if (selErr) {
+    console.warn('[getLectureByCode] select failed, trying RPC:', selErr.code, selErr.message);
+  }
+
   const { data: rpcRows, error: rpcError } = await supabase.rpc('get_lecture_for_join', {
     p_lecture_code: normalized,
   });
@@ -137,20 +151,92 @@ async function getLectureRowByJoinCode(normalized: string): Promise<LectureRow |
     return rpcRows[0] as LectureRow;
   }
   if (rpcError) {
-    console.warn('[getLectureByCode] RPC get_lecture_for_join failed, using select:', rpcError.code, rpcError.message);
+    console.warn('[getLectureByCode] RPC get_lecture_for_join failed:', rpcError.code, rpcError.message);
+  }
+  return null;
+}
+
+function isRpcUnavailable(error: { message?: string; code?: string }): boolean {
+  const m = (error.message || '').toLowerCase();
+  return (
+    m.includes('insert_lecture_lead') ||
+    m.includes('could not find the function') ||
+    m.includes('function public.insert_lecture_lead') ||
+    error.code === 'PGRST202' ||
+    error.code === '42883'
+  );
+}
+
+/**
+ * Webinar: save lead (email + name).
+ * 1) Prefer RPC `insert_lecture_lead` (returns id under SECURITY DEFINER).
+ * 2) Fallback: INSERT with a client-generated UUID and **no** `.select()` — anon INSERT is allowed;
+ *    plain `insert().select('id')` fails because SELECT on lecture_leads is owner-only (RLS).
+ */
+export async function insertLectureLead(
+  lectureId: string,
+  email: string,
+  name: string,
+): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
+  const em = email.trim();
+  const nm = name.trim();
+  if (!em || !nm) {
+    return { ok: false, message: 'Please enter your email and name.' };
   }
 
-  const { data, error } = await supabase
-    .from('lectures')
-    .select('*')
-    .eq('lecture_code', normalized)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('insert_lecture_lead', {
+    p_lecture_id: lectureId,
+    p_email: em,
+    p_name: nm,
+  });
 
+  if (!error && data != null && String(data).length > 0) {
+    const id = typeof data === 'string' ? data : String(data);
+    return { ok: true, id };
+  }
+
+  if (error && !isRpcUnavailable(error)) {
+    console.error('[insertLectureLead] RPC error:', error.code, error.message, error.details);
+    const msg = (error.message || '').toLowerCase();
+    if (msg.includes('lecture not found')) {
+      return { ok: false, message: 'This session is no longer available. Check the code and try again.' };
+    }
+    if (msg.includes('required') || error.code === '23502') {
+      return { ok: false, message: 'Please enter your email and name.' };
+    }
+    return {
+      ok: false,
+      message: 'Could not save your details. Check your connection and try again.',
+    };
+  }
   if (error) {
-    console.error('[getLectureByCode]', normalized, error.code, error.message);
-    return null;
+    console.warn('[insertLectureLead] RPC unavailable, using direct insert:', error.code, error.message);
   }
-  return (data as LectureRow) ?? null;
+
+  const leadId = crypto.randomUUID();
+  const { error: insErr } = await supabase.from('lecture_leads').insert({
+    id: leadId,
+    lecture_id: lectureId,
+    email: em,
+    name: nm,
+  });
+
+  if (insErr) {
+    console.error('[insertLectureLead] direct insert error:', insErr.code, insErr.message, insErr.details);
+    const im = (insErr.message || '').toLowerCase();
+    if (im.includes('foreign key') || im.includes('lecture_id')) {
+      return { ok: false, message: 'This session is no longer available. Check the code and try again.' };
+    }
+    if (insErr.code === '23505') {
+      return { ok: false, message: 'You already registered with this email for this session.' };
+    }
+    return {
+      ok: false,
+      message: 'Could not save your details. Check your connection and try again.',
+    };
+  }
+
+  return { ok: true, id: leadId };
 }
 
 /**

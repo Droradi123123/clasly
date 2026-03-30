@@ -17,6 +17,15 @@ import {
 } from "@dnd-kit/sortable";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { EditorTopToolbar } from "@/components/editor/EditorTopToolbar";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { SlideFrame } from "@/components/editor/SlideFrame";
@@ -67,6 +76,7 @@ import {
   Clock,
   BarChart,
   Home,
+  Video,
 } from "lucide-react";
 import { getLecture, updateLecture, createLecture } from "@/lib/lectureService";
 import { hydratePendingSlideImages, type PendingSlideImage } from "@/lib/hydrateSlideImages";
@@ -173,6 +183,7 @@ const Editor = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
+  const [showWebinarSettingsDialog, setShowWebinarSettingsDialog] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('academic-pro');
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
@@ -1237,12 +1248,13 @@ const Editor = () => {
             <div className="w-px h-5 bg-border/50" />
             <Input
               value={lectureTitle}
+              readOnly={slidesGenerationLocked}
               onChange={(e) => {
                 setLectureTitle(e.target.value);
                 setHasChanges(true);
               }}
               onBlur={saveTitleToDatabase}
-              className="font-display font-semibold text-base border-0 bg-transparent focus-visible:ring-0 w-auto min-w-[180px] h-8"
+              className="font-display font-semibold text-base border-0 bg-transparent focus-visible:ring-0 w-auto min-w-[180px] h-8 read-only:opacity-70"
             />
             {lectureCode && (
               <span className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded hidden sm:inline-flex">
@@ -1268,7 +1280,14 @@ const Editor = () => {
               )}
               <span className="hidden sm:inline ml-1">Save</span>
             </Button>
-            <Button variant="hero" size="sm" onClick={() => handlePresent(false)} className="h-8">
+            <Button
+              variant="hero"
+              size="sm"
+              onClick={() => handlePresent(false)}
+              className="h-8"
+              disabled={slidesGenerationLocked}
+              title={slidesGenerationLocked ? "Wait until slide generation finishes" : undefined}
+            >
               <Play className="w-4 h-4" />
               <span className="hidden sm:inline ml-1">Present</span>
             </Button>
@@ -1276,8 +1295,29 @@ const Editor = () => {
         </div>
       </div>
 
-      {/* Top Toolbar - Google Slides style */}
+      {/* Top Toolbar - Google Slides style; webinar settings stay clickable while AI generates slides */}
+      <div className="flex flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
+        {lectureMode === "webinar" && (
+          <div className="flex items-center px-2 sm:px-3 border-r border-border/50 shrink-0 bg-card/80">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 shrink-0"
+              onClick={() => setShowWebinarSettingsDialog(true)}
+              title='Live CTA for phones: set label and URL here, then tap "CTA" in Present mode.'
+            >
+              <Video className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Webinar settings</span>
+              <span className="sm:hidden">Webinar</span>
+            </Button>
+          </div>
+        )}
+        <div
+          className={`flex-1 min-w-0 ${slidesGenerationLocked ? "pointer-events-none opacity-55 select-none" : ""}`}
+        >
       <EditorTopToolbar
+        className="border-b-0"
         slide={currentSlide}
         compact={isConstrainedViewport}
         onUpdateDesign={updateSlideDesign}
@@ -1307,6 +1347,8 @@ const Editor = () => {
         onImportClick={() => setShowImportDialog(true)}
         onUpdateActivitySettings={isParticipativeSlide(currentSlide.type) ? updateActivitySettings : undefined}
       />
+        </div>
+      </div>
 
       {/* Import Dialog */}
       <ImportPresentationDialog
@@ -1325,6 +1367,75 @@ const Editor = () => {
 
       {/* Upgrade Modal */}
       <UpgradeModalComponent />
+
+      <Dialog open={showWebinarSettingsDialog} onOpenChange={setShowWebinarSettingsDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Webinar settings</DialogTitle>
+            <DialogDescription className="text-left text-muted-foreground space-y-3 pt-1">
+              <span className="block">
+                Set the <strong className="text-foreground">live CTA button</strong> for this webinar deck.
+                While you present, tap <strong className="text-foreground">CTA</strong> on the presenter
+                toolbar to send this button to every attendee&apos;s phone. They tap it to open your link
+                (e.g. sign up, book a call, or purchase).
+              </span>
+              <span className="block">
+                Fill in both fields below. Values are stored with your deck when you click{" "}
+                <strong className="text-foreground">Save</strong> in the editor header.
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="webinar-cta-label">Button label (shown on phones)</Label>
+              <Input
+                id="webinar-cta-label"
+                placeholder='e.g. "Get the playbook" or "Book a demo"'
+                value={webinarCtaLabel}
+                onChange={(e) => {
+                  setWebinarCtaLabel(e.target.value);
+                  setHasChanges(true);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="webinar-cta-url">Destination URL</Label>
+              <Input
+                id="webinar-cta-url"
+                type="url"
+                placeholder="https://…"
+                value={webinarCtaUrl}
+                onChange={(e) => {
+                  setWebinarCtaUrl(e.target.value);
+                  setHasChanges(true);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">Use a full URL including https://</p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-muted/40 p-4 space-y-2">
+              <p className="text-xs font-semibold text-foreground uppercase tracking-wide">During the live session</p>
+              <p className="text-sm text-muted-foreground">
+                Attendees see a prominent button with your label. Example preview:
+              </p>
+              <div className="rounded-lg bg-background border border-border p-3 flex justify-center">
+                <Button
+                  type="button"
+                  variant="hero"
+                  className="w-full max-w-xs pointer-events-none opacity-90"
+                  tabIndex={-1}
+                >
+                  {webinarCtaLabel.trim() || "Your button label"}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setShowWebinarSettingsDialog(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Slide Picker Dialog - at root to avoid flicker when panel re-renders */}
       <AddSlidePickerDialog
@@ -1384,32 +1495,6 @@ const Editor = () => {
                 <span className="text-center leading-tight">AI</span>
               </button>
             </div>
-          </div>
-
-          <div className="flex-shrink-0 px-2.5 pb-2 space-y-2 border-b border-border/40">
-          {lectureMode === "webinar" && (
-            <>
-              <p className="text-[11px] font-medium text-foreground/85 px-0.5 pt-1">Live CTA button</p>
-              <Input
-                placeholder="Button label (e.g. Get the course)"
-                value={webinarCtaLabel}
-                onChange={(e) => {
-                  setWebinarCtaLabel(e.target.value);
-                  setHasChanges(true);
-                }}
-                className="h-9 text-sm"
-              />
-              <Input
-                placeholder="https://…"
-                value={webinarCtaUrl}
-                onChange={(e) => {
-                  setWebinarCtaUrl(e.target.value);
-                  setHasChanges(true);
-                }}
-                className="h-9 text-sm"
-              />
-            </>
-          )}
           </div>
 
           {isAIPanelOpen ? (
@@ -1476,7 +1561,7 @@ const Editor = () => {
             >
               <Loader2 className="w-4 h-4 animate-spin text-amber-700 dark:text-amber-400 shrink-0" aria-hidden />
               <span className="text-center leading-snug">
-                Creating slides — editing is paused · יוצרים שקופיות — העריכה מושבתת זמנית
+                Creating slides — editing is paused. Buttons and the style toolbar are disabled until this finishes.
               </span>
             </div>
           )}
@@ -1580,7 +1665,7 @@ const Editor = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentSlideIndex(Math.max(0, currentSlideIndex - 1))}
-                  disabled={currentSlideIndex === 0}
+                  disabled={currentSlideIndex === 0 || slidesGenerationLocked}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
@@ -1591,7 +1676,7 @@ const Editor = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => setCurrentSlideIndex(Math.min(displaySlides.length - 1, currentSlideIndex + 1))}
-                  disabled={currentSlideIndex === displaySlides.length - 1}
+                  disabled={currentSlideIndex === displaySlides.length - 1 || slidesGenerationLocked}
                 >
                   <ChevronRight className="w-4 h-4" />
                 </Button>
@@ -1605,6 +1690,7 @@ const Editor = () => {
                   onClick={() => handlePresent(true)}
                   className="gap-2"
                   title="View current slide in present mode"
+                  disabled={slidesGenerationLocked}
                 >
                   <Eye className="w-4 h-4" />
                   View

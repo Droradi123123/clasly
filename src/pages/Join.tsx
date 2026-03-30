@@ -3,11 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { DocumentHead } from "@/components/seo/DocumentHead";
 import {
   decodeJoinUrlFragment,
   extractJoinCodeFromSearchParams,
+  insertLectureLead,
   joinLecture,
   lookupLectureByJoinCode,
   normalizeLectureJoinCode,
@@ -31,21 +32,32 @@ function JoinBrandMark({ className }: { className?: string }) {
   );
 }
 
+function getInitialJoinCodeFromUrl(): string {
+  if (typeof window === "undefined") return "";
+  return extractJoinCodeFromSearchParams(new URLSearchParams(window.location.search)) ?? "";
+}
+
 const Join = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const initialJoinCode = getInitialJoinCodeFromUrl();
   const [step, setStep] = useState<"code" | "lead" | "profile">("code");
-  const [lectureCode, setLectureCode] = useState("");
+  const [lectureCode, setLectureCode] = useState(initialJoinCode);
   const [lectureId, setLectureId] = useState("");
   const [lectureName, setLectureName] = useState("");
   const [name, setName] = useState("");
   const [selectedEmoji, setSelectedEmoji] = useState("😊");
   const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  /** True while resolving a 6-digit code (QR deep link shows connecting immediately). */
+  const [isLoading, setIsLoading] = useState(() => initialJoinCode.replace(/\D/g, "").length === 6);
   const [webinarLeadId, setWebinarLeadId] = useState<string | null>(null);
   const [leadEmail, setLeadEmail] = useState("");
   const [leadName, setLeadName] = useState("");
   const processedUrlCodeRef = useRef<string | null>(null);
+
+  const normalizedJoinCode = normalizeLectureJoinCode(lectureCode);
+  const showConnectingToSession =
+    step === "code" && isLoading && normalizedJoinCode.length === 6;
 
   const handleCodeSubmit = async (codeToCheck?: string) => {
     const raw = codeToCheck || lectureCode;
@@ -127,20 +139,12 @@ const Join = () => {
     setIsLoading(true);
     setError("");
     try {
-      const { data, error: insErr } = await supabase
-        .from("lecture_leads")
-        .insert({
-          lecture_id: lectureId,
-          email: leadEmail.trim(),
-          name: leadName.trim(),
-        })
-        .select("id")
-        .single();
-      if (insErr || !data?.id) {
-        setError("Could not save your details. Try again.");
+      const result = await insertLectureLead(lectureId, leadEmail, leadName);
+      if (!result.ok) {
+        setError(result.message);
         return;
       }
-      setWebinarLeadId(data.id);
+      setWebinarLeadId(result.id);
       setName(leadName.trim());
       setStep("profile");
     } catch (e) {
@@ -217,6 +221,26 @@ const Join = () => {
           <AnimatePresence mode="wait">
             {step === "code" || step === "lead" ? (
               step === "code" ? (
+              showConnectingToSession ? (
+              <motion.div
+                key="connecting"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                className="flex flex-col items-center justify-center py-10 px-2 text-center"
+                role="status"
+                aria-live="polite"
+              >
+                <Loader2 className="w-12 h-12 text-violet-400 animate-spin mb-6" aria-hidden />
+                <h1 className="text-xl sm:text-2xl font-display font-bold text-white mb-2 tracking-tight">
+                  Connecting…
+                </h1>
+                <p className="text-sm text-violet-200/75 max-w-xs leading-relaxed">
+                  Looking up your session. This should only take a moment.
+                </p>
+              </motion.div>
+              ) : (
               <motion.div
                 key="code"
                 initial={{ opacity: 0, x: -16 }}
@@ -274,6 +298,7 @@ const Join = () => {
                   </Button>
                 </div>
               </motion.div>
+              )
               ) : (
               <motion.div
                 key="lead"

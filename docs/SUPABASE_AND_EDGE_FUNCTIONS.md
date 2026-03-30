@@ -127,3 +127,9 @@ npm run deploy:paypal
 3. **Polling**: גיבוי – התלמיד שולח בקשה כל שנייה (עם exponential backoff). אם Broadcast או Realtime נכשלו, ה־polling תופס את השינוי.
 
 כל עדכון שקופית קורא ל־`updateLecture` שמעדכן גם את `updated_at`, כך שכל שלוש השכבות מזהות שינוי.
+
+### Webinar join: `insert_lecture_lead` (DB RPC)
+
+Anonymous users cannot `SELECT` rows in `lecture_leads` (only lecture owners can). A plain client `insert(...).select('id')` therefore fails after the insert succeeds because the returned row is not visible under RLS. The app uses the **`insert_lecture_lead`** Postgres function (`SECURITY DEFINER`) to insert and return the new lead `id`. Apply migration `20260428140000_insert_lecture_lead_rpc.sql` in production (`supabase db push` or Dashboard SQL).
+
+Join code lookup uses a **direct `lectures` SELECT first** (one round-trip; RLS allows read for sync), then falls back to **`get_lecture_for_join`** if needed.

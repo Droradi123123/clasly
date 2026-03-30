@@ -46,7 +46,8 @@ import { Json } from "@/integrations/supabase/types";
 import { StudentGameControls } from "@/components/game";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
 
-const REALTIME_RESUBSCRIBE_DELAY_MS = 2500;
+const REALTIME_RESUBSCRIBE_DELAY_MS = 1000;
+const BROADCAST_REFETCH_DEBOUNCE_MS = 280;
 
 // Error boundary so one render error does not crash the whole student view
 class StudentErrorBoundary extends React.Component<
@@ -136,7 +137,10 @@ const Student = () => {
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [questionText, setQuestionText] = useState("");
   const [lastReaction, setLastReaction] = useState<string | null>(null);
-  const [isConnected, setIsConnected] = useState(true);
+  /** postgres_changes on lectures */
+  const [isDbRealtimeConnected, setIsDbRealtimeConnected] = useState(true);
+  /** lecture-sync broadcast channel (slide_changed) */
+  const [isBroadcastConnected, setIsBroadcastConnected] = useState(false);
   const [showConfetti, setShowConfetti] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -158,8 +162,22 @@ const Student = () => {
   const broadcastRefetchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const lectureSyncChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
   const lastAppliedUpdatedAtRef = React.useRef<string | null>(null);
+  const slidesRef = React.useRef<Slide[]>([]);
+  /** presenterWallClockMs - Date.now() at receive => skew vs local clock for timer alignment */
+  const clockOffsetMsRef = React.useRef(0);
 
-  const currentSlide = slides[currentSlideIndex];
+  React.useEffect(() => {
+    slidesRef.current = slides;
+  }, [slides]);
+
+  const awaitingSlidePayload =
+    slides.length > 0 && currentSlideIndex >= slides.length;
+  const effectiveSlideIndex = useMemo(() => {
+    if (!slides.length) return 0;
+    return Math.min(Math.max(0, currentSlideIndex), slides.length - 1);
+  }, [slides.length, currentSlideIndex]);
+
+  const currentSlide = awaitingSlidePayload ? undefined : slides[effectiveSlideIndex];
   const participativeSlide = currentSlide ? isParticipativeSlide(currentSlide.type) : false;
   const activityResolved =
     participativeSlide && currentSlide ? getResolvedActivitySettings(currentSlide) : null;
@@ -167,9 +185,10 @@ const Student = () => {
   const startedAtMs = lecture?.activity_started_at
     ? Date.parse(lecture.activity_started_at as string)
     : NaN;
+  const adjustedNowMs = Date.now() + clockOffsetMsRef.current;
   const elapsedMs =
     participativeSlide && activityResolved && !Number.isNaN(startedAtMs)
-      ? Date.now() - startedAtMs
+      ? adjustedNowMs - startedAtMs
       : 0;
   const durationSeconds = activityResolved?.durationSeconds ?? 0;
   const inVotingPhase =
@@ -301,8 +320,16 @@ const Student = () => {
       return indexToApply;
     });
 
-    // Always apply slides when this update is from our scheduled refetch (after broadcast); otherwise during broadcast window skip to avoid stale poll/postgres overwriting
-    if (newSlides.length > 0 && (fromRefetch || !recentlyFromBroadcast)) {
+    const localLen = slidesRef.current.length;
+    const needMoreSlides =
+      localLen > 0 && indexToApply >= localLen;
+    const broadcastMergeHold = recentlyFromBroadcast && !fromRefetch;
+    const applySlides =
+      newSlides.length > 0 &&
+      (fromRefetch ||
+        !broadcastMergeHold ||
+        (needMoreSlides && newSlides.length > localLen));
+    if (applySlides) {
       setSlides(newSlides);
     }
     setLecture(updatedLecture);
@@ -336,7 +363,7 @@ const Student = () => {
     if (!lecture?.id) return;
 
     console.log('[Student] Subscribing to lecture updates:', lecture.id);
-    setIsConnected(false);
+    setIsDbRealtimeConnected(false);
 
     let pollIntervalMs = 1000; // Layer 3: start 1s, exponential backoff on success up to 3s
     let pollTimeoutId: NodeJS.Timeout | null = null;
@@ -390,8 +417,10 @@ const Student = () => {
         pollIntervalMs = Math.min(pollIntervalMs * 1.2, 5000);
       }
 
-      // Schedule next poll
-      pollTimeoutId = setTimeout(pollForUpdates, pollIntervalMs);
+      const nextDelay = !isRealtimeActive
+        ? Math.min(pollIntervalMs, 800)
+        : pollIntervalMs;
+      pollTimeoutId = setTimeout(pollForUpdates, nextDelay);
     };
 
     // Layer 3: start polling immediately
@@ -429,7 +458,7 @@ const Student = () => {
       .subscribe((status, err) => {
         console.log('[Student] Subscription status:', status, err);
         isRealtimeActive = status === 'SUBSCRIBED';
-        setIsConnected(status === 'SUBSCRIBED');
+        setIsDbRealtimeConnected(status === 'SUBSCRIBED');
 
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           console.warn('[Student] Realtime channel error, relying on polling; will re-subscribe after delay');
@@ -476,9 +505,19 @@ const Student = () => {
           lectureId?: string;
           ts?: number;
           activityStartedAt?: string | null;
+          presenterWallClockMs?: number;
         };
         const newIndex = p.currentSlideIndex;
         if (typeof newIndex === 'number') {
+          const wall =
+            typeof p.presenterWallClockMs === 'number'
+              ? p.presenterWallClockMs
+              : typeof p.ts === 'number'
+                ? p.ts
+                : undefined;
+          if (wall !== undefined) {
+            clockOffsetMsRef.current = wall - Date.now();
+          }
           lastBroadcastSlideIndexRef.current = newIndex;
           lastBroadcastTsRef.current = Date.now();
           // Apply immediately so student sees the right slide without waiting for refetch
@@ -497,17 +536,18 @@ const Student = () => {
           setSentimentValue([50]);
           setAgreeValue([50]);
           setSentenceInput('');
-          // Debounced refetch: cancel any pending, schedule after 800ms so DB write has completed (avoids stale data flicker)
-          if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
           const lid = lecture.id;
+          void refetchLectureState(lid, true);
+          if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
           broadcastRefetchTimeoutRef.current = setTimeout(() => {
             broadcastRefetchTimeoutRef.current = null;
-            refetchLectureState(lid, true);
-          }, 550);
+            void refetchLectureState(lid, true);
+          }, BROADCAST_REFETCH_DEBOUNCE_MS);
         }
       })
       .subscribe((status) => {
         console.log('[Student] Slide sync channel status:', status);
+        setIsBroadcastConnected(status === 'SUBSCRIBED');
       });
 
     return () => {
@@ -973,9 +1013,19 @@ const Student = () => {
             >
               <RefreshCw className="w-4 h-4" />
             </Button>
-            <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-green-400" : "bg-red-400"}`} />
-            <span className="text-sm text-primary-foreground/80">
-              {isConnected ? "Connected" : "Reconnecting..."}
+            <span
+              className="flex items-center gap-1.5 text-sm text-primary-foreground/80"
+              title="DB = postgres realtime on lectures. Live = slide broadcast channel."
+            >
+              <span className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${isDbRealtimeConnected ? "bg-green-400" : "bg-amber-400"}`} />
+                <span className="text-xs opacity-90">DB</span>
+              </span>
+              <span className="text-primary-foreground/50">·</span>
+              <span className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full ${isBroadcastConnected ? "bg-green-400" : "bg-amber-400"}`} />
+                <span className="text-xs opacity-90">Live</span>
+              </span>
             </span>
           </div>
         </div>
@@ -998,6 +1048,20 @@ const Student = () => {
             </h2>
             <p className="text-muted-foreground max-w-xs">
               The instructor will start the presentation soon. Stay tuned!
+            </p>
+          </motion.div>
+        ) : awaitingSlidePayload ? (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center justify-center h-full text-center gap-4 px-4"
+          >
+            <Loader2 className="w-12 h-12 text-primary animate-spin" />
+            <h2 className="text-xl font-display font-bold text-foreground">
+              Syncing with presenter…
+            </h2>
+            <p className="text-muted-foreground max-w-sm text-sm">
+              Catching up to the current slide. This usually takes a moment.
             </p>
           </motion.div>
         ) : currentSlide && participativeSlide ? (
