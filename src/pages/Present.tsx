@@ -432,6 +432,15 @@ const Present = () => {
               ? (state.optimisticLecture.settings as Record<string, unknown>)
               : {};
           const mergedSettings = { ...dbSettings, ...optSettings };
+          // Editor may send webinarCta: null to clear unsaved CTA vs stale DB after navigate-to-present.
+          if (
+            optimistic &&
+            optSettings &&
+            Object.prototype.hasOwnProperty.call(optSettings, "webinarCta") &&
+            optSettings.webinarCta === null
+          ) {
+            delete mergedSettings.webinarCta;
+          }
           const mergedLecture = { ...data, settings: mergedSettings };
           setLecture(mergedLecture);
           if (!optimistic) {
@@ -954,9 +963,17 @@ const Present = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                className={
+                  webinarCta?.label?.trim() && webinarCta?.url?.trim()
+                    ? "text-primary-foreground hover:text-primary-foreground bg-primary-foreground/15 ring-1 ring-amber-400/40 shadow-inner"
+                    : "text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+                }
                 onClick={() => broadcastWebinarCta()}
-                title="Show CTA link on all phones"
+                title={
+                  webinarCta?.label?.trim() && webinarCta?.url?.trim()
+                    ? `Send “${webinarCta.label.trim()}” to every phone (opens in a new tab)`
+                    : "Configure label + URL in Editor → Webinar settings, then Save"
+                }
               >
                 <Link2 className="w-4 h-4" />
                 <span className="ml-1 text-xs hidden sm:inline">CTA</span>

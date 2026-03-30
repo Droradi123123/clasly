@@ -141,6 +141,35 @@ const BUILDER_TIPS = [
   'Try the mobile preview to see how your slides look on small screens.',
 ];
 
+/** Same rules as save; `forNavigation` adds explicit `webinarCta: null` when both CTA fields empty so Present can merge over stale DB. */
+function buildEditorLectureSettingsSnapshot(
+  persisted: Record<string, unknown>,
+  selectedThemeId: ThemeId,
+  selectedDesignStyleId: DesignStyleId,
+  lectureMode: "education" | "webinar",
+  webinarRegConfig: WebinarRegistrationConfig,
+  webinarCtaLabel: string,
+  webinarCtaUrl: string,
+  opts: { forNavigation: boolean },
+): Record<string, unknown> {
+  const settings: Record<string, unknown> = {
+    ...persisted,
+    themeId: selectedThemeId,
+    designStyleId: selectedDesignStyleId,
+  };
+  if (lectureMode === "webinar") {
+    const regParsed = webinarRegistrationConfigSchema.safeParse(webinarRegConfig);
+    settings.webinarRegistration = regParsed.success ? regParsed.data : defaultWebinarRegistrationConfig();
+    if (webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
+      settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
+    } else if (!webinarCtaLabel.trim() && !webinarCtaUrl.trim()) {
+      delete settings.webinarCta;
+      if (opts.forNavigation) settings.webinarCta = null;
+    }
+  }
+  return settings;
+}
+
 // Icon mapping for slide types
 const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
   title: Type,
@@ -947,20 +976,17 @@ const Editor = () => {
     
     if (!silent) setIsSaving(true);
     try {
-      const settings: Record<string, unknown> = {
-        ...persistedSettingsRef.current,
-        themeId: selectedThemeId,
-        designStyleId: selectedDesignStyleId,
-      };
-      if (lectureMode === "webinar") {
-        const regParsed = webinarRegistrationConfigSchema.safeParse(webinarRegConfig);
-        settings.webinarRegistration = regParsed.success ? regParsed.data : defaultWebinarRegistrationConfig();
-        if (webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
-          settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
-        } else if (!webinarCtaLabel.trim() && !webinarCtaUrl.trim()) {
-          delete settings.webinarCta;
-        }
-      }
+      const settings = buildEditorLectureSettingsSnapshot(
+        persistedSettingsRef.current,
+        selectedThemeId,
+        selectedDesignStyleId,
+        lectureMode,
+        webinarRegConfig,
+        webinarCtaLabel,
+        webinarCtaUrl,
+        { forNavigation: false },
+      );
+      if (settings.webinarCta === null) delete settings.webinarCta;
       const slidesToSave = sandboxSlides.length > 0 ? sandboxSlides : slides;
       const normalizedSlides = ensureSlidesDesignDefaults(slidesToSave);
       
@@ -1204,7 +1230,16 @@ const Editor = () => {
         designStyleId: (s.design?.designStyleId as DesignStyleId) ?? selectedDesignStyleId,
       },
     }));
-    const settings = { themeId: selectedThemeId, designStyleId: selectedDesignStyleId };
+    const settings = buildEditorLectureSettingsSnapshot(
+      persistedSettingsRef.current,
+      selectedThemeId,
+      selectedDesignStyleId,
+      lectureMode,
+      webinarRegConfig,
+      webinarCtaLabel,
+      webinarCtaUrl,
+      { forNavigation: true },
+    );
 
     if (lectureDbId) {
       // Navigate immediately – don't block on save. Save in background if there are changes.
@@ -1218,6 +1253,7 @@ const Editor = () => {
             slides: normalizedSlides,
             current_slide_index: targetSlideIndex,
             settings,
+            lecture_mode: lectureMode,
           },
           skipAutoFullscreen: startFromCurrent,
         },
@@ -1235,6 +1271,7 @@ const Editor = () => {
                 ...newLecture,
                 current_slide_index: targetSlideIndex,
                 settings,
+                lecture_mode: lectureMode,
               },
               skipAutoFullscreen: startFromCurrent,
             },

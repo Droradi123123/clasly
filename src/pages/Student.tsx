@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock } from "lucide-react";
+import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock, Sparkles, ExternalLink } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
 import {
   decodeJoinUrlFragment,
@@ -945,25 +945,49 @@ const Student = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Confetti isActive={showConfetti} />
 
-      {ctaOverlay && (
-        <div className="fixed inset-0 z-[95] flex flex-col justify-end bg-black/50 p-4 pb-10">
-          <button
-            type="button"
-            aria-label="Dismiss"
-            onClick={() => setCtaOverlay(null)}
-            className="absolute top-4 right-4 rounded-full bg-background/90 px-4 py-2 text-sm font-medium shadow"
+      <AnimatePresence>
+        {ctaOverlay && (
+          <motion.div
+            key="cta"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[95] flex flex-col justify-end bg-black/60 backdrop-blur-[2px] p-4 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
           >
-            Close
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleCtaOpen(ctaOverlay.url)}
-            className="w-full min-h-[4.5rem] rounded-2xl bg-primary text-primary-foreground text-xl font-bold shadow-lg active:scale-[0.99] transition-transform"
-          >
-            {ctaOverlay.label}
-          </button>
-        </div>
-      )}
+            <motion.div
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 32, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 320 }}
+              className="w-full max-w-lg mx-auto rounded-3xl border border-white/10 bg-gradient-to-b from-violet-600/95 via-violet-700/98 to-[#0f172a] p-5 shadow-2xl shadow-violet-900/50"
+            >
+              <div className="flex items-center gap-2 text-violet-100/90 text-xs font-semibold uppercase tracking-wider mb-3">
+                <Sparkles className="w-4 h-4 text-amber-300 shrink-0" aria-hidden />
+                From the host
+              </div>
+              <p className="text-sm text-violet-100/80 mb-4 leading-snug">
+                Tap the button to open the link in your browser. You can close this anytime.
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleCtaOpen(ctaOverlay.url)}
+                className="w-full min-h-[3.75rem] rounded-2xl bg-white text-violet-950 text-lg font-bold shadow-lg shadow-black/25 flex items-center justify-center gap-2 active:scale-[0.99] transition-transform hover:bg-violet-50"
+              >
+                {ctaOverlay.label}
+                <ExternalLink className="w-5 h-5 opacity-80 shrink-0" aria-hidden />
+              </button>
+              <button
+                type="button"
+                onClick={() => setCtaOverlay(null)}
+                className="mt-6 w-full py-2.5 text-sm font-medium text-violet-200/90 hover:text-white transition-colors"
+              >
+                Not now
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {studentRaffleName && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/45 px-4 pointer-events-none">
