@@ -128,6 +128,7 @@ export type Database = {
           lecture_id: string
           email: string
           name: string
+          answers: Json
           student_id: string | null
           cta_clicked_at: string | null
           created_at: string
@@ -137,6 +138,7 @@ export type Database = {
           lecture_id: string
           email: string
           name: string
+          answers?: Json
           student_id?: string | null
           cta_clicked_at?: string | null
           created_at?: string
@@ -146,6 +148,7 @@ export type Database = {
           lecture_id?: string
           email?: string
           name?: string
+          answers?: Json
           student_id?: string | null
           cta_clicked_at?: string | null
           created_at?: string

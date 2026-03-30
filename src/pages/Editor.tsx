@@ -92,6 +92,13 @@ import { useBuilderConversationPersistence } from "@/hooks/useBuilderConversatio
 import { supabase } from "@/integrations/supabase/client";
 import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus, withTimeout } from "@/lib/supabaseFunctions";
 import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
+import {
+  type WebinarRegistrationConfig,
+  defaultWebinarRegistrationConfig,
+  mergeWebinarRegistrationFromSettings,
+  webinarRegistrationConfigSchema,
+} from "@/types/webinarRegistration";
+import { WebinarRegistrationFormBuilder } from "@/components/editor/WebinarRegistrationFormBuilder";
 import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
@@ -180,6 +187,9 @@ const Editor = () => {
   );
   const [webinarCtaLabel, setWebinarCtaLabel] = useState("");
   const [webinarCtaUrl, setWebinarCtaUrl] = useState("");
+  const [webinarRegConfig, setWebinarRegConfig] = useState<WebinarRegistrationConfig>(() =>
+    defaultWebinarRegistrationConfig(),
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
@@ -883,6 +893,7 @@ const Editor = () => {
     const wc = settings?.webinarCta as { label?: string; url?: string } | undefined;
     setWebinarCtaLabel(typeof wc?.label === "string" ? wc.label : "");
     setWebinarCtaUrl(typeof wc?.url === "string" ? wc.url : "");
+    setWebinarRegConfig(mergeWebinarRegistrationFromSettings(settings));
   }, [user?.id, navigate]);
 
   // Load lecture from database if it exists (only own lectures)
@@ -942,6 +953,8 @@ const Editor = () => {
         designStyleId: selectedDesignStyleId,
       };
       if (lectureMode === "webinar") {
+        const regParsed = webinarRegistrationConfigSchema.safeParse(webinarRegConfig);
+        settings.webinarRegistration = regParsed.success ? regParsed.data : defaultWebinarRegistrationConfig();
         if (webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
           settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
         } else if (!webinarCtaLabel.trim() && !webinarCtaUrl.trim()) {
@@ -986,6 +999,7 @@ const Editor = () => {
     lectureMode,
     webinarCtaLabel,
     webinarCtaUrl,
+    webinarRegConfig,
   ]);
 
   // Save title changes (persist current display slides so title + slides stay in sync)
@@ -1380,23 +1394,40 @@ const Editor = () => {
       <UpgradeModalComponent />
 
       <Dialog open={showWebinarSettingsDialog} onOpenChange={setShowWebinarSettingsDialog}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[min(92vh,900px)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Webinar settings</DialogTitle>
-            <DialogDescription className="text-left text-muted-foreground space-y-3 pt-1">
+            <DialogDescription className="text-left text-muted-foreground space-y-2 pt-1">
               <span className="block">
-                Set the <strong className="text-foreground">live CTA button</strong> for this webinar deck.
-                While you present, tap <strong className="text-foreground">CTA</strong> on the presenter
-                toolbar to send this button to every attendee&apos;s phone. They tap it to open your link
-                (e.g. sign up, book a call, or purchase).
+                Configure the <strong className="text-foreground">registration form</strong> attendees see after they scan the QR
+                or enter the join code, and the <strong className="text-foreground">live CTA</strong> you trigger during the session.
               </span>
-              <span className="block">
-                Fill in both fields below. Values are stored with your deck when you click{" "}
-                <strong className="text-foreground">Save</strong> in the editor header.
+              <span className="block text-sm">
+                Click <strong className="text-foreground">Save</strong> in the editor header to persist changes.
               </span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-8 py-2">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">
+                Registration form (after QR / code)
+              </h3>
+              <WebinarRegistrationFormBuilder
+                value={webinarRegConfig}
+                onChange={(next) => {
+                  setWebinarRegConfig(next);
+                  setHasChanges(true);
+                }}
+              />
+            </section>
+            <section className="space-y-4">
+              <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">
+                Live CTA (during session)
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                While you present, tap <strong className="text-foreground">CTA</strong> on the presenter toolbar to send this
+                button to every attendee&apos;s phone.
+              </p>
             <div className="space-y-2">
               <Label htmlFor="webinar-cta-label">Button label (shown on phones)</Label>
               <Input
@@ -1439,6 +1470,7 @@ const Editor = () => {
                 </Button>
               </div>
             </div>
+            </section>
           </div>
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setShowWebinarSettingsDialog(false)}>

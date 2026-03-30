@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { DocumentHead } from "@/components/seo/DocumentHead";
 import {
@@ -14,6 +16,13 @@ import {
   normalizeLectureJoinCode,
 } from "@/lib/lectureService";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  type WebinarRegistrationConfig,
+  buildLeadPayloadFromAnswers,
+  defaultWebinarRegistrationConfig,
+  mergeWebinarRegistrationFromSettings,
+  validateLeadAnswers,
+} from "@/types/webinarRegistration";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
 
@@ -51,8 +60,10 @@ const Join = () => {
   /** True while resolving a 6-digit code (QR deep link shows connecting immediately). */
   const [isLoading, setIsLoading] = useState(() => initialJoinCode.replace(/\D/g, "").length === 6);
   const [webinarLeadId, setWebinarLeadId] = useState<string | null>(null);
-  const [leadEmail, setLeadEmail] = useState("");
-  const [leadName, setLeadName] = useState("");
+  const [webinarRegConfig, setWebinarRegConfig] = useState<WebinarRegistrationConfig>(() =>
+    defaultWebinarRegistrationConfig(),
+  );
+  const [leadAnswers, setLeadAnswers] = useState<Record<string, string>>({});
   const processedUrlCodeRef = useRef<string | null>(null);
 
   const normalizedJoinCode = normalizeLectureJoinCode(lectureCode);
@@ -98,8 +109,9 @@ const Join = () => {
       setLectureCode(code);
       const mode = lecture.lecture_mode as string | undefined;
       setWebinarLeadId(null);
-      setLeadEmail("");
-      setLeadName("");
+      setLeadAnswers({});
+      const settings = lecture.settings as Record<string, unknown> | undefined;
+      setWebinarRegConfig(mergeWebinarRegistrationFromSettings(settings));
       setStep(mode === "webinar" ? "lead" : "profile");
     } catch (err) {
       setError("Something went wrong. Please try again.");
@@ -132,20 +144,25 @@ const Join = () => {
   }, [searchParams]);
 
   const handleLeadSubmit = async () => {
-    if (!leadEmail.trim() || !leadName.trim()) {
-      setError("Please enter your email and name.");
+    const check = validateLeadAnswers(webinarRegConfig.fields, leadAnswers);
+    if (!check.ok) {
+      setError(check.message);
       return;
     }
+    const { email, name: leadNameFromForm, answers } = buildLeadPayloadFromAnswers(
+      webinarRegConfig.fields,
+      leadAnswers,
+    );
     setIsLoading(true);
     setError("");
     try {
-      const result = await insertLectureLead(lectureId, leadEmail, leadName);
+      const result = await insertLectureLead(lectureId, email, leadNameFromForm, answers);
       if (!result.ok) {
         setError(result.message);
         return;
       }
       setWebinarLeadId(result.id);
-      setName(leadName.trim());
+      setName(leadNameFromForm.trim() || email.split("@")[0] || "Participant");
       setStep("profile");
     } catch (e) {
       console.error(e);
@@ -314,27 +331,49 @@ const Join = () => {
                 ) : null}
                 <div className="text-center mb-8">
                   <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-2 tracking-tight">
-                    Webinar registration
+                    {webinarRegConfig.formTitle?.trim() || "Webinar registration"}
                   </h1>
-                  <p className="text-sm sm:text-base text-violet-200/75">
-                    Enter your email and name to continue
-                  </p>
+                  {webinarRegConfig.formSubtitle?.trim() ? (
+                    <p className="text-sm sm:text-base text-violet-200/75">{webinarRegConfig.formSubtitle}</p>
+                  ) : (
+                    <p className="text-sm sm:text-base text-violet-200/75">Fill in the form to continue</p>
+                  )}
                 </div>
                 <div className="space-y-4">
-                  <Input
-                    type="email"
-                    value={leadEmail}
-                    onChange={(e) => setLeadEmail(e.target.value)}
-                    placeholder="Email"
-                    className="h-12 rounded-2xl border-white/10 bg-[#12152a] text-white placeholder:text-white/35"
-                  />
-                  <Input
-                    value={leadName}
-                    onChange={(e) => setLeadName(e.target.value)}
-                    placeholder="Full name"
-                    className="h-12 rounded-2xl border-white/10 bg-[#12152a] text-white placeholder:text-white/35"
-                    onKeyDown={(e) => e.key === "Enter" && handleLeadSubmit()}
-                  />
+                  {webinarRegConfig.fields.map((field) => (
+                    <div key={field.id} className="space-y-2 text-left">
+                      <Label className="text-violet-200/90 text-sm">
+                        {field.label}
+                        {field.required ? <span className="text-rose-300"> *</span> : null}
+                      </Label>
+                      {field.type === "text" ? (
+                        <Textarea
+                          value={leadAnswers[field.id] ?? ""}
+                          onChange={(e) =>
+                            setLeadAnswers((prev) => ({ ...prev, [field.id]: e.target.value }))
+                          }
+                          placeholder={field.placeholder || ""}
+                          rows={3}
+                          className="rounded-2xl border-white/10 bg-[#12152a] text-white placeholder:text-white/35 resize-none min-h-[88px]"
+                        />
+                      ) : (
+                        <Input
+                          type={field.type === "email" ? "email" : "text"}
+                          value={leadAnswers[field.id] ?? ""}
+                          onChange={(e) =>
+                            setLeadAnswers((prev) => ({ ...prev, [field.id]: e.target.value }))
+                          }
+                          placeholder={field.placeholder || ""}
+                          autoComplete={field.type === "email" ? "email" : "name"}
+                          className="h-12 rounded-2xl border-white/10 bg-[#12152a] text-white placeholder:text-white/35"
+                          onKeyDown={(e) => e.key === "Enter" && void handleLeadSubmit()}
+                        />
+                      )}
+                    </div>
+                  ))}
+                  {webinarRegConfig.showPrivacyNote && webinarRegConfig.privacyNote?.trim() ? (
+                    <p className="text-xs text-violet-300/60 leading-relaxed pt-1">{webinarRegConfig.privacyNote}</p>
+                  ) : null}
                   {error && (
                     <div className="flex items-center justify-center gap-2 text-sm text-rose-300">
                       <AlertCircle className="w-4 h-4 shrink-0" />

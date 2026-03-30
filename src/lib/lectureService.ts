@@ -177,17 +177,20 @@ export async function insertLectureLead(
   lectureId: string,
   email: string,
   name: string,
+  answers: Record<string, string> = {},
 ): Promise<{ ok: true; id: string } | { ok: false; message: string }> {
   const em = email.trim();
   const nm = name.trim();
-  if (!em || !nm) {
-    return { ok: false, message: 'Please enter your email and name.' };
+  const ans = answers && typeof answers === 'object' ? answers : {};
+  if (!em && !nm && Object.keys(ans).length === 0) {
+    return { ok: false, message: 'Please fill in the registration form.' };
   }
 
   const { data, error } = await supabase.rpc('insert_lecture_lead', {
     p_lecture_id: lectureId,
     p_email: em,
     p_name: nm,
+    p_answers: ans as Json,
   });
 
   if (!error && data != null && String(data).length > 0) {
@@ -219,6 +222,7 @@ export async function insertLectureLead(
     lecture_id: lectureId,
     email: em,
     name: nm,
+    answers: ans as Json,
   });
 
   if (insErr) {
