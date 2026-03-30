@@ -193,6 +193,8 @@ const Editor = () => {
   const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
   const [aiProgressStage, setAiProgressStage] = useState(0);
   const hasTriggeredInitialGen = useRef(false);
+  /** Last known lecture.settings from DB / apply — merged on save so partial updates never wipe keys (e.g. webinarCta). */
+  const persistedSettingsRef = useRef<Record<string, unknown>>({});
   /** Where to send the user if lecture load fails (matches track / loaded lecture_mode). */
   const editorErrorHomeRef = useRef<"/dashboard" | "/webinar/dashboard">("/dashboard");
   // Start with logical size so no layout shift when ResizeObserver runs
@@ -617,6 +619,7 @@ const Editor = () => {
         setLectureCode(newLecture.lecture_code);
         const settings = { themeId: aiThemeId ?? selectedThemeId, designStyleId: aiDesignStyleId ?? selectedDesignStyleId };
         await updateLecture(newLecture.id, { settings, lecture_mode: lectureMode });
+        persistedSettingsRef.current = { ...settings };
         const aiQuery =
           lectureMode === "webinar" ? "?ai=1&track=webinar" : "?ai=1";
         navigate(`/editor/${newLecture.id}${aiQuery}`, {
@@ -870,6 +873,8 @@ const Editor = () => {
       if (valid) setSlides(ensureSlidesDesignDefaults(loadedSlides));
     }
     const settings = lecture.settings as Record<string, unknown> | null;
+    persistedSettingsRef.current =
+      settings && typeof settings === "object" ? { ...settings } : {};
     if (settings?.themeId) setSelectedThemeId(settings.themeId as ThemeId);
     if (settings?.designStyleId) setSelectedDesignStyleId(settings.designStyleId as DesignStyleId);
     const lm = (lecture as { lecture_mode?: string }).lecture_mode;
@@ -932,11 +937,16 @@ const Editor = () => {
     if (!silent) setIsSaving(true);
     try {
       const settings: Record<string, unknown> = {
+        ...persistedSettingsRef.current,
         themeId: selectedThemeId,
         designStyleId: selectedDesignStyleId,
       };
-      if (lectureMode === "webinar" && webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
-        settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
+      if (lectureMode === "webinar") {
+        if (webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
+          settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
+        } else if (!webinarCtaLabel.trim() && !webinarCtaUrl.trim()) {
+          delete settings.webinarCta;
+        }
       }
       const slidesToSave = sandboxSlides.length > 0 ? sandboxSlides : slides;
       const normalizedSlides = ensureSlidesDesignDefaults(slidesToSave);
@@ -956,6 +966,7 @@ const Editor = () => {
         window.history.replaceState(null, '', `/editor/${newLecture.id}`);
         await updateLecture(newLecture.id, { settings, lecture_mode: lectureMode });
       }
+      persistedSettingsRef.current = { ...settings };
       setHasChanges(false);
       if (!silent) toast.success('Saved!');
     } catch (error) {

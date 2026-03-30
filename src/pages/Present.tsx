@@ -46,6 +46,7 @@ import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
 import { Leaderboard } from "@/components/present/Leaderboard";
 import { MiniLeaderboard } from "@/components/present/MiniLeaderboard";
+import { RaffleWheelOverlay } from "@/components/present/RaffleWheelOverlay";
 import { FruitCatchGame } from "@/components/game";
 import {
   getLecture,
@@ -120,6 +121,8 @@ const Present = () => {
   const [presenceOnlineCount, setPresenceOnlineCount] = useState(0);
   const presenceStateRef = useRef<Record<string, unknown[]>>({});
   const [raffleWinnerName, setRaffleWinnerName] = useState<string | null>(null);
+  /** Names for the wheel-of-fortune spin (null = idle). */
+  const [raffleWheelNames, setRaffleWheelNames] = useState<string[] | null>(null);
 
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -204,21 +207,16 @@ const Present = () => {
     toast.success("CTA sent to attendees");
   }, [lectureId, webinarCta?.label, webinarCta?.url]);
 
-  const pickRaffleWinner = useCallback(() => {
+  const finishRaffleWithWinner = useCallback((winnerName: string) => {
     const ch = slideSyncChannelRef.current;
-    const names = presenceNamesList(presenceStateRef.current);
-    if (names.length === 0) {
-      toast.error("No participants online.");
-      return;
-    }
-    const pick = names[Math.floor(Math.random() * names.length)]!;
-    setRaffleWinnerName(pick.name);
+    setRaffleWheelNames(null);
+    setRaffleWinnerName(winnerName);
     setShowConfetti(true);
     if (ch) {
       void ch.send({
         type: "broadcast",
         event: "raffle_winner",
-        payload: { name: pick.name },
+        payload: { name: winnerName },
       });
     }
     window.setTimeout(() => {
@@ -226,6 +224,36 @@ const Present = () => {
       setShowConfetti(false);
     }, 4500);
   }, []);
+
+  const pickRaffleWinner = useCallback(() => {
+    const names = presenceNamesList(presenceStateRef.current);
+    if (names.length === 0) {
+      toast.error("No participants online.");
+      return;
+    }
+    setRaffleWheelNames(names.map((n) => n.name));
+  }, []);
+
+  const exitToEditor = useCallback(() => {
+    if (!lectureId || !lecture) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    startTransition(() =>
+      navigate(`/editor/${lectureId}`, {
+        state: {
+          preloadedLecture: {
+            id: lecture.id,
+            title: lecture.title,
+            lecture_code: lectureCode,
+            slides,
+            settings: lecture.settings,
+            lecture_mode: lecture.lecture_mode,
+          },
+        },
+      }),
+    );
+  }, [lectureId, lecture, lectureCode, slides, navigate]);
 
   const sendSlideBroadcast = useCallback(
     (lectureId: string, newIndex: number, activityStartedAt: string | null) => {
@@ -394,10 +422,17 @@ const Present = () => {
       try {
         const data = await getLecture(lectureId);
         if (data) {
-          // When we came from Editor with optimistic state, keep the settings (themeId/designStyleId) so SlideRenderer matches Editor; only sync id/title/status/slides etc. from DB
-          const mergedLecture = optimistic && state?.optimisticLecture?.settings
-            ? { ...data, settings: state.optimisticLecture.settings }
-            : data;
+          // Deep-merge settings: optimistic nav from Editor may omit webinarCta; DB must not be replaced wholesale.
+          const dbSettings =
+            data.settings && typeof data.settings === "object"
+              ? (data.settings as Record<string, unknown>)
+              : {};
+          const optSettings =
+            optimistic && state?.optimisticLecture?.settings && typeof state.optimisticLecture.settings === "object"
+              ? (state.optimisticLecture.settings as Record<string, unknown>)
+              : {};
+          const mergedSettings = { ...dbSettings, ...optSettings };
+          const mergedLecture = { ...data, settings: mergedSettings };
           setLecture(mergedLecture);
           if (!optimistic) {
             const rawSlides = (data.slides as unknown as Slide[]) || [];
@@ -612,7 +647,7 @@ const Present = () => {
         if (isFullscreen) {
           document.exitFullscreen();
         } else {
-          navigate(`/editor/${lectureId}`);
+          exitToEditor();
         }
       } else if (e.key === "f" || e.key === "F") {
         toggleFullscreen();
@@ -621,7 +656,7 @@ const Present = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [slides.length, navigate, lectureId, isFullscreen, toggleFullscreen, handleNextSlide, handlePrevSlide]);
+  }, [slides.length, navigate, lectureId, isFullscreen, toggleFullscreen, handleNextSlide, handlePrevSlide, exitToEditor]);
 
   // Fullscreen is not auto-requested; user can click fullscreen button or press F.
   // Auto-fullscreen was removed to avoid blocking the Start button and improve responsiveness.
@@ -749,6 +784,14 @@ const Present = () => {
       {/* Confetti effect */}
       <Confetti isActive={showConfetti} />
 
+      {raffleWheelNames && raffleWheelNames.length > 0 && (
+        <RaffleWheelOverlay
+          key={raffleWheelNames.join("\u0000")}
+          names={raffleWheelNames}
+          onSpinComplete={finishRaffleWithWinner}
+        />
+      )}
+
       {raffleWinnerName && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 pointer-events-none px-4">
           <div className="rounded-3xl bg-card border border-border px-10 py-12 text-center shadow-2xl max-w-lg pointer-events-auto">
@@ -784,24 +827,7 @@ const Present = () => {
           variant="ghost"
           size="sm"
           className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-          onClick={() => {
-            if (document.fullscreenElement) {
-              document.exitFullscreen().catch(() => {});
-            }
-            startTransition(() =>
-              navigate(`/editor/${lectureId}`, {
-                state: {
-                  preloadedLecture: {
-                    id: lecture.id,
-                    title: lecture.title,
-                    lecture_code: lectureCode,
-                    slides,
-                    settings: lecture.settings,
-                  },
-                },
-              })
-            );
-          }}
+          onClick={exitToEditor}
         >
           <X className="w-4 h-4" />
           Exit
