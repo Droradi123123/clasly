@@ -1,18 +1,27 @@
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Header from "@/components/layout/Header";
 import { DocumentHead } from "@/components/seo/DocumentHead";
 import { Check, Sparkles, Users, Zap, Loader2 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useAuth } from "@/hooks/useAuth";
-import { useLocation } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { toast } from "sonner";
 import type { SubscriptionPlan } from "@/types/subscription";
 import { normalizePlanNameForFeatures } from "@/types/subscription";
+import type { PlanProduct } from "@/types/subscription";
 import { CONTACT_EMAIL } from "@/lib/constants";
+
+function resolveProductLine(pathname: string, searchParams: URLSearchParams): PlanProduct {
+  if (pathname.startsWith("/webinar/pricing")) return "webinar";
+  const p = searchParams.get("product");
+  if (p === "education" || p === "webinar") return p;
+  return "webinar";
+}
 
 const Pricing = () => {
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
@@ -21,9 +30,25 @@ const Pricing = () => {
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const { planName, currentPlanId } = useSubscriptionContext();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const location = useLocation();
-  const isWebinarPricing = location.pathname.startsWith("/webinar/pricing");
-  const productLine = isWebinarPricing ? "webinar" : "education";
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const productLine = useMemo(
+    () => resolveProductLine(location.pathname, searchParams),
+    [location.pathname, searchParams],
+  );
+
+  // Canonical URL: /pricing?product=webinar|education ; redirect legacy /webinar/pricing
+  useEffect(() => {
+    if (location.pathname === "/webinar/pricing") {
+      navigate({ pathname: "/pricing", search: "?product=webinar" }, { replace: true });
+      return;
+    }
+    if (location.pathname === "/pricing" && !searchParams.get("product")) {
+      setSearchParams({ product: "webinar" }, { replace: true });
+    }
+  }, [location.pathname, navigate, searchParams, setSearchParams]);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,6 +75,11 @@ const Pricing = () => {
     };
   }, [productLine]);
 
+  const setProductTab = (value: string) => {
+    const line = value === "education" ? "education" : "webinar";
+    setSearchParams({ product: line }, { replace: true });
+  };
+
   const handleSubscribe = async (plan: SubscriptionPlan) => {
     if (!user) {
       toast.error("Please sign in to subscribe");
@@ -69,7 +99,7 @@ const Pricing = () => {
     setCheckoutLoading(plan.id);
 
     const origin = window.location.origin;
-    const cancelPath = isWebinarPricing ? "/webinar/pricing" : "/pricing";
+    const cancelPath = `/pricing?product=${productLine}&canceled=true`;
 
     try {
       const { data, error } = await supabase.functions.invoke(
@@ -79,9 +109,9 @@ const Pricing = () => {
             plan_id: plan.id,
             interval: billingInterval,
             return_url: `${origin}/billing?success=true`,
-            cancel_url: `${origin}${cancelPath}?canceled=true`,
+            cancel_url: `${origin}${cancelPath}`,
           },
-        }
+        },
       );
 
       if (error) throw error;
@@ -113,53 +143,63 @@ const Pricing = () => {
     }
   };
 
+  const getEducatorTierFeatures = (tier: string, plan: SubscriptionPlan): string[] => {
+    const out: string[] = [];
+    if (tier === "Free") {
+      out.push("15 slides free");
+    } else if (plan.max_slides) {
+      out.push(`Up to ${plan.max_slides} slides per presentation`);
+    } else {
+      out.push("Unlimited slides");
+    }
+
+    if (tier === "Free") {
+      out.push("15 AI credits to start (one-time)");
+    } else {
+      out.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
+    }
+
+    if (tier === "Free") {
+      out.push("Basic slide types (Poll, WordCloud)");
+      out.push("7-day analytics retention");
+    } else if (tier === "Standard") {
+      out.push("Advanced AI model");
+      out.push("Import PowerPoint & PDF");
+      out.push("All basic slide types + Scale, Sentiment");
+      out.push("30-day analytics retention");
+      out.push("Buy additional credits");
+    } else if (tier === "Pro") {
+      out.push("Advanced AI model");
+      out.push("All slide types (Quiz, Timeline, etc.)");
+      out.push("Import PowerPoint & PDF");
+      out.push("Premium themes");
+      out.push("Export reports (Excel, PDF)");
+      out.push("90-day analytics retention");
+      out.push("Priority support");
+    }
+    return out;
+  };
+
   const getPlanFeatures = (plan: SubscriptionPlan): string[] => {
     const tier = normalizePlanNameForFeatures(plan.name);
-    const baseFeatures: string[] = [];
-
-    // Value prop: slide limit (e.g. "15 slides free" for Free)
-    if (tier === "Free") {
-      baseFeatures.push("15 slides free");
-    } else if (plan.max_slides) {
-      baseFeatures.push(`Up to ${plan.max_slides} slides per presentation`);
-    } else {
-      baseFeatures.push("Unlimited slides");
+    const educator = getEducatorTierFeatures(tier, plan);
+    if (plan.product !== "webinar") {
+      return educator;
     }
-
-    // Add AI credits – Free gets one-time 15, paid get monthly refill
-    if (tier === "Free") {
-      baseFeatures.push("15 AI credits to start (one-time)");
-    } else {
-      baseFeatures.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
-    }
-    // Plan-specific features
-    if (tier === "Free") {
-      baseFeatures.push("Basic slide types (Poll, WordCloud)");
-      baseFeatures.push("7-day analytics retention");
-    } else if (tier === "Standard") {
-      baseFeatures.push("Advanced AI model");
-      baseFeatures.push("Import PowerPoint & PDF");
-      baseFeatures.push("All basic slide types + Scale, Sentiment");
-      baseFeatures.push("30-day analytics retention");
-      baseFeatures.push("Buy additional credits");
-    } else if (tier === "Pro") {
-      baseFeatures.push("Advanced AI model");
-      baseFeatures.push("All slide types (Quiz, Timeline, etc.)");
-      baseFeatures.push("Import PowerPoint & PDF");
-      baseFeatures.push("Premium themes");
-      baseFeatures.push("Export reports (Excel, PDF)");
-      baseFeatures.push("90-day analytics retention");
-      baseFeatures.push("Priority support");
-    }
-
-    return baseFeatures;
+    return [
+      ...educator,
+      "Lead capture (email & name) before attendees join",
+      "Live CTA button sent to attendees' phones during the session",
+      "Webinar dashboard and lead-focused session analytics",
+    ];
   };
 
   const getPrice = (plan: SubscriptionPlan) => {
     if (plan.price_monthly_usd === 0) return "Free";
-    const price = billingInterval === "year" 
-      ? (plan.price_yearly_usd / 12).toFixed(0)
-      : plan.price_monthly_usd.toFixed(0);
+    const price =
+      billingInterval === "year"
+        ? (plan.price_yearly_usd / 12).toFixed(0)
+        : plan.price_monthly_usd.toFixed(0);
     return `$${price}`;
   };
 
@@ -179,45 +219,55 @@ const Pricing = () => {
     );
   }
 
-  const docPath = isWebinarPricing ? "/webinar/pricing" : "/pricing";
-  const pageTitle = isWebinarPricing
-    ? "Pricing – Clasly for Webinar"
-    : "Pricing – Clasly for Educator";
-  const pageDescription = isWebinarPricing
-    ? "Webinar plans and pricing. Separate product from Clasly for Educator."
-    : "Educator plans and pricing. Free tier, Standard, and Pro.";
+  const pageTitle = "Pricing – Clasly";
+  const pageDescription =
+    "Clasly for Webinar and Clasly for Educator — separate plans. Webinar pricing is 2× Educator at each tier.";
 
   return (
     <div className="min-h-screen bg-gradient-hero">
-      <DocumentHead
-        title={pageTitle}
-        description={pageDescription}
-        path={docPath}
-      />
+      <DocumentHead title={pageTitle} description={pageDescription} path="/pricing" />
       <Header />
 
       <main className="pt-32 pb-20 px-4">
         <div className="container mx-auto max-w-5xl">
-          {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-12"
+            className="text-center mb-10"
           >
             <h1 className="text-4xl md:text-5xl font-display font-bold text-foreground mb-4">
-              {isWebinarPricing
-                ? "Webinar pricing"
-                : "Simple, transparent pricing"}
+              Simple, transparent pricing
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
-              {isWebinarPricing
-                ? "Built for live webinars and large audiences. Billed separately from Clasly for Educator."
-                : "Start free, upgrade when you need more power. 30% cheaper than competitors."}
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
+              Choose your product line. Webinar includes everything at the Educator tier, plus webinar-only
+              tools. Paid plans are billed per product — one active subscription at a time.
             </p>
 
-            {/* Billing Toggle */}
+            <div className="flex flex-col items-center gap-4 mb-8">
+              <Tabs
+                value={productLine}
+                onValueChange={setProductTab}
+                className="w-full max-w-md"
+              >
+                <TabsList className="grid w-full grid-cols-2 h-11">
+                  <TabsTrigger value="webinar" className="text-sm sm:text-base">
+                    Clasly for Webinar
+                  </TabsTrigger>
+                  <TabsTrigger value="education" className="text-sm sm:text-base">
+                    Clasly for Educator
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+              <p className="text-sm text-muted-foreground max-w-xl">
+                {productLine === "webinar"
+                  ? "Built for live webinars and large audiences. Prices are 2× the Educator tier at the same level."
+                  : "Built for teaching and training. Switch to the Webinar tab to see webinar-specific features and pricing."}
+              </p>
+            </div>
+
             <div className="inline-flex items-center gap-2 bg-muted/50 p-1 rounded-full">
               <button
+                type="button"
                 onClick={() => setBillingInterval("month")}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                   billingInterval === "month"
@@ -228,6 +278,7 @@ const Pricing = () => {
                 Monthly
               </button>
               <button
+                type="button"
                 onClick={() => setBillingInterval("year")}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-2 ${
                   billingInterval === "year"
@@ -243,7 +294,6 @@ const Pricing = () => {
             </div>
           </motion.div>
 
-          {/* Pricing Cards */}
           <div className="grid md:grid-cols-3 gap-6">
             {plans.map((plan, index) => {
               const Icon = getPlanIcon(plan.name);
@@ -316,9 +366,7 @@ const Pricing = () => {
                         {features.map((feature) => (
                           <li key={feature} className="flex items-start gap-2">
                             <Check className="w-4 h-4 text-success mt-0.5 shrink-0" />
-                            <span className="text-sm text-muted-foreground">
-                              {feature}
-                            </span>
+                            <span className="text-sm text-muted-foreground">{feature}</span>
                           </li>
                         ))}
                       </ul>
@@ -328,9 +376,7 @@ const Pricing = () => {
                         className="w-full"
                         onClick={() => handleSubscribe(plan)}
                         disabled={
-                          checkoutLoading === plan.id ||
-                          isCurrent ||
-                          tier === "Free"
+                          checkoutLoading === plan.id || isCurrent || tier === "Free"
                         }
                       >
                         {checkoutLoading === plan.id ? (
@@ -350,18 +396,37 @@ const Pricing = () => {
             })}
           </div>
 
-          {/* FAQ Section */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="mt-20 text-center"
+            className="mt-16 max-w-2xl mx-auto text-left space-y-4"
           >
-            <h2 className="text-2xl font-display font-bold text-foreground mb-4">
-              Questions?
+            <h2 className="text-xl font-display font-bold text-foreground text-center">
+              Product lines & billing
             </h2>
+            <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
+              <li>
+                <strong className="text-foreground">One subscription at a time.</strong> Your account has one
+                active plan. A paid Webinar plan unlocks the webinar dashboard; a paid Educator plan unlocks
+                the educator dashboard. Education Free can open both dashboards for trying either product.
+              </li>
+              <li>
+                <strong className="text-foreground">Webinar vs Educator pricing</strong> — Webinar tiers are
+                priced at 2× the Educator tier (same slide limits and AI credits).
+              </li>
+            </ul>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="mt-12 text-center"
+          >
+            <h2 className="text-2xl font-display font-bold text-foreground mb-4">Questions?</h2>
             <p className="text-muted-foreground mb-6">
-              We're here to help. Contact us at{" "}
+              We&apos;re here to help. Contact us at{" "}
               <a
                 href={`mailto:${CONTACT_EMAIL}`}
                 className="text-primary hover:underline"

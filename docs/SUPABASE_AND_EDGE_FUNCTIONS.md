@@ -133,3 +133,7 @@ npm run deploy:paypal
 Anonymous users cannot `SELECT` rows in `lecture_leads` (only lecture owners can). A plain client `insert(...).select('id')` therefore fails after the insert succeeds because the returned row is not visible under RLS. The app uses the **`insert_lecture_lead`** Postgres function (`SECURITY DEFINER`) to insert and return the new lead `id`. Apply migration `20260428140000_insert_lecture_lead_rpc.sql` in production (`supabase db push` or Dashboard SQL).
 
 Join code lookup uses a **direct `lectures` SELECT first** (one round-trip; RLS allows read for sync), then falls back to **`get_lecture_for_join`** if needed.
+
+### Subscription plans: `product` (education vs webinar)
+
+`subscription_plans` has a `product` column (`education` | `webinar`). Webinar tier rows mirror Educator **Free / Standard / Pro** with **2×** monthly/yearly prices. Older migrations that referenced a non-existent `features` column were corrected; apply **`20260429120000_subscription_product_webinar_rows.sql`** (or full history via `supabase db push`) so pricing queries and checkout receive both product lines.
