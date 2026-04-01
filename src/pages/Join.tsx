@@ -229,7 +229,7 @@ const Join = () => {
       >
         <header className="flex items-center justify-center gap-3 mb-10">
           <JoinBrandMark className="w-12 h-12 shrink-0" />
-          <span className="font-display font-bold text-2xl tracking-tight text-white">
+          <span className="font-display font-bold text-xl sm:text-2xl tracking-tight text-white whitespace-nowrap">
             Clasly
           </span>
         </header>

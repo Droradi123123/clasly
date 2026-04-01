@@ -116,6 +116,7 @@ const Present = () => {
   // Questions state
   const [questions, setQuestions] = useState<Question[]>([]);
   const [showQuestionsPanel, setShowQuestionsPanel] = useState(false);
+  const reloadQuestionsRef = useRef<() => void>(() => {});
   const [isEnding, setIsEnding] = useState(false);
   const [isStartingLecture, setIsStartingLecture] = useState(false);
   const [presenceOnlineCount, setPresenceOnlineCount] = useState(0);
@@ -153,6 +154,14 @@ const Present = () => {
           } catch (e) {
             console.error('[Present] response_changed getResponses:', e);
           }
+        }
+      })
+      // Instant Q&A delivery: student sends a broadcast hint after inserting into DB.
+      .on('broadcast', { event: 'question_new' }, () => {
+        try {
+          reloadQuestionsRef.current();
+        } catch (e) {
+          console.warn('[Present] question_new reload:', e);
         }
       })
       .subscribe((status) => {
@@ -590,6 +599,10 @@ const Present = () => {
         .eq('lecture_id', lectureId)
         .order('created_at', { ascending: false });
       if (data) setQuestions(data as Question[]);
+    };
+
+    reloadQuestionsRef.current = () => {
+      void loadQuestions();
     };
 
     loadQuestions();

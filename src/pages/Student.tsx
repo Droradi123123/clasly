@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock, Sparkles, ExternalLink } from "lucide-react";
+import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock, Sparkles, ExternalLink, PartyPopper } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
 import {
   decodeJoinUrlFragment,
@@ -136,6 +136,7 @@ const Student = () => {
   const [scaleValue, setScaleValue] = useState([3]);
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [questionText, setQuestionText] = useState("");
+  const [questionError, setQuestionError] = useState<string | null>(null);
   const [lastReaction, setLastReaction] = useState<string | null>(null);
   /** postgres_changes on lectures */
   const [isDbRealtimeConnected, setIsDbRealtimeConnected] = useState(true);
@@ -153,6 +154,7 @@ const Student = () => {
   const [agreeValue, setAgreeValue] = useState([50]);
   const [sentenceInput, setSentenceInput] = useState("");
   const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
+  const [answerAckKey, setAnswerAckKey] = useState(0);
   const [realtimeReconnectKey, setRealtimeReconnectKey] = useState(0);
   const [ctaOverlay, setCtaOverlay] = useState<{ label: string; url: string } | null>(null);
   const [studentRaffleName, setStudentRaffleName] = useState<string | null>(null);
@@ -711,6 +713,7 @@ const Student = () => {
         points
       );
       setHasAnswered(true);
+      setAnswerAckKey((k) => k + 1);
       if (isCorrect) {
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 3000);
@@ -864,15 +867,24 @@ const Student = () => {
     if (!questionText.trim() || !lecture?.id) return;
     
     try {
-      await supabase.from('questions').insert({
+      setQuestionError(null);
+      const { error } = await supabase.from('questions').insert({
         lecture_id: lecture.id,
         student_id: studentId || null,
         question: questionText.trim(),
       });
+      if (error) throw error;
+      // Broadcast hint so presenter UI updates instantly even if postgres_changes is delayed.
+      lectureSyncChannelRef.current?.send({
+        type: "broadcast",
+        event: "question_new",
+        payload: { lectureId: lecture.id },
+      }).catch(() => {});
       setQuestionText("");
       setShowQuestionForm(false);
     } catch (error) {
       console.error('Error submitting question:', error);
+      setQuestionError("Couldn’t send your question. Check your connection and try again.");
     }
   };
 
@@ -1478,36 +1490,76 @@ const Student = () => {
               </div>
             )}
 
-            {/* Answer submitted message */}
+            {/* Answer received message (fun, English) */}
             {hasAnswered && (
               <motion.div
+                key={`ack-${answerAckKey}`}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="mt-6 text-center"
               >
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 text-green-600">
-                  <CheckCircle className="w-5 h-5" />
-                  <span className="font-medium">Answer submitted!</span>
+                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-500/10 text-teal-600">
+                  <PartyPopper className="w-5 h-5" />
+                  <span className="font-semibold">Answer received</span>
                 </div>
                 <p className="text-sm text-muted-foreground mt-2">
-                  {hasTimer ? "Waiting for results..." : "Your response is in — results update live below."}
+                  {hasTimer ? "Nice. Hang tight — results are coming up." : "You’re all set. Keep watching for the next prompt."}
                 </p>
               </motion.div>
             )}
           </motion.div>
           )
         ) : (
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <Presentation className="w-16 h-16 text-muted-foreground mb-4" />
-            <h2 className="text-xl font-display font-bold text-foreground mb-2">
-              {lecture.status === 'active' ? 'Waiting for Activity' : 'Lecture Ended'}
-            </h2>
-            <p className="text-muted-foreground">
-              {lecture.status === 'active' 
-                ? 'The presenter will start an interactive activity soon'
-                : 'Thank you for participating!'}
-            </p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-3xl mx-auto space-y-4"
+          >
+            <div className="rounded-2xl border border-border/60 bg-card/70 backdrop-blur p-5 text-center shadow-lg">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-semibold">
+                <Presentation className="w-4 h-4" />
+                {lecture.status === "active" ? "Live now" : "Session ended"}
+              </div>
+              <h2 className="mt-3 text-2xl font-display font-bold text-foreground">
+                {lecture.status === "active" ? "You’re in." : "Thanks for joining"}
+              </h2>
+              <p className="mt-1 text-muted-foreground">
+                {lecture.status === "active"
+                  ? "Follow along here. When the host launches an interactive question, it’ll appear instantly."
+                  : "The live session has finished."}
+              </p>
+            </div>
+
+            {lecture.status === "active" && currentSlide ? (
+              <div className="rounded-2xl overflow-hidden border border-border/60 bg-card shadow-xl">
+                <div className="px-4 py-3 border-b border-border/50 bg-gradient-to-r from-primary/10 via-muted/30 to-teal-500/10 text-sm font-semibold text-center text-foreground">
+                  Current slide
+                </div>
+                <div className="aspect-video w-full max-h-[55vh] min-h-[220px]">
+                  <SlideFrame>
+                    <SingleSlideErrorBoundary key={`${currentSlide.id}-watch`}>
+                      <BuilderPreviewProvider allowContentScroll>
+                        <SlideLayoutProvider slide={currentSlide}>
+                          <SlideRenderer
+                            slide={currentSlide}
+                            isEditing={false}
+                            showResults={false}
+                            hideFooter
+                            themeId={themeId}
+                            designStyleId={
+                              ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
+                                (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
+                                "dynamic") as DesignStyleId
+                            }
+                          />
+                        </SlideLayoutProvider>
+                      </BuilderPreviewProvider>
+                    </SingleSlideErrorBoundary>
+                  </SlideFrame>
+                </div>
+              </div>
+            ) : null}
+          </motion.div>
         )}
       </main>
       </StudentErrorBoundary>
@@ -1580,6 +1632,9 @@ const Student = () => {
                   className="text-base"
                   autoFocus
                 />
+                {questionError && (
+                  <p className="text-sm text-destructive">{questionError}</p>
+                )}
                 <Button
                   variant="hero"
                   className="w-full"

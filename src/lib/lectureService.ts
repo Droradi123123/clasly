@@ -132,7 +132,8 @@ async function getLectureRowByJoinCode(normalized: string): Promise<LectureRow |
   // Prefer direct table read (single round-trip; lectures SELECT is permissive for join/sync).
   const { data: row, error: selErr } = await supabase
     .from('lectures')
-    .select('*')
+    // Keep payload minimal for faster QR → join, especially on mobile.
+    .select('id,title,status,lecture_mode,settings,lecture_code')
     .eq('lecture_code', normalized)
     .maybeSingle();
 
