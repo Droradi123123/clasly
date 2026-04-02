@@ -22,6 +22,7 @@ import {
   defaultWebinarRegistrationConfig,
   mergeWebinarRegistrationFromSettings,
   validateLeadAnswers,
+  DEFAULT_WEBINAR_PRIMARY_COLOR,
 } from "@/types/webinarRegistration";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
@@ -69,6 +70,13 @@ const Join = () => {
   const normalizedJoinCode = normalizeLectureJoinCode(lectureCode);
   const showConnectingToSession =
     step === "code" && isLoading && normalizedJoinCode.length === 6;
+
+  const webinarPrimary =
+    webinarRegConfig.branding?.primaryColor &&
+    /^#[0-9A-Fa-f]{6}$/.test(webinarRegConfig.branding.primaryColor)
+      ? webinarRegConfig.branding.primaryColor
+      : DEFAULT_WEBINAR_PRIMARY_COLOR;
+  const webinarLogoUrl = webinarRegConfig.branding?.logoUrl?.trim();
 
   const handleCodeSubmit = async (codeToCheck?: string) => {
     const raw = codeToCheck || lectureCode;
@@ -323,11 +331,27 @@ const Join = () => {
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -16 }}
                 transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                style={{
+                  background: `linear-gradient(165deg, ${webinarPrimary}40 0%, rgba(255,255,255,0.03) 42%, transparent 100%)`,
+                  boxShadow: `inset 0 0 72px ${webinarPrimary}18`,
+                  borderRadius: "1.25rem",
+                  margin: "-0.5rem",
+                  padding: "0.5rem",
+                }}
               >
                 {lectureName ? (
                   <p className="text-center text-xs font-medium uppercase tracking-wider text-teal-300/90 mb-4 truncate px-1">
                     {lectureName}
                   </p>
+                ) : null}
+                {webinarLogoUrl ? (
+                  <div className="flex justify-center mb-5">
+                    <img
+                      src={webinarLogoUrl}
+                      alt=""
+                      className="h-11 max-w-[200px] object-contain"
+                    />
+                  </div>
                 ) : null}
                 <div className="text-center mb-8">
                   <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-2 tracking-tight">
@@ -371,9 +395,6 @@ const Join = () => {
                       )}
                     </div>
                   ))}
-                  {webinarRegConfig.showPrivacyNote && webinarRegConfig.privacyNote?.trim() ? (
-                    <p className="text-xs text-violet-300/60 leading-relaxed pt-1">{webinarRegConfig.privacyNote}</p>
-                  ) : null}
                   {error && (
                     <div className="flex items-center justify-center gap-2 text-sm text-rose-300">
                       <AlertCircle className="w-4 h-4 shrink-0" />
@@ -385,7 +406,11 @@ const Join = () => {
                     size="xl"
                     disabled={isLoading}
                     onClick={() => void handleLeadSubmit()}
-                    className="w-full h-14 rounded-2xl text-lg font-bold bg-violet-600 hover:bg-violet-500 text-white"
+                    className="w-full h-14 rounded-2xl text-lg font-bold text-white border-0 shadow-lg transition-[filter] hover:brightness-110"
+                    style={{
+                      backgroundColor: webinarPrimary,
+                      boxShadow: `0 12px 40px ${webinarPrimary}55`,
+                    }}
                   >
                     {isLoading ? (
                       <span className="inline-block w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />

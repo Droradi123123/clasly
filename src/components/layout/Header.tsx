@@ -1,6 +1,6 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare, Gift, Copy } from "lucide-react";
+import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare, Gift, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import {
   Popover,
@@ -23,14 +23,31 @@ import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 const Header = () => {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const trackWebinar = searchParams.get("track") === "webinar";
   const isHome = location.pathname === "/";
   const isWebinar = location.pathname === "/webinar";
+  const path = location.pathname;
   const isWebinarProductContext =
-    location.pathname === "/webinar" || location.pathname.startsWith("/webinar/");
+    path === "/webinar" ||
+    path.startsWith("/webinar/") ||
+    (path.startsWith("/editor") && trackWebinar) ||
+    (path.startsWith("/present") && trackWebinar);
   const dashboardPath = isWebinarProductContext ? "/webinar/dashboard" : "/dashboard";
+  const dashboardLabelFull = isWebinarProductContext ? "Webinar dashboard" : "Educator dashboard";
+
+  /** In-app surfaces where we show product badge + chrome (not marketing-only pages). */
+  const showProductBadge =
+    path === "/dashboard" ||
+    path.startsWith("/webinar/dashboard") ||
+    path.startsWith("/editor") ||
+    path.startsWith("/present") ||
+    path.includes("/lecture/");
+
   const { user, isLoading, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -44,8 +61,24 @@ const Header = () => {
     isStandard,
     aiTokensRemaining, 
     isLoading: isSubLoading,
-    plan
+    plan,
+    canAccessWebinarDashboard,
+    canAccessEducatorDashboard,
   } = useSubscriptionContext();
+
+  const hasBothProducts =
+    !!user && !isSubLoading && canAccessWebinarDashboard && canAccessEducatorDashboard;
+
+  const isWebinarSurfaceActive =
+    path.startsWith("/webinar/dashboard") ||
+    (path.startsWith("/editor") && trackWebinar) ||
+    (path.startsWith("/present") && trackWebinar);
+
+  const isEducatorSurfaceActive =
+    path === "/dashboard" ||
+    (path.startsWith("/editor") && !trackWebinar) ||
+    (path.startsWith("/present") && !trackWebinar) ||
+    /^\/lecture\/[^/]+\/analytics$/.test(path);
   
   // Free plan has 0 monthly refill; show balance vs initial 15-credit grant for progress
   const monthlyTokens = plan?.monthly_ai_tokens ?? 0;
@@ -71,13 +104,35 @@ const Header = () => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b border-border/50">
+      <header
+        className={cn(
+          "fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b",
+          isWebinarProductContext
+            ? "border-teal-500/35"
+            : showProductBadge && (path === "/dashboard" || path.startsWith("/editor") || path.startsWith("/present") || path.includes("/lecture/"))
+              ? "border-violet-500/25"
+              : "border-border/50",
+        )}
+      >
         <div className="container mx-auto px-4 sm:px-6 min-h-16 h-16 flex items-center justify-between gap-2 overflow-hidden">
           <Link to="/" className="flex items-center gap-2 shrink-0 min-w-0">
             <div className="w-9 h-9 rounded-lg bg-gradient-primary flex items-center justify-center shadow-md">
               <Presentation className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="font-display font-bold text-xl text-foreground">Clasly</span>
+            {showProductBadge && (
+              <Badge
+                variant="outline"
+                className={cn(
+                  "hidden sm:inline-flex text-[10px] uppercase tracking-wide font-semibold shrink-0",
+                  isWebinarSurfaceActive
+                    ? "border-teal-500/50 text-teal-700 dark:text-teal-300"
+                    : "border-violet-500/40 text-violet-800 dark:text-violet-200",
+                )}
+              >
+                {isWebinarSurfaceActive ? "Webinar" : "Educator"}
+              </Badge>
+            )}
           </Link>
 
           <nav className="hidden md:flex items-center gap-6">
@@ -225,7 +280,7 @@ const Header = () => {
                             className="w-full" 
                             asChild
                           >
-                            <Link to="/pricing">
+                            <Link to={isWebinarProductContext ? "/webinar/pricing" : "/pricing"}>
                               <Sparkles className="w-4 h-4 mr-2" />
                               Upgrade to Pro
                             </Link>
@@ -263,12 +318,43 @@ const Header = () => {
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    <DropdownMenuItem asChild>
-                      <Link to={dashboardPath} className="cursor-pointer">
-                        <LayoutDashboard className="w-4 h-4 mr-2" />
-                        Dashboard
-                      </Link>
-                    </DropdownMenuItem>
+                    {hasBothProducts ? (
+                      <>
+                        <DropdownMenuItem asChild>
+                          <Link
+                            to="/dashboard"
+                            className={cn(
+                              "cursor-pointer flex items-center gap-2 w-full",
+                              isEducatorSurfaceActive && "bg-accent",
+                            )}
+                          >
+                            <LayoutDashboard className="w-4 h-4 shrink-0" />
+                            <span className="flex-1">Educator dashboard</span>
+                            {isEducatorSurfaceActive && <Check className="w-4 h-4 shrink-0" />}
+                          </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link
+                            to="/webinar/dashboard"
+                            className={cn(
+                              "cursor-pointer flex items-center gap-2 w-full",
+                              isWebinarSurfaceActive && "bg-accent",
+                            )}
+                          >
+                            <LayoutDashboard className="w-4 h-4 shrink-0" />
+                            <span className="flex-1">Webinar dashboard</span>
+                            {isWebinarSurfaceActive && <Check className="w-4 h-4 shrink-0" />}
+                          </Link>
+                        </DropdownMenuItem>
+                      </>
+                    ) : (
+                      <DropdownMenuItem asChild>
+                        <Link to={dashboardPath} className="cursor-pointer">
+                          <LayoutDashboard className="w-4 h-4 mr-2" />
+                          {dashboardLabelFull}
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={signOut} className="cursor-pointer text-destructive focus:text-destructive">
                       <LogOut className="w-4 h-4 mr-2" />
@@ -277,12 +363,31 @@ const Header = () => {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 
-                <Button variant="hero" size="sm" asChild>
-                  <Link to={dashboardPath}>
-                    <LayoutDashboard className="w-4 h-4" />
-                    Dashboard
-                  </Link>
-                </Button>
+                {hasBothProducts ? (
+                  <div className="flex items-center gap-1.5">
+                    <Button variant="hero" size="sm" asChild>
+                      <Link to={dashboardPath} title={dashboardLabelFull}>
+                        <LayoutDashboard className="w-4 h-4 sm:mr-1" />
+                        <span className="hidden sm:inline max-w-[9rem] truncate">{dashboardLabelFull}</span>
+                      </Link>
+                    </Button>
+                    <Button variant="outline" size="sm" asChild className="hidden md:inline-flex px-2">
+                      <Link
+                        to={isWebinarProductContext ? "/dashboard" : "/webinar/dashboard"}
+                        title={isWebinarProductContext ? "Open Educator dashboard" : "Open Webinar dashboard"}
+                      >
+                        {isWebinarProductContext ? "Educator" : "Webinar"}
+                      </Link>
+                    </Button>
+                  </div>
+                ) : (
+                  <Button variant="hero" size="sm" asChild>
+                    <Link to={dashboardPath} title={dashboardLabelFull}>
+                      <LayoutDashboard className="w-4 h-4 sm:mr-1" />
+                      <span className="hidden sm:inline max-w-[11rem] truncate">{dashboardLabelFull}</span>
+                    </Link>
+                  </Button>
+                )}
               </>
             ) : (
               <Button variant="hero" size="sm" onClick={() => setShowAuthModal(true)}>

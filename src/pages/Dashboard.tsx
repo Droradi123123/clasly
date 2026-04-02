@@ -382,6 +382,9 @@ const Dashboard = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                {isWebinar ? "Clasly for Webinar" : "Clasly for Educator"}
+              </p>
               <h1 className="text-3xl font-display font-bold text-foreground mb-2">
                 {isWebinar ? "My Webinars" : "My Lectures"}
               </h1>

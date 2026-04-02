@@ -5,6 +5,7 @@ import { ThemeId, getTheme, DEFAULT_THEME_ID } from "@/types/themes";
 import { ThemedDecorations } from "@/components/effects/ThemedDecorations";
 import { getEffectiveDirection, getEffectiveTextAlign } from "@/lib/designDefaults";
 import { useBuilderPreview } from "@/contexts/BuilderPreviewContext";
+import { useSlideChrome } from "@/contexts/SlideChromeContext";
 
 interface SlideWrapperProps {
   slide: Slide;
@@ -193,8 +194,8 @@ export function SlideWrapper({
         )}
       </div>
 
-      {/* Logo - compact size, positioned by logoPosition */}
-      {design.logoUrl && (
+      {/* Logo - compact size, positioned by logoPosition (optional strip in Student instead) */}
+      {design.logoUrl && !hideCornerLogo && (
         <div
           key={design.logoUrl}
           className={`absolute z-20 pointer-events-none w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 ${

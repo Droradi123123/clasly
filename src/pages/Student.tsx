@@ -45,6 +45,8 @@ import {
 import { Json } from "@/integrations/supabase/types";
 import { StudentGameControls } from "@/components/game";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
+import { getPresentationLogoUrl } from "@/lib/presentationBranding";
+import { SlideChromeProvider } from "@/contexts/SlideChromeContext";
 
 const REALTIME_RESUBSCRIBE_DELAY_MS = 1000;
 const BROADCAST_REFETCH_DEBOUNCE_MS = 280;
@@ -241,6 +243,8 @@ const Student = () => {
     () => buildLiveResultsPayload(currentSlide, slideResponses as { response_data?: unknown }[]),
     [currentSlide, slideResponses]
   );
+
+  const presentationLogoUrl = useMemo(() => getPresentationLogoUrl(slides), [slides]);
 
   // Theme from current slide design first, then lecture settings, so option colors match presenter
   const themeId: ThemeId = (currentSlide?.design?.themeId as ThemeId) ?? (lecture?.settings?.themeId as ThemeId) ?? 'academic-pro';
@@ -954,6 +958,7 @@ const Student = () => {
   };
 
   return (
+    <SlideChromeProvider hideCornerLogo={!!presentationLogoUrl}>
     <div className="min-h-screen bg-background flex flex-col">
       <Confetti isActive={showConfetti} />
 
@@ -1065,6 +1070,15 @@ const Student = () => {
             </span>
           </div>
         </div>
+        {presentationLogoUrl ? (
+          <div className="mt-3 flex justify-center border-t border-primary-foreground/15 pt-3">
+            <img
+              src={presentationLogoUrl}
+              alt=""
+              className="max-h-9 w-auto max-w-[min(220px,78vw)] object-contain object-center opacity-95"
+            />
+          </div>
+        ) : null}
       </header>
 
       {/* Main Content - wrapped in Error Boundary so one render error does not crash the view */}
@@ -1650,6 +1664,7 @@ const Student = () => {
         )}
       </AnimatePresence>
     </div>
+    </SlideChromeProvider>
   );
 };
 

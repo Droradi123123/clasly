@@ -13,10 +13,25 @@ const fieldSchema = z.object({
 
 export type WebinarRegistrationField = z.infer<typeof fieldSchema>;
 
+/** Default accent for registration + previews (violet-600) */
+export const DEFAULT_WEBINAR_PRIMARY_COLOR = "#7c3aed";
+
+export const webinarBrandingSchema = z.object({
+  primaryColor: z
+    .string()
+    .regex(/^#[0-9A-Fa-f]{6}$/, "Must be #RRGGBB")
+    .optional(),
+  /** Public or signed URL from slide-images bucket */
+  logoUrl: z.string().max(2000).optional(),
+});
+
+export type WebinarBranding = z.infer<typeof webinarBrandingSchema>;
+
 export const webinarRegistrationConfigSchema = z.object({
   formTitle: z.string().max(200).optional(),
   formSubtitle: z.string().max(400).optional(),
-  /** When true, show a short privacy note under the form (host-written copy). */
+  branding: webinarBrandingSchema.optional(),
+  /** Deprecated — stripped on save/load */
   showPrivacyNote: z.boolean().optional(),
   privacyNote: z.string().max(500).optional(),
   fields: z.array(fieldSchema).min(1).max(12),
@@ -24,15 +39,40 @@ export const webinarRegistrationConfigSchema = z.object({
 
 export type WebinarRegistrationConfig = z.infer<typeof webinarRegistrationConfigSchema>;
 
+/** Remove deprecated keys and normalize branding for persistence. */
+export function sanitizeWebinarRegistrationForSave(
+  config: WebinarRegistrationConfig,
+): WebinarRegistrationConfig {
+  const { showPrivacyNote: _s, privacyNote: _p, ...rest } = config as WebinarRegistrationConfig & {
+    showPrivacyNote?: boolean;
+    privacyNote?: string;
+  };
+  const brandingParsed = webinarBrandingSchema.safeParse(rest.branding ?? {});
+  const raw = brandingParsed.success ? brandingParsed.data : {};
+  const primary =
+    raw.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(raw.primaryColor)
+      ? raw.primaryColor
+      : DEFAULT_WEBINAR_PRIMARY_COLOR;
+  const branding: WebinarBranding = {
+    primaryColor: primary,
+    ...(raw.logoUrl?.trim() ? { logoUrl: raw.logoUrl.trim() } : {}),
+  };
+  return {
+    ...rest,
+    branding,
+  };
+}
+
 export function createRegistrationFieldId(): string {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return `f_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
 export function defaultWebinarRegistrationConfig(): WebinarRegistrationConfig {
-  return {
+  return sanitizeWebinarRegistrationForSave({
     formTitle: "Webinar registration",
     formSubtitle: "Enter your details to continue",
+    branding: { primaryColor: DEFAULT_WEBINAR_PRIMARY_COLOR },
     fields: [
       {
         id: createRegistrationFieldId(),
@@ -49,60 +89,14 @@ export function defaultWebinarRegistrationConfig(): WebinarRegistrationConfig {
         required: true,
       },
     ],
-  };
-}
-
-/** Presets hosts can apply in one click */
-export function presetEmailOnly(): WebinarRegistrationConfig {
-  return {
-    formTitle: "Join the session",
-    formSubtitle: "We’ll send updates to your inbox",
-    fields: [
-      {
-        id: createRegistrationFieldId(),
-        type: "email",
-        label: "Email",
-        placeholder: "you@company.com",
-        required: true,
-      },
-    ],
-  };
-}
-
-export function presetEmailNameCompany(): WebinarRegistrationConfig {
-  return {
-    formTitle: "Webinar registration",
-    formSubtitle: "Tell us who you are",
-    fields: [
-      {
-        id: createRegistrationFieldId(),
-        type: "email",
-        label: "Work email",
-        placeholder: "you@company.com",
-        required: true,
-      },
-      {
-        id: createRegistrationFieldId(),
-        type: "name",
-        label: "Full name",
-        placeholder: "Your name",
-        required: true,
-      },
-      {
-        id: createRegistrationFieldId(),
-        type: "text",
-        label: "Company",
-        placeholder: "Company or team",
-        required: false,
-      },
-    ],
-  };
+  });
 }
 
 export function parseWebinarRegistrationConfig(raw: unknown): WebinarRegistrationConfig | null {
   if (raw == null || typeof raw !== "object") return null;
   const parsed = webinarRegistrationConfigSchema.safeParse(raw);
-  return parsed.success ? parsed.data : null;
+  if (!parsed.success) return null;
+  return sanitizeWebinarRegistrationForSave(parsed.data);
 }
 
 export function mergeWebinarRegistrationFromSettings(
@@ -145,8 +139,7 @@ export function validateLeadAnswers(
       }
     }
   }
-  const hasAny =
-    fields.some((f) => (answers[f.id] ?? "").trim().length > 0);
+  const hasAny = fields.some((f) => (answers[f.id] ?? "").trim().length > 0);
   if (!hasAny) {
     return { ok: false, message: "Please fill in the form." };
   }

@@ -97,8 +97,9 @@ import {
   defaultWebinarRegistrationConfig,
   mergeWebinarRegistrationFromSettings,
   webinarRegistrationConfigSchema,
+  sanitizeWebinarRegistrationForSave,
 } from "@/types/webinarRegistration";
-import { WebinarRegistrationFormBuilder } from "@/components/editor/WebinarRegistrationFormBuilder";
+import { WebinarSettingsWizard } from "@/components/editor/WebinarSettingsWizard";
 import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
@@ -159,7 +160,8 @@ function buildEditorLectureSettingsSnapshot(
   };
   if (lectureMode === "webinar") {
     const regParsed = webinarRegistrationConfigSchema.safeParse(webinarRegConfig);
-    settings.webinarRegistration = regParsed.success ? regParsed.data : defaultWebinarRegistrationConfig();
+    const base = regParsed.success ? regParsed.data : defaultWebinarRegistrationConfig();
+    settings.webinarRegistration = sanitizeWebinarRegistrationForSave(base);
     if (webinarCtaLabel.trim() && webinarCtaUrl.trim()) {
       settings.webinarCta = { label: webinarCtaLabel.trim(), url: webinarCtaUrl.trim() };
     } else if (!webinarCtaLabel.trim() && !webinarCtaUrl.trim()) {
@@ -1243,7 +1245,8 @@ const Editor = () => {
 
     if (lectureDbId) {
       // Navigate immediately – don't block on save. Save in background if there are changes.
-      navigate(`/present/${lectureDbId}`, {
+      const presentQs = lectureMode === "webinar" ? "?track=webinar" : "";
+      navigate(`/present/${lectureDbId}${presentQs}`, {
         state: {
           optimisticSlides: normalizedSlides,
           optimisticLecture: {
@@ -1264,7 +1267,8 @@ const Editor = () => {
     } else {
       createLecture(lectureTitle, normalizedSlides, undefined, { lecture_mode: lectureMode })
         .then((newLecture) => {
-          navigate(`/present/${newLecture.id}`, {
+          const presentQsNew = lectureMode === "webinar" ? "?track=webinar" : "";
+          navigate(`/present/${newLecture.id}${presentQsNew}`, {
             state: {
               optimisticSlides: (newLecture.slides as unknown as Slide[]) ?? normalizedSlides,
               optimisticLecture: {
@@ -1431,7 +1435,7 @@ const Editor = () => {
       <UpgradeModalComponent />
 
       <Dialog open={showWebinarSettingsDialog} onOpenChange={setShowWebinarSettingsDialog}>
-        <DialogContent className="sm:max-w-2xl max-h-[min(92vh,900px)] overflow-y-auto">
+        <DialogContent className="sm:max-w-4xl max-h-[min(92vh,900px)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Webinar settings</DialogTitle>
             <DialogDescription className="text-left text-muted-foreground space-y-2 pt-1">
@@ -1444,71 +1448,38 @@ const Editor = () => {
               </span>
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-8 py-2">
-            <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">
-                Registration form (after QR / code)
-              </h3>
-              <WebinarRegistrationFormBuilder
-                value={webinarRegConfig}
-                onChange={(next) => {
-                  setWebinarRegConfig(next);
-                  setHasChanges(true);
-                }}
-              />
-            </section>
-            <section className="space-y-4">
-              <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">
-                Live CTA (during session)
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                While you present, tap <strong className="text-foreground">CTA</strong> on the presenter toolbar to send this
-                button to every attendee&apos;s phone.
-              </p>
-            <div className="space-y-2">
-              <Label htmlFor="webinar-cta-label">Button label (shown on phones)</Label>
-              <Input
-                id="webinar-cta-label"
-                placeholder='e.g. "Get the playbook" or "Book a demo"'
-                value={webinarCtaLabel}
-                onChange={(e) => {
-                  setWebinarCtaLabel(e.target.value);
-                  setHasChanges(true);
-                }}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="webinar-cta-url">Destination URL</Label>
-              <Input
-                id="webinar-cta-url"
-                type="url"
-                placeholder="https://…"
-                value={webinarCtaUrl}
-                onChange={(e) => {
-                  setWebinarCtaUrl(e.target.value);
-                  setHasChanges(true);
-                }}
-              />
-              <p className="text-xs text-muted-foreground">Use a full URL including https://</p>
-            </div>
-            <div className="rounded-xl border border-border/60 bg-muted/40 p-4 space-y-2">
-              <p className="text-xs font-semibold text-foreground uppercase tracking-wide">During the live session</p>
-              <p className="text-sm text-muted-foreground">
-                Attendees see a prominent button with your label. Example preview:
-              </p>
-              <div className="rounded-lg bg-background border border-border p-3 flex justify-center">
-                <Button
-                  type="button"
-                  variant="hero"
-                  className="w-full max-w-xs pointer-events-none opacity-90"
-                  tabIndex={-1}
-                >
-                  {webinarCtaLabel.trim() || "Your button label"}
-                </Button>
-              </div>
-            </div>
-            </section>
-          </div>
+          <WebinarSettingsWizard
+            webinarRegConfig={webinarRegConfig}
+            onWebinarRegChange={(next) => {
+              setWebinarRegConfig(next);
+              setHasChanges(true);
+            }}
+            webinarCtaLabel={webinarCtaLabel}
+            onWebinarCtaLabelChange={(v) => {
+              setWebinarCtaLabel(v);
+              setHasChanges(true);
+            }}
+            webinarCtaUrl={webinarCtaUrl}
+            onWebinarCtaUrlChange={(v) => {
+              setWebinarCtaUrl(v);
+              setHasChanges(true);
+            }}
+            isPro={!!isPro}
+            onPremiumLogoBlocked={() =>
+              showUpgradeModal({
+                feature: "logo",
+                title: "Logo upload",
+                description: "Logo upload is available on the Pro plan. Upgrade to add your logo to webinar registration.",
+              })
+            }
+            onPremiumColorBlocked={() =>
+              showUpgradeModal({
+                feature: "custom color",
+                title: "Custom color picker",
+                description: "Choosing a custom registration accent is available on the Pro plan. Upgrade to unlock full color control.",
+              })
+            }
+          />
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setShowWebinarSettingsDialog(false)}>
               Done

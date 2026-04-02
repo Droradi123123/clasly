@@ -248,8 +248,9 @@ const Present = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
+    const edQs = lecture.lecture_mode === "webinar" ? "?track=webinar" : "";
     startTransition(() =>
-      navigate(`/editor/${lectureId}`, {
+      navigate(`/editor/${lectureId}${edQs}`, {
         state: {
           preloadedLecture: {
             id: lecture.id,

@@ -4,16 +4,20 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   type WebinarRegistrationConfig,
   type WebinarRegistrationField,
   type WebinarRegistrationFieldType,
   WEBINAR_FIELD_TYPES,
   createRegistrationFieldId,
-  defaultWebinarRegistrationConfig,
-  presetEmailNameCompany,
-  presetEmailOnly,
 } from "@/types/webinarRegistration";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Props = {
   value: WebinarRegistrationConfig;
@@ -62,41 +66,8 @@ export function WebinarRegistrationFormBuilder({ value, onChange }: Props) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Quick presets</p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-xs h-8"
-            onClick={() => onChange(defaultWebinarRegistrationConfig())}
-          >
-            Email + name
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-xs h-8"
-            onClick={() => onChange(presetEmailOnly())}
-          >
-            Email only
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="text-xs h-8"
-            onClick={() => onChange(presetEmailNameCompany())}
-          >
-            Email + name + company
-          </Button>
-        </div>
-      </div>
-
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 sm:col-span-2">
           <Label htmlFor="wr-form-title">Form title</Label>
           <Input
             id="wr-form-title"
@@ -116,30 +87,6 @@ export function WebinarRegistrationFormBuilder({ value, onChange }: Props) {
         </div>
       </div>
 
-      <div className="rounded-lg border border-border/60 bg-muted/30 p-3 space-y-3">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="wr-privacy"
-            checked={!!value.showPrivacyNote}
-            onCheckedChange={(c) =>
-              onChange({ ...value, showPrivacyNote: c === true })
-            }
-          />
-          <Label htmlFor="wr-privacy" className="text-sm font-normal cursor-pointer">
-            Show a short note under the form (consent / how we use data)
-          </Label>
-        </div>
-        {value.showPrivacyNote && (
-          <Textarea
-            value={value.privacyNote ?? ""}
-            onChange={(e) => onChange({ ...value, privacyNote: e.target.value })}
-            placeholder="e.g. We’ll only use this to send the replay and relevant offers."
-            rows={2}
-            className="resize-none text-sm"
-          />
-        )}
-      </div>
-
       <div>
         <div className="flex items-center justify-between mb-2">
           <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Fields (order = on phone)</p>
@@ -151,31 +98,35 @@ export function WebinarRegistrationFormBuilder({ value, onChange }: Props) {
               key={field.id}
               className="rounded-xl border border-border/70 bg-background p-3 space-y-3 shadow-sm"
             >
-              <div className="flex flex-wrap items-start gap-2">
-                <div className="w-full sm:w-[130px] space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Type</Label>
-                  <select
-                    className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-                    value={field.type}
-                    onChange={(e) =>
-                      updateField(index, { type: e.target.value as WebinarRegistrationFieldType })
-                    }
-                  >
-                    {WEBINAR_FIELD_TYPES.map((t) => (
-                      <option key={t} value={t}>
-                        {TYPE_LABELS[t]}
-                      </option>
-                    ))}
-                  </select>
+              <div className="space-y-2">
+                <Label className="text-[11px] text-muted-foreground">Field type</Label>
+                <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Field type">
+                  {WEBINAR_FIELD_TYPES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="radio"
+                      aria-checked={field.type === t}
+                      onClick={() => updateField(index, { type: t })}
+                      className={cn(
+                        "rounded-lg border px-2 py-2.5 text-center text-xs font-medium transition-colors min-h-[44px]",
+                        field.type === t
+                          ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary/30"
+                          : "border-border/80 bg-muted/20 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                      )}
+                    >
+                      {TYPE_LABELS[t]}
+                    </button>
+                  ))}
                 </div>
-                <div className="flex-1 min-w-[140px] space-y-1">
-                  <Label className="text-[11px] text-muted-foreground">Label shown to attendees</Label>
-                  <Input
-                    value={field.label}
-                    onChange={(e) => updateField(index, { label: e.target.value })}
-                    placeholder="Field label"
-                  />
-                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] text-muted-foreground">Label shown to attendees</Label>
+                <Input
+                  value={field.label}
+                  onChange={(e) => updateField(index, { label: e.target.value })}
+                  placeholder="Field label"
+                />
               </div>
               <div className="space-y-1">
                 <Label className="text-[11px] text-muted-foreground">Placeholder (optional)</Label>
@@ -235,16 +186,21 @@ export function WebinarRegistrationFormBuilder({ value, onChange }: Props) {
             </div>
           ))}
         </div>
-        <div className="flex flex-wrap gap-2 pt-2">
-          <Button type="button" variant="secondary" size="sm" onClick={() => addField("email")}>
-            <Plus className="w-3.5 h-3.5 mr-1" /> Email
-          </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={() => addField("name")}>
-            <Plus className="w-3.5 h-3.5 mr-1" /> Name
-          </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={() => addField("text")}>
-            <Plus className="w-3.5 h-3.5 mr-1" /> Text
-          </Button>
+        <div className="pt-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="secondary" size="sm" disabled={fields.length >= 12}>
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Add field
+                <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-70" aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuItem onClick={() => addField("email")}>Email</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addField("name")}>Name</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => addField("text")}>Free text</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </div>
