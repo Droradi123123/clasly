@@ -313,8 +313,7 @@ export function GuessNumberSlide({
                 </div>
               )}
 
-              {/* Waiting: no data yet, or voting phase (timer — hide aggregates) */}
-              {!isEditing && (!revealDist || !hasResults) && (
+              {!isEditing && !hasResults && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -343,6 +342,20 @@ export function GuessNumberSlide({
                       </div>
                     )}
                   </motion.div>
+                </motion.div>
+              )}
+              {!isEditing && hasResults && !revealDist && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-4 md:mt-6 text-center px-2"
+                >
+                  <div className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/20 max-w-lg mx-auto text-white/80 text-sm">
+                    <Users className="w-4 h-4 shrink-0" />
+                    <span>
+                      {totalResponses} guess{totalResponses === 1 ? "" : "es"} — stats stay hidden until the timer ends or the presenter shows results.
+                    </span>
+                  </div>
                 </motion.div>
               )}
               </>

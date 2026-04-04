@@ -27,7 +27,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EditorTopToolbar } from "@/components/editor/EditorTopToolbar";
-import { ProductContextBar } from "@/components/layout/ProductContextBar";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { SlideFrame } from "@/components/editor/SlideFrame";
 import { ImportPresentationDialog } from "@/components/editor/ImportPresentationDialog";
@@ -235,6 +234,8 @@ const Editor = () => {
   const hasTriggeredInitialGen = useRef(false);
   /** Last known lecture.settings from DB / apply — merged on save so partial updates never wipe keys (e.g. webinarCta). */
   const persistedSettingsRef = useRef<Record<string, unknown>>({});
+  /** Hash of slides JSON at last save — used to skip sending heavy slides payload when only settings changed. */
+  const lastSavedSlidesHashRef = useRef<string>("");
   /** Where to send the user if lecture load fails (matches track / loaded lecture_mode). */
   const editorErrorHomeRef = useRef<"/dashboard" | "/webinar/dashboard">("/dashboard");
   // Start with logical size so no layout shift when ResizeObserver runs
@@ -917,7 +918,11 @@ const Editor = () => {
     const loadedSlides = Array.isArray(raw) ? (raw as unknown as Slide[]) : null;
     if (loadedSlides && loadedSlides.length > 0) {
       const valid = loadedSlides.every((s) => s && typeof s === 'object' && s.id && s.type);
-      if (valid) setSlides(ensureSlidesDesignDefaults(loadedSlides));
+      if (valid) {
+        const normalized = ensureSlidesDesignDefaults(loadedSlides);
+        setSlides(normalized);
+        lastSavedSlidesHashRef.current = JSON.stringify(normalized);
+      }
     }
     const settings = lecture.settings as Record<string, unknown> | null;
     persistedSettingsRef.current =
@@ -979,6 +984,7 @@ const Editor = () => {
   }, [lectureId, user?.id, isAuthLoading, navigate, location.state, applyLectureData]);
 
   // Auto-save with optional silent mode (no spinner, subtle toast). Save what we display (displaySlides).
+  // Splits the PATCH so only changed parts are sent (slides vs settings) to reduce DB payload.
   const saveToDatabase = useCallback(async (silent = false) => {
     if (!hasChanges) return;
     
@@ -999,17 +1005,22 @@ const Editor = () => {
       const normalizedSlides = ensureSlidesDesignDefaults(slidesToSave);
       
       if (lectureDbId) {
-        await updateLecture(lectureDbId, {
-          slides: normalizedSlides,
-          settings,
+        const slidesHash = JSON.stringify(normalizedSlides);
+        const slidesChanged = slidesHash !== lastSavedSlidesHashRef.current;
+        const patch: Parameters<typeof updateLecture>[1] = {
           lecture_mode: lectureMode,
-        });
+        };
+        if (slidesChanged) patch.slides = normalizedSlides;
+        patch.settings = settings;
+        await updateLecture(lectureDbId, patch);
+        lastSavedSlidesHashRef.current = slidesHash;
       } else {
         const newLecture = await createLecture(lectureTitle, normalizedSlides, undefined, {
           lecture_mode: lectureMode,
         });
         setLectureDbId(newLecture.id);
         setLectureCode(newLecture.lecture_code);
+        lastSavedSlidesHashRef.current = JSON.stringify(normalizedSlides);
         const pathPrefix =
           lectureMode === "webinar" ? `/webinar/editor/${newLecture.id}` : `/editor/${newLecture.id}`;
         window.history.replaceState(null, "", pathPrefix);
@@ -1112,7 +1123,7 @@ const Editor = () => {
     const baseSlides = sandboxSlides.length > 0 ? sandboxSlides : slides;
     const newSlide = createNewSlide(type, baseSlides.length);
     const newSlides = [...baseSlides, newSlide].map((s, idx) => ({ ...s, order: idx }));
-    setSlides(newSlides);
+    setSlides(ensureSlidesDesignDefaults(newSlides));
     setSandboxSlides([]);
     setCurrentSlideIndex(newSlides.length - 1);
     setHasChanges(true);
@@ -1178,7 +1189,7 @@ const Editor = () => {
   }, [isAIPanelOpen, slides.length, isConstrainedViewport]);
 
   const handleSlidesImported = (importedSlides: Slide[]) => {
-    setSlides([...slides, ...importedSlides]);
+    setSlides([...slides, ...ensureSlidesDesignDefaults(importedSlides)]);
     setCurrentSlideIndex(slides.length); // Select first imported slide
     setHasChanges(true);
   };
@@ -1204,15 +1215,17 @@ const Editor = () => {
   };
 
   const updateActivitySettings = (updates: Partial<ActivitySettings>) => {
-    setSlides(
-      slides.map((slide, index) =>
-        index === currentSlideIndex
-          ? {
-              ...slide,
-              activitySettings: { ...slide.activitySettings, ...updates },
-            }
-          : slide
-      )
+    setSlides((prev) =>
+      ensureSlidesDesignDefaults(
+        prev.map((slide, index) =>
+          index === currentSlideIndex
+            ? {
+                ...slide,
+                activitySettings: { ...slide.activitySettings, ...updates },
+              }
+            : slide,
+        ),
+      ),
     );
     setSandboxSlides([]);
     setHasChanges(true);
@@ -1322,10 +1335,6 @@ const Editor = () => {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
-      <ProductContextBar
-        product={lectureMode}
-        subtitle="Editor"
-      />
       {/* Compact Editor Header - No global nav */}
       <div className="flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
         <div className={`flex items-center justify-between ${isConstrainedViewport ? 'px-3 py-1.5' : 'px-4 py-2'}`}>

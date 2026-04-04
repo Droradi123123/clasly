@@ -55,8 +55,8 @@ export function CleanBarResults({
             className="space-y-2"
           >
             {/* Row: number, label, count + icon */}
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
                 <span
                   className="text-xl md:text-2xl font-bold shrink-0 tabular-nums"
                   style={{ color: textColor }}
@@ -64,7 +64,7 @@ export function CleanBarResults({
                   {index + 1}.
                 </span>
                 <span
-                  className="font-semibold text-base md:text-lg truncate"
+                  className="font-semibold text-base md:text-lg min-w-0 break-words leading-snug"
                   style={{ color: textColor }}
                 >
                   {option}

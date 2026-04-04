@@ -1,6 +1,10 @@
 /**
  * Shared aggregation helpers for lecture responses. Used by Present (live), Student (results), and LectureAnalytics.
  * Each function expects an array of response rows with response_data (JSON from DB).
+ *
+ * Live update latency: presenter sees new rows after Realtime `responses` subscription + optional
+ * debounce in `subscribeResponses` (~120ms) and `RESPONSE_POLL_INTERVAL_MS` backup (~1.2s) in Present.
+ * Every participative `SlideType` used in live mode must have a matching branch in `buildLiveResultsPayload`.
  */
 import type { Slide } from "@/types/slides";
 

@@ -155,7 +155,7 @@ const ConversationalBuilder: React.FC = () => {
       updateLecture(draftLectureId, { slides: sandboxSlides }).catch((e) =>
         console.warn('Failed to update draft:', e)
       );
-    }, 1500);
+    }, 2200);
     return () => clearTimeout(t);
   }, [draftLectureId, sandboxSlides]);
   

@@ -187,10 +187,18 @@ export function YesNoSlide({
                   {!isEditing && revealStats && hasResults && <span className="text-white/80 text-lg font-bold">{noPercentage}%</span>}
                 </motion.div>
               </motion.div>
-              {!isEditing && (!revealStats || !hasResults) && (
+              {!isEditing && !hasResults && (
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
                   <Users className="w-4 h-4" />
                   <span>Waiting for votes...</span>
+                </div>
+              )}
+              {!isEditing && hasResults && !revealStats && (
+                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/80 text-sm max-w-md text-center">
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>
+                    {totalResponses} vote{totalResponses === 1 ? "" : "s"} — percentages hidden until the timer ends or the presenter shows results.
+                  </span>
                 </div>
               )}
             </div>
@@ -424,8 +432,8 @@ export function YesNoSlide({
               </motion.div>
             </div>
 
-            {/* Zero-state waiting indicator - only for non-thumbsDynamic */}
-            {!isThumbsDynamic && !isEditing && (!revealStats || !hasResults) && (
+            {/* Zero-state waiting — or “votes in, breakdown hidden” during timed quiz */}
+            {!isThumbsDynamic && !isEditing && !hasResults && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -454,6 +462,20 @@ export function YesNoSlide({
                     </div>
                   )}
                 </motion.div>
+              </motion.div>
+            )}
+            {!isThumbsDynamic && !isEditing && hasResults && !revealStats && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 text-center px-2"
+              >
+                <div className="inline-flex flex-wrap items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 max-w-lg mx-auto text-white/80 text-sm">
+                  <Users className="w-5 h-5 shrink-0" />
+                  <span>
+                    {totalResponses} vote{totalResponses === 1 ? "" : "s"} — percentages stay hidden until the timer ends or the presenter shows results.
+                  </span>
+                </div>
               </motion.div>
             )}
 

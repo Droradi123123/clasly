@@ -80,6 +80,7 @@ node scripts/verify-supabase.mjs
 | 401 Unauthorized ב-Function | JWT נדרש אבל לא נשלח/פג תוקף, או הפונקציה דורשת JWT | לבדוק ש-`Authorization: Bearer <session.access_token>` נשלח. עבור **convert-to-images** (ייבוא PPTX): להגדיר `verify_jwt = false` ב-`config.toml` תחת `[functions.convert-to-images]` ולפרוס מחדש |
 | 500 / "GEMINI_API_KEY not configured" | חסר Secret ב-Edge Function | להגדיר `GEMINI_API_KEY` ב-Supabase → Edge Functions → Secrets |
 | "Insufficient credits" | אין מספיק קרדיטים למשתמש | לבדוק טבלאות `user_credits` ו-`credit_transactions` |
+| 500 על `PATCH lectures` עם `error=57014` / זמן תגובה ארוך | שאילתת Postgres בוטלה (timeout / עומס) לעיתים על עדכון `slides` JSONB גדול | ראה [SUPABASE_TIMEOUTS_AND_LOGS.md](./SUPABASE_TIMEOUTS_AND_LOGS.md) — הגדלת compute, פחות שמירות תכופות, retries בצד לקוח |
 | paypal-webhook מחזיר 401 | `PAYPAL_WEBHOOK_ID` חסר או לא תואם ל-PayPal | להגדיר Webhook ב-PayPal Developer ולהוסיף את ה-ID כ-Secret |
 
 ---

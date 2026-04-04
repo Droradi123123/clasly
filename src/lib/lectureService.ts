@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Slide } from "@/types/slides";
 import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 import { Json } from "@/integrations/supabase/types";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { z } from "zod";
 
 // Input validation schemas
@@ -267,42 +268,106 @@ export async function lookupLectureByJoinCode(code: string): Promise<LectureJoin
  * Full lecture row for `/student/:code` — must include `slides`, indexes, and `activity_started_at`
  * so phone ↔ presenter sync (broadcast + postgres) starts from a correct deck.
  * `lookupLectureByJoinCode` intentionally returns a minimal row for the Join UI; do not reuse that here.
+ *
+ * Performance: one `select('*')` by `lecture_code` when possible (avoids two round-trips). Join page can
+ * call this after code validation so the deck is often ready before the student route mounts.
  */
-export async function getLectureByCode(code: string) {
+const inflightLectureByCode = new Map<string, Promise<Record<string, unknown> | null>>();
+
+export async function getLectureByCode(code: string): Promise<Record<string, unknown> | null> {
   const normalized = normalizeLectureJoinCode(code);
   if (!normalized) return null;
-  try {
-    const row = await getLectureRowByJoinCode(normalized);
-    if (!row?.id) return null;
-    return await getLecture(String(row.id));
-  } catch (e) {
-    console.error("[getLectureByCode] full lecture fetch failed:", e);
-    return null;
-  }
+
+  const pending = inflightLectureByCode.get(normalized);
+  if (pending) return pending;
+
+  const run = (async (): Promise<Record<string, unknown> | null> => {
+    try {
+      const { data, error } = await supabase
+        .from("lectures")
+        .select("*")
+        .eq("lecture_code", normalized)
+        .maybeSingle();
+
+      if (!error && data) {
+        return data as Record<string, unknown>;
+      }
+
+      const row = await getLectureRowByJoinCode(normalized);
+      if (!row?.id) return null;
+      const full = await getLecture(String(row.id));
+      return full as Record<string, unknown>;
+    } catch (e) {
+      console.error("[getLectureByCode] full lecture fetch failed:", e);
+      return null;
+    } finally {
+      inflightLectureByCode.delete(normalized);
+    }
+  })();
+
+  inflightLectureByCode.set(normalized, run);
+  return run;
 }
 
-const UPDATE_LECTURE_MAX_RETRIES = 2;
-const UPDATE_LECTURE_BASE_DELAY_MS = 500;
+/** Extra retries when DB hits statement timeout / cancel (Postgres 57014) — common under load or large JSONB updates. */
+const UPDATE_LECTURE_MAX_RETRIES = 4;
+const UPDATE_LECTURE_BASE_DELAY_MS = 600;
+
+/**
+ * Serializes concurrent updateLecture calls for the same lecture so they don't
+ * race on the wire. Each call waits for the previous one to finish before issuing PATCH.
+ */
+const inflightUpdateLecture = new Map<string, Promise<unknown>>();
+
+function chainLectureUpdate<T>(lectureId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = inflightUpdateLecture.get(lectureId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  inflightUpdateLecture.set(lectureId, next);
+  next.finally(() => {
+    if (inflightUpdateLecture.get(lectureId) === next) {
+      inflightUpdateLecture.delete(lectureId);
+    }
+  });
+  return next;
+}
 
 function isRetryableError(error: { message?: string; code?: string }): boolean {
   const msg = (error.message || '').toLowerCase();
   const code = (error.code || '').toString();
-  // 5xx, network/fetch errors, timeout, connection refused
+  // Postgres: query canceled / statement timeout (PostgREST often returns 500 + this code)
+  if (code === "57014" || code === "57P01") return true;
+  if (
+    /canceling statement|statement timeout|query_canceled|57014/i.test(msg) ||
+    /timeout/i.test(msg)
+  ) {
+    return true;
+  }
+  // 5xx, network/fetch errors, connection refused
   return (
     /^5\d{2}$/.test(code) ||
-    /network|fetch|timeout|econnrefused|econnreset|socket|unhealthy/i.test(msg)
+    /network|fetch|econnrefused|econnreset|socket|unhealthy/i.test(msg)
   );
 }
 
-// Update lecture status and current slide. updated_at is set on every call so postgres_changes and polling (sync layers 2 & 3) detect changes.
-// Retries 1–2 times on 5xx/network errors with exponential backoff.
-export async function updateLecture(lectureId: string, updates: {
+// Update lecture. Serialized per lecture ID to avoid concurrent PATCH races.
+// Retries on 5xx, network errors, and Postgres statement cancel/timeout (e.g. 57014) with exponential backoff.
+export function updateLecture(lectureId: string, updates: {
   status?: string;
   current_slide_index?: number;
   slides?: Slide[];
   settings?: Record<string, unknown>;
   lecture_mode?: 'education' | 'webinar';
-  /** ISO timestamp when the current participative slide's timer started; null when not applicable */
+  activity_started_at?: string | null;
+}) {
+  return chainLectureUpdate(lectureId, () => updateLectureInner(lectureId, updates));
+}
+
+async function updateLectureInner(lectureId: string, updates: {
+  status?: string;
+  current_slide_index?: number;
+  slides?: Slide[];
+  settings?: Record<string, unknown>;
+  lecture_mode?: 'education' | 'webinar';
   activity_started_at?: string | null;
 }) {
   const updateData: Record<string, unknown> = {
@@ -335,8 +400,6 @@ export async function updateLecture(lectureId: string, updates: {
       const errObj = err as { message?: string; code?: string };
       const msg = (errObj.message || '').toLowerCase();
 
-      // Resilience: if production DB is missing `activity_started_at`, don't block slide sync.
-      // Retry once without the column so current_slide_index updates still succeed.
       if (
         !retriedWithoutActivityStartedAt &&
         'activity_started_at' in updateData &&
@@ -389,36 +452,50 @@ export async function navigateSlide(lectureId: string, slideIndex: number) {
   return updateLecture(lectureId, { current_slide_index: slideIndex });
 }
 
-// Join lecture as student
+const JOIN_LECTURE_MAX_RETRIES = 3;
+const JOIN_LECTURE_BASE_DELAY_MS = 400;
+
+// Join lecture as student (retries transient PostgREST/network failures)
 export async function joinLecture(lectureId: string, name: string, emoji: string) {
-  // Validate inputs
   const validatedName = studentNameSchema.parse(name);
   const validatedEmoji = emojiSchema.parse(emoji);
-  
-  const { data, error } = await supabase
-    .from('students')
-    .insert({
-      lecture_id: lectureId,
-      name: validatedName,
-      emoji: validatedEmoji,
-    })
-    .select()
-    .single();
 
-  if (error) {
-    // If duplicate, try to get existing student
-    if (error.code === '23505') {
-      const { data: existing } = await supabase
-        .from('students')
-        .select('*')
-        .eq('lecture_id', lectureId)
-        .eq('name', validatedName)
-        .single();
-      return existing;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < JOIN_LECTURE_MAX_RETRIES; attempt++) {
+    const { data, error } = await supabase
+      .from("students")
+      .insert({
+        lecture_id: lectureId,
+        name: validatedName,
+        emoji: validatedEmoji,
+      })
+      .select()
+      .single();
+
+    if (!error) {
+      return data;
     }
-    throw error;
+
+    if (error.code === "23505") {
+      const { data: existing } = await supabase
+        .from("students")
+        .select("*")
+        .eq("lecture_id", lectureId)
+        .eq("name", validatedName)
+        .maybeSingle();
+      return existing ?? null;
+    }
+
+    lastError = new Error(error.message);
+    if (attempt < JOIN_LECTURE_MAX_RETRIES - 1 && isRetryableError(error)) {
+      await new Promise((r) => setTimeout(r, JOIN_LECTURE_BASE_DELAY_MS * Math.pow(2, attempt)));
+      continue;
+    }
+    throw lastError;
   }
-  return data;
+
+  throw lastError ?? new Error("Failed to join lecture");
 }
 
 /** Best-effort DB backup for “active” tab (Presence is source of truth for live). */
@@ -516,24 +593,61 @@ export function subscribeLecture(lectureId: string, callback: (lecture: unknown)
     .subscribe();
 }
 
+/** Debounce refetches when many students join at once (avoids N× full-table reads per presenter). */
+const STUDENTS_SUBSCRIBE_DEBOUNCE_MS = 400;
+
+export type SubscribeRealtimeOptions = {
+  onChannelStatus?: (status: string, err?: Error) => void;
+};
+
 // Subscribe to student updates (for presenter)
-export function subscribeStudents(lectureId: string, callback: (students: unknown[]) => void) {
-  return supabase
+export function subscribeStudents(
+  lectureId: string,
+  callback: (students: unknown[]) => void,
+  options?: SubscribeRealtimeOptions
+): { channel: RealtimeChannel; dispose: () => void } {
+  let debounceId: ReturnType<typeof setTimeout> | null = null;
+
+  const dispose = () => {
+    if (debounceId) {
+      clearTimeout(debounceId);
+      debounceId = null;
+    }
+  };
+
+  const flush = () => {
+    debounceId = null;
+    void getStudents(lectureId)
+      .then(callback)
+      .catch((e) => console.error("[subscribeStudents] getStudents:", e));
+  };
+
+  const scheduleFlush = () => {
+    if (debounceId) clearTimeout(debounceId);
+    debounceId = setTimeout(flush, STUDENTS_SUBSCRIBE_DEBOUNCE_MS);
+  };
+
+  const channel = supabase
     .channel(`students-${lectureId}`)
     .on(
-      'postgres_changes',
+      "postgres_changes",
       {
-        event: '*',
-        schema: 'public',
-        table: 'students',
+        event: "*",
+        schema: "public",
+        table: "students",
         filter: `lecture_id=eq.${lectureId}`,
       },
-      async () => {
-        const students = await getStudents(lectureId);
-        callback(students);
+      () => {
+        scheduleFlush();
       }
     )
-    .subscribe();
+    .subscribe((status, err) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        options?.onChannelStatus?.(status, err);
+      }
+    });
+
+  return { channel, dispose };
 }
 
 const RESPONSES_DEBOUNCE_MS = 120;
@@ -542,10 +656,18 @@ const RESPONSES_DEBOUNCE_MS = 120;
 export function subscribeResponses(
   lectureId: string,
   slideIndex: number,
-  callback: (responses: unknown[]) => void
-) {
+  callback: (responses: unknown[]) => void,
+  options?: SubscribeRealtimeOptions
+): { channel: RealtimeChannel; dispose: () => void } {
   let lastResponses: unknown[] = [];
   let debounceId: ReturnType<typeof setTimeout> | null = null;
+
+  const dispose = () => {
+    if (debounceId) {
+      clearTimeout(debounceId);
+      debounceId = null;
+    }
+  };
 
   const runGetResponses = () => {
     getResponses(lectureId, slideIndex).then((responses) => {
@@ -557,16 +679,16 @@ export function subscribeResponses(
   const channel = supabase
     .channel(`responses-${lectureId}-${slideIndex}`)
     .on(
-      'postgres_changes',
+      "postgres_changes",
       {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'responses',
+        event: "INSERT",
+        schema: "public",
+        table: "responses",
         filter: `lecture_id=eq.${lectureId}`,
       },
       (payload) => {
         const newRow = payload.new as Record<string, unknown> | undefined;
-        const rowSlideIndex = newRow && typeof newRow.slide_index === 'number' ? newRow.slide_index : null;
+        const rowSlideIndex = newRow && typeof newRow.slide_index === "number" ? newRow.slide_index : null;
         if (rowSlideIndex === slideIndex && newRow) {
           lastResponses = [...lastResponses, newRow];
           callback(lastResponses);
@@ -578,11 +700,14 @@ export function subscribeResponses(
         }, RESPONSES_DEBOUNCE_MS);
       }
     )
-    .subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
+    .subscribe((status, err) => {
+      if (status === "SUBSCRIBED") {
         runGetResponses();
+      }
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        options?.onChannelStatus?.(status, err);
       }
     });
 
-  return channel;
+  return { channel, dispose };
 }

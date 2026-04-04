@@ -9,6 +9,7 @@ import {
   DEFAULT_POINTS_CORRECT,
   DEFAULT_POINTS_PARTICIPATION,
   getDefaultActivitySettingsForSlideType,
+  isInteractiveSlide,
   isParticipativeSlide,
   migrateLegacySlideTypes,
 } from "@/types/slides";
@@ -71,8 +72,8 @@ function ensureActivitySettings(slide: Slide): Slide {
   if (!isParticipativeSlide(slide.type)) return slide;
   const a = slide.activitySettings || {};
 
-  /** Polls & word clouds: always no timer, no points — live aggregates; AI/legacy JSON cannot keep a countdown. */
-  if (slide.type === "poll" || slide.type === "wordcloud") {
+  /** All interactive engagement slides: no timer, no points — live aggregates on presenter. */
+  if (isInteractiveSlide(slide.type)) {
     const defaults = getDefaultActivitySettingsForSlideType(slide.type);
     const next = {
       ...defaults,
@@ -90,13 +91,18 @@ function ensureActivitySettings(slide: Slide): Slide {
     return { ...slide, activitySettings: next };
   }
 
+  const typeDefaults = getDefaultActivitySettingsForSlideType(slide.type);
+  const defaultDuration =
+    typeof typeDefaults.duration === "number" && typeDefaults.duration >= 0
+      ? typeDefaults.duration
+      : DEFAULT_ACTIVITY_DURATION_SEC;
   const next = {
     duration:
       a.duration === 0
         ? 0
         : typeof a.duration === "number" && a.duration > 0
           ? a.duration
-          : DEFAULT_ACTIVITY_DURATION_SEC,
+          : defaultDuration,
     showResults: a.showResults ?? true,
     interactionStyle: a.interactionStyle ?? ("bar_chart" as const),
     pointsForCorrect:

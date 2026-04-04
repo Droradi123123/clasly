@@ -169,9 +169,9 @@ export function PollSlide({
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  className="flex items-center gap-3"
+                  className="flex items-start gap-3"
                 >
-                  <span className="font-medium text-sm md:text-base w-32 md:w-40 shrink-0 truncate" style={{ color: textColor }}>
+                  <span className="font-medium text-sm md:text-base flex-1 min-w-0 break-words leading-snug" style={{ color: textColor }}>
                     <FormattedText>{String(option || "")}</FormattedText>
                   </span>
                   <div className="flex-1 min-w-0 h-8 md:h-10 rounded-lg bg-white/20 overflow-hidden flex items-center">

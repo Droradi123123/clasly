@@ -10,6 +10,7 @@ import { DocumentHead } from "@/components/seo/DocumentHead";
 import {
   decodeJoinUrlFragment,
   extractJoinCodeFromSearchParams,
+  getLectureByCode,
   insertLectureLead,
   joinLecture,
   lookupLectureByJoinCode,
@@ -28,6 +29,9 @@ import type { Slide } from "@/types/slides";
 import { getPresentationLogoUrl } from "@/lib/presentationBranding";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
+
+/** Webinar: single-step join after code — no separate avatar screen (less friction). */
+const WEBINAR_JOIN_EMOJI = "😊";
 
 /** Brand mark — four-color tile (aligned with fun quiz / live session vibe) */
 function JoinBrandMark({ className }: { className?: string }) {
@@ -62,7 +66,6 @@ const Join = () => {
   const [error, setError] = useState("");
   /** True while resolving a 6-digit code (QR deep link shows connecting immediately). */
   const [isLoading, setIsLoading] = useState(() => initialJoinCode.replace(/\D/g, "").length === 6);
-  const [webinarLeadId, setWebinarLeadId] = useState<string | null>(null);
   const [webinarRegConfig, setWebinarRegConfig] = useState<WebinarRegistrationConfig>(() =>
     defaultWebinarRegistrationConfig(),
   );
@@ -122,11 +125,12 @@ const Join = () => {
       const slideList = ((lecture as { slides?: unknown }).slides as Slide[] | undefined) || [];
       setPresentationLogoUrl(getPresentationLogoUrl(slideList));
       const mode = lecture.lecture_mode as string | undefined;
-      setWebinarLeadId(null);
       setLeadAnswers({});
       const settings = lecture.settings as Record<string, unknown> | undefined;
       setWebinarRegConfig(mergeWebinarRegistrationFromSettings(settings));
       setStep(mode === "webinar" ? "lead" : "profile");
+      // Prefetch full deck for /student while the user fills name/lead — shares in-flight request with Student.
+      void getLectureByCode(code);
     } catch (err) {
       setError("Something went wrong. Please try again.");
       console.error(err);
@@ -175,9 +179,20 @@ const Join = () => {
         setError(result.message);
         return;
       }
-      setWebinarLeadId(result.id);
-      setName(leadNameFromForm.trim() || email.split("@")[0] || "Participant");
-      setStep("profile");
+      const leadId = result.id;
+      const displayName = leadNameFromForm.trim() || email.split("@")[0] || "Participant";
+      const student = await joinLecture(lectureId, displayName, WEBINAR_JOIN_EMOJI);
+      if (!student) {
+        setError("Could not join this session. Please try again.");
+        return;
+      }
+      await supabase.from("lecture_leads").update({ student_id: student.id }).eq("id", leadId);
+      try {
+        sessionStorage.setItem(`clasly_lead_${lectureId}`, leadId);
+      } catch {
+        /* ignore */
+      }
+      navigate(`/student/${lectureCode}?studentId=${student.id}`);
     } catch (e) {
       console.error(e);
       setError("Something went wrong. Please try again.");
@@ -196,14 +211,6 @@ const Join = () => {
       const student = await joinLecture(lectureId, name.trim(), selectedEmoji);
 
       if (student) {
-        if (webinarLeadId) {
-          await supabase.from("lecture_leads").update({ student_id: student.id }).eq("id", webinarLeadId);
-          try {
-            sessionStorage.setItem(`clasly_lead_${lectureId}`, webinarLeadId);
-          } catch {
-            /* ignore */
-          }
-        }
         navigate(`/student/${lectureCode}?studentId=${student.id}`);
       }
     } catch (err) {
@@ -366,7 +373,7 @@ const Join = () => {
                       {webinarRegConfig.formSubtitle}
                     </p>
                   ) : (
-                    <p className="text-sm text-violet-200/80">A few details — then you’re in</p>
+                    <p className="text-sm text-violet-200/80">One step — then you’re in the room</p>
                   )}
                 </div>
                 <div className="space-y-4">
@@ -421,7 +428,7 @@ const Join = () => {
                     {isLoading ? (
                       <span className="inline-block w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
-                      "Continue"
+                      "Join live session"
                     )}
                   </Button>
                   <button

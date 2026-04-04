@@ -157,7 +157,7 @@ export interface SlideDesign {
 
 // Activity settings for interactive slides
 export interface ActivitySettings {
-  /** Seconds for the answer timer. Omitted/legacy defaults to 20. `0` = no timer (live results while answering). */
+  /** Seconds for the answer timer. Omitted/legacy defaults by slide category. `0` = no timer (live results while answering). */
   duration?: number;
   showResults?: boolean;
   interactionStyle?: InteractionStyle;
@@ -405,11 +405,13 @@ export function isParticipativeSlide(type: SlideType): boolean {
 
 /**
  * Default activity settings when creating or normalizing slides.
- * Opinion `poll` slides: no timer, no points (live aggregate on presenter).
- * All other types: default countdown + scoring presets (same as manual new slide).
+ * - **Interactive** (poll, word cloud, scale, sentiment, agree spectrum): no timer, no points — aggregates update live on the presenter.
+ * - **Quiz** (quiz, poll_quiz, yes/no, ranking, guess number): timed competition — default countdown + scoring (presenter can turn off in sidebar).
+ * - Other slide types that store activity: generic fallback (rare).
  */
 export function getDefaultActivitySettingsForSlideType(type: SlideType): ActivitySettings {
-  if (type === "poll" || type === "wordcloud") {
+  const slideInfo = SLIDE_TYPES.find((t) => t.type === type);
+  if (slideInfo?.category === "interactive") {
     return {
       duration: 0,
       showResults: true,
@@ -418,8 +420,6 @@ export function getDefaultActivitySettingsForSlideType(type: SlideType): Activit
       pointsForParticipation: 0,
     };
   }
-  const slideInfo = SLIDE_TYPES.find((t) => t.type === type);
-  /** Quiz-category slides: default countdown + scoring (presenter can turn off in sidebar). */
   if (slideInfo?.category === "quiz") {
     return {
       duration: 30,
@@ -450,8 +450,8 @@ export function getResolvedActivitySettings(slide: Slide): {
   const a = slide.activitySettings;
   const raw = a?.duration;
 
-  /** Opinion polls & word clouds: no timer, no points — aggregates always live on presenter. */
-  if (slide.type === "poll" || slide.type === "wordcloud") {
+  /** Interactive engagement slides: no timer, no points — presenter sees responses update live (education + webinar). */
+  if (isInteractiveSlide(slide.type)) {
     return {
       hasTimer: false,
       durationSeconds: 0,
@@ -474,8 +474,9 @@ export function getResolvedActivitySettings(slide: Slide): {
           : DEFAULT_POINTS_PARTICIPATION,
     };
   }
+  const fallbackDuration = isQuizSlide(slide.type) ? 30 : DEFAULT_ACTIVITY_DURATION_SEC;
   const durationSeconds =
-    typeof raw === "number" && raw > 0 ? raw : DEFAULT_ACTIVITY_DURATION_SEC;
+    typeof raw === "number" && raw > 0 ? raw : fallbackDuration;
   return {
     hasTimer: true,
     durationSeconds,

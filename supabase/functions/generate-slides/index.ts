@@ -1586,20 +1586,30 @@ function mapSlideToFrontendFormat(
     designStyleId: designStyle,
   };
 
-  const baseActivitySettings = {
-    duration: 20,
+  /** Quiz-category slides: timed; breakdown hidden on presenter until timer ends (matches frontend). */
+  const quizActivitySettings = {
+    duration: 30,
     showResults: true,
     interactionStyle: "bar_chart",
     pointsForCorrect: 1000,
     pointsForParticipation: 500,
   };
 
-  const pollActivitySettings = {
+  /** Interactive engagement: no timer; presenter sees responses live (education + webinar). */
+  const interactiveActivitySettings = {
     duration: 0,
     showResults: true,
     interactionStyle: "bar_chart",
     pointsForCorrect: 0,
     pointsForParticipation: 0,
+  };
+
+  const baseActivitySettings = {
+    duration: 20,
+    showResults: true,
+    interactionStyle: "bar_chart",
+    pointsForCorrect: 1000,
+    pointsForParticipation: 500,
   };
 
   const typeMap: Record<string, string> = {
@@ -1821,8 +1831,25 @@ function mapSlideToFrontendFormat(
       };
   }
 
-  const activitySettingsForSlide =
-    normalizedType === "poll" ? pollActivitySettings : baseActivitySettings;
+  const interactiveTypes = new Set([
+    "poll",
+    "wordcloud",
+    "scale",
+    "sentiment_meter",
+    "agree_spectrum",
+  ]);
+  const quizTypes = new Set([
+    "quiz",
+    "poll_quiz",
+    "yesno",
+    "ranking",
+    "guess_number",
+  ]);
+  const activitySettingsForSlide = interactiveTypes.has(normalizedType)
+    ? interactiveActivitySettings
+    : quizTypes.has(normalizedType)
+    ? quizActivitySettings
+    : baseActivitySettings;
 
   return {
     id: generateSlideId(),

@@ -118,12 +118,12 @@ export function RankingSlide({
                     </div>
                     <div className="flex-1 min-w-0 rounded-xl overflow-hidden bg-white/10 border border-white/20" style={{ minHeight: 48 }}>
                       <motion.div
-                        className={`h-full flex items-center px-4 bg-gradient-to-r ${ITEM_COLORS[index % ITEM_COLORS.length]}`}
+                        className={`h-full min-h-[48px] flex items-center px-3 py-2 bg-gradient-to-r ${ITEM_COLORS[index % ITEM_COLORS.length]}`}
                         initial={{ width: 0 }}
                         animate={{ width: `${heightPercent}%` }}
                         transition={{ type: 'spring', stiffness: 150, damping: 25 }}
                       >
-                        <span className="text-white font-semibold text-sm md:text-base truncate">{r.item}</span>
+                        <span className="text-white font-semibold text-sm md:text-base break-words leading-snug">{r.item}</span>
                       </motion.div>
                     </div>
                     <span className="text-white/80 text-sm font-medium flex-shrink-0">avg {r.avgRank.toFixed(1)}</span>
@@ -227,8 +227,7 @@ export function RankingSlide({
               </motion.div>
             )}
 
-            {/* Waiting indicator */}
-            {!isEditing && (!revealStats || !hasResults) && (
+            {!isEditing && !hasResults && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -255,6 +254,20 @@ export function RankingSlide({
                     ))}
                   </div>
                 </motion.div>
+              </motion.div>
+            )}
+            {!isEditing && hasResults && !revealStats && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 text-center px-2"
+              >
+                <div className="inline-flex flex-wrap items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white/10 border border-white/20 max-w-lg mx-auto text-white/80 text-sm">
+                  <Users className="w-5 h-5 shrink-0" />
+                  <span>
+                    {totalResponses} response{totalResponses === 1 ? "" : "s"} — full ranking breakdown is hidden until the timer ends or the presenter shows results.
+                  </span>
+                </div>
               </motion.div>
             )}
 

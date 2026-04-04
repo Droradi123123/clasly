@@ -66,6 +66,8 @@ import {
   LogoScope,
   ActivitySettings,
   isParticipativeSlide,
+  isInteractiveSlide,
+  isQuizSlide,
   getResolvedActivitySettings,
   DEFAULT_ACTIVITY_DURATION_SEC,
   DEFAULT_POINTS_CORRECT,
@@ -169,13 +171,20 @@ export function EditorTopToolbar({
 
   const isRtl = design.direction === "rtl";
   const showActivityControls = isParticipativeSlide(slide.type) && onUpdateActivitySettings;
-  const isPurePoll = slide.type === "poll";
+  /** Opinion / scale / sentiment / word cloud — no timer or points in product rules; controls hidden. */
+  const isInteractiveEngagement = isInteractiveSlide(slide.type);
   const resolvedActivity = getResolvedActivitySettings(slide);
   const rawDuration = slide.activitySettings?.duration;
   const rawPointsCorrect = slide.activitySettings?.pointsForCorrect;
   const rawPointsParticipation = slide.activitySettings?.pointsForParticipation;
+  const expectedDefaultQuizDuration = 30;
+  const expectedDefaultDuration = isQuizSlide(slide.type)
+    ? expectedDefaultQuizDuration
+    : DEFAULT_ACTIVITY_DURATION_SEC;
   const isDefaultTimer =
-    rawDuration === undefined && resolvedActivity.hasTimer && resolvedActivity.durationSeconds === DEFAULT_ACTIVITY_DURATION_SEC;
+    rawDuration === undefined &&
+    resolvedActivity.hasTimer &&
+    resolvedActivity.durationSeconds === expectedDefaultDuration;
   const isDefaultPoints =
     rawPointsCorrect === undefined &&
     rawPointsParticipation === undefined &&
@@ -402,7 +411,7 @@ export function EditorTopToolbar({
           {/* Participative: timer & points — compact buttons (open popovers) */}
           {showActivityControls && (
             <>
-              {!isPurePoll && (
+              {!isInteractiveEngagement && (
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
@@ -476,7 +485,7 @@ export function EditorTopToolbar({
                         >
                           <span className="inline-flex items-center gap-1">
                             {sec}s
-                            {sec === DEFAULT_ACTIVITY_DURATION_SEC && isDefaultTimer && (
+                            {sec === expectedDefaultDuration && isDefaultTimer && (
                               <span className="text-[10px] opacity-90">(default)</span>
                             )}
                           </span>
@@ -488,7 +497,7 @@ export function EditorTopToolbar({
               </Popover>
               )}
 
-              {!isPurePoll && (
+              {!isInteractiveEngagement && (
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">

@@ -27,7 +27,6 @@ import {
   SLIDE_TYPES,
   SentimentMeterSlideContent,
   AgreeSpectrumSlideContent,
-  isParticipativeSlide,
   getResolvedActivitySettings,
   DEFAULT_POINTS_CORRECT,
   DEFAULT_POINTS_PARTICIPATION,
@@ -42,6 +41,7 @@ import {
 } from "@/types/webinarRegistration";
 import { SlideChromeProvider } from "@/contexts/SlideChromeContext";
 import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
+import { getActivityPhaseState } from "@/lib/activityPhase";
 
 const REALTIME_RESUBSCRIBE_DELAY_MS = 1000;
 const BROADCAST_REFETCH_DEBOUNCE_MS = 280;
@@ -158,34 +158,20 @@ const Student = () => {
   }, [slides.length, currentSlideIndex]);
 
   const currentSlide = awaitingSlidePayload ? undefined : slides[effectiveSlideIndex];
-  const participativeSlide = currentSlide ? isParticipativeSlide(currentSlide.type) : false;
-  const activityResolved =
-    participativeSlide && currentSlide ? getResolvedActivitySettings(currentSlide) : null;
-  const hasTimer = !!(activityResolved?.hasTimer);
-  const startedAtMs = lecture?.activity_started_at
-    ? Date.parse(lecture.activity_started_at as string)
-    : NaN;
-  const adjustedNowMs = Date.now() + clockOffsetMsRef.current;
-  const elapsedMs =
-    participativeSlide && activityResolved && !Number.isNaN(startedAtMs)
-      ? adjustedNowMs - startedAtMs
-      : 0;
-  const durationSeconds = activityResolved?.durationSeconds ?? 0;
-  const inVotingPhase =
-    participativeSlide &&
-    activityResolved &&
-    hasTimer &&
-    (Number.isNaN(startedAtMs) || elapsedMs < durationSeconds * 1000);
-  const inResultsPhase =
-    participativeSlide &&
-    activityResolved &&
-    hasTimer &&
-    !Number.isNaN(startedAtMs) &&
-    elapsedMs >= durationSeconds * 1000;
-  const remainingSec =
-    participativeSlide && activityResolved && hasTimer && !Number.isNaN(startedAtMs)
-      ? Math.max(0, Math.ceil(durationSeconds - elapsedMs / 1000))
-      : 0;
+  const activityPhase = useMemo(
+    () =>
+      getActivityPhaseState(currentSlide ?? null, lecture?.activity_started_at as string | undefined, {
+        nowMs: Date.now(),
+        clockOffsetMs: clockOffsetMsRef.current,
+      }),
+    [currentSlide, lecture?.activity_started_at, tick]
+  );
+  const participativeSlide = activityPhase.participative;
+  const hasTimer = activityPhase.hasTimer;
+  const inVotingPhase = activityPhase.inVotingPhase;
+  const inResultsPhase = activityPhase.inResultsPhase;
+  const remainingSec = activityPhase.remainingSec;
+  const startedAtMs = activityPhase.startedAtMs;
 
   useEffect(() => {
     if (!lecture?.id) return;

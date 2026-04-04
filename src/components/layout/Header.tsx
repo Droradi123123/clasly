@@ -46,6 +46,13 @@ const Header = () => {
 
   const showAppSurfacesChrome = isAppSurfacePath(path);
 
+  /** Full-screen editor/present: no duplicate product strip (dashboard/analytics keep it). */
+  const hideProductContextBar =
+    path.startsWith("/editor") ||
+    path.startsWith("/present") ||
+    path.startsWith("/webinar/editor") ||
+    path.startsWith("/webinar/present");
+
   /** In-app surfaces where we show product badge on logo (not marketing-only pages). */
   const showProductBadge = showAppSurfacesChrome;
 
@@ -414,7 +421,7 @@ const Header = () => {
           </div>
         </div>
 
-        {showAppSurfacesChrome && <ProductContextBar />}
+        {showAppSurfacesChrome && !hideProductContextBar && <ProductContextBar />}
       </header>
 
       <AuthModal

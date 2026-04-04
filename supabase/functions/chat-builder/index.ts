@@ -96,19 +96,44 @@ interface PlannerTask {
 // UTILITY FUNCTIONS
 // =============================================================================
 
-/** Match frontend `getDefaultActivitySettingsForSlideType` (poll = no timer, no points). */
+/** Match frontend `getDefaultActivitySettingsForSlideType` (interactive = no timer + live; quiz = timer + hidden breakdown). */
 const DEFAULT_ACTIVITY_DURATION_SEC = 20;
 const DEFAULT_POINTS_CORRECT = 1000;
 const DEFAULT_POINTS_PARTICIPATION = 500;
 
+const INTERACTIVE_SLIDE_TYPES = new Set([
+  "poll",
+  "wordcloud",
+  "scale",
+  "sentiment_meter",
+  "agree_spectrum",
+]);
+
+const QUIZ_SLIDE_TYPES = new Set([
+  "quiz",
+  "poll_quiz",
+  "yesno",
+  "ranking",
+  "guess_number",
+]);
+
 function defaultActivitySettingsForSlideType(slideType: string): Record<string, unknown> {
-  if (slideType === "poll") {
+  if (INTERACTIVE_SLIDE_TYPES.has(slideType)) {
     return {
       duration: 0,
       showResults: true,
       interactionStyle: "bar_chart",
       pointsForCorrect: 0,
       pointsForParticipation: 0,
+    };
+  }
+  if (QUIZ_SLIDE_TYPES.has(slideType)) {
+    return {
+      duration: 30,
+      showResults: true,
+      interactionStyle: "bar_chart",
+      pointsForCorrect: DEFAULT_POINTS_CORRECT,
+      pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
     };
   }
   return {

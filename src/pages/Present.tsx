@@ -1,9 +1,7 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, startTransition } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, startTransition, useMemo } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ProductContextBar } from "@/components/layout/ProductContextBar";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ChevronLeft,
@@ -39,6 +37,7 @@ import {
   getResolvedActivitySettings,
 } from "@/types/slides";
 import { buildLiveResultsPayload } from "@/lib/responseAggregation";
+import { getActivityPhaseState } from "@/lib/activityPhase";
 import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 import { ThemeId } from "@/types/themes";
 import { DesignStyleId } from "@/types/designStyles";
@@ -92,6 +91,8 @@ function getJoinPageOrigin(): string {
   return "";
 }
 
+const PRESENT_PG_REALTIME_RESUBSCRIBE_DELAY_MS = 1000;
+
 const Present = () => {
   const { lectureId } = useParams();
   const navigate = useNavigate();
@@ -102,7 +103,6 @@ const Present = () => {
   const [showQRCode, setShowQRCode] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showMiniLeaderboard, setShowMiniLeaderboard] = useState(true);
-  const [showCodeInQR, setShowCodeInQR] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
   const [responses, setResponses] = useState<any[]>([]);
@@ -126,6 +126,14 @@ const Present = () => {
   const [raffleWinnerName, setRaffleWinnerName] = useState<string | null>(null);
   /** Names for the wheel-of-fortune spin (null = idle). */
   const [raffleWheelNames, setRaffleWheelNames] = useState<string[] | null>(null);
+  /** Bumps to tear down and recreate postgres_changes subscriptions after Realtime errors. */
+  const [presentPgReconnectKey, setPresentPgReconnectKey] = useState(0);
+
+  const schedulePresentPgReconnect = useCallback(() => {
+    window.setTimeout(() => {
+      setPresentPgReconnectKey((k) => k + 1);
+    }, PRESENT_PG_REALTIME_RESUBSCRIBE_DELAY_MS);
+  }, []);
 
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
   const slideSyncChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -324,40 +332,26 @@ const Present = () => {
     return () => clearInterval(id);
   }, [lectureId]);
 
-  const participative = !!(currentSlide && isParticipativeSlide(currentSlide.type));
-  const activityResolved =
-    participative && currentSlide ? getResolvedActivitySettings(currentSlide) : null;
-  const hasTimer = !!(activityResolved?.hasTimer);
-  const durationSec = hasTimer && activityResolved ? activityResolved.durationSeconds : 0;
-  const startedAtMs = lecture?.activity_started_at
-    ? Date.parse(lecture.activity_started_at as string)
-    : NaN;
-  const elapsedMs =
-    participative && !Number.isNaN(startedAtMs) ? Date.now() - startedAtMs : 0;
-  const inVotingPhase =
-    participative &&
-    hasTimer &&
-    (Number.isNaN(startedAtMs) || elapsedMs < durationSec * 1000);
-  const inResultsPhase =
-    participative &&
-    hasTimer &&
-    !Number.isNaN(startedAtMs) &&
-    elapsedMs >= durationSec * 1000;
-  const remainingSec =
-    participative && hasTimer && !Number.isNaN(startedAtMs)
-      ? Math.max(0, Math.ceil(durationSec - elapsedMs / 1000))
-      : 0;
-  /** Polls & word clouds show aggregate results live; quiz types hide until timer ends (when timer on). */
-  const isPurePoll = currentSlide?.type === "poll";
-  const isWordCloud = currentSlide?.type === "wordcloud";
-  const showLiveResults =
-    !participative || !hasTimer || inResultsPhase || isPurePoll || isWordCloud;
-  const showCorrectAnswerEffective =
-    !currentSlide ||
-    !isQuizSlide(currentSlide.type) ||
-    !participative ||
-    !hasTimer ||
-    inResultsPhase;
+  const activityPhase = useMemo(
+    () =>
+      getActivityPhaseState(currentSlide ?? null, lecture?.activity_started_at as string | undefined, {
+        nowMs: Date.now(),
+        clockOffsetMs: 0,
+      }),
+    [currentSlide, lecture?.activity_started_at, tick]
+  );
+
+  const {
+    participative,
+    hasTimer,
+    durationSeconds: durationSec,
+    inVotingPhase,
+    inResultsPhase,
+    showLiveResults,
+    showCorrectAnswer: showCorrectAnswerEffective,
+    remainingSec,
+    startedAtMs,
+  } = activityPhase;
 
   useEffect(() => {
     if (!participative || !currentSlide || !hasTimer) {
@@ -506,14 +500,26 @@ const Present = () => {
 
     loadStudents();
 
-    const channel = subscribeStudents(lectureId, (newStudents) => {
-      setStudents(newStudents as any[]);
-    });
+    const { channel, dispose } = subscribeStudents(
+      lectureId,
+      (newStudents) => {
+        setStudents(newStudents as any[]);
+      },
+      {
+        onChannelStatus: (status) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn("[Present] students postgres realtime:", status);
+            schedulePresentPgReconnect();
+          }
+        },
+      }
+    );
 
     return () => {
+      dispose();
       supabase.removeChannel(channel);
     };
-  }, [lectureId, loading]);
+  }, [lectureId, loading, presentPgReconnectKey, schedulePresentPgReconnect]);
 
   // Load and subscribe to responses for current slide
   useEffect(() => {
@@ -530,15 +536,27 @@ const Present = () => {
 
     loadResponses();
 
-    // Subscribe to response updates
-    const channel = subscribeResponses(lectureId, currentSlideIndex, (newResponses) => {
-      setResponses(newResponses as any[]);
-    });
+    const { channel, dispose } = subscribeResponses(
+      lectureId,
+      currentSlideIndex,
+      (newResponses) => {
+        setResponses(newResponses as any[]);
+      },
+      {
+        onChannelStatus: (status) => {
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            console.warn("[Present] responses postgres realtime:", status);
+            schedulePresentPgReconnect();
+          }
+        },
+      }
+    );
 
     return () => {
+      dispose();
       supabase.removeChannel(channel);
     };
-  }, [lectureId, currentSlideIndex, currentSlide]);
+  }, [lectureId, currentSlideIndex, currentSlide, presentPgReconnectKey, schedulePresentPgReconnect]);
 
   // Polling backup for responses when realtime may lag (only during live presentation on interactive/quiz slides)
   const RESPONSE_POLL_INTERVAL_MS = 1200;
@@ -628,26 +646,37 @@ const Present = () => {
 
     loadQuestions();
 
+    let questionsDebounceId: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel(`questions-${lectureId}`)
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'questions',
+          event: "*",
+          schema: "public",
+          table: "questions",
           filter: `lecture_id=eq.${lectureId}`,
         },
         () => {
-          loadQuestions();
+          if (questionsDebounceId) clearTimeout(questionsDebounceId);
+          questionsDebounceId = setTimeout(() => {
+            questionsDebounceId = null;
+            void loadQuestions();
+          }, 250);
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[Present] questions postgres realtime:", status, err?.message);
+          schedulePresentPgReconnect();
+        }
+      });
 
     return () => {
+      if (questionsDebounceId) clearTimeout(questionsDebounceId);
       supabase.removeChannel(channel);
     };
-  }, [lectureId]);
+  }, [lectureId, presentPgReconnectKey, schedulePresentPgReconnect]);
 
   // Mark question as answered
   const handleMarkAnswered = async (questionId: string) => {
@@ -823,13 +852,6 @@ const Present = () => {
 
   return (
     <div className="h-screen max-h-screen bg-foreground text-primary-foreground flex flex-col relative overflow-hidden">
-      {lecture && (
-        <ProductContextBar
-          product={lecture.lecture_mode === "webinar" ? "webinar" : "education"}
-          subtitle="Present"
-          tone="onDark"
-        />
-      )}
       {/* Background particles */}
       <FloatingParticles count={30} color="rgba(255, 255, 255, 0.1)" />
       
@@ -873,114 +895,70 @@ const Present = () => {
       {/* Mini Leaderboard */}
       <MiniLeaderboard students={students} isVisible={showMiniLeaderboard && isLive} />
 
-      {/* Top Bar */}
-      <div className="flex-shrink-0 flex items-center justify-between p-4 bg-background/10 backdrop-blur-sm z-10">
-        <div className="flex items-center gap-3 min-w-0">
+      {/* Top bar — minimal: exit, compact stats, tools (QR via floating button) */}
+      <div className="flex-shrink-0 flex items-center justify-between gap-2 py-2 px-3 sm:px-4 bg-background/10 backdrop-blur-sm z-10">
+        <div className="flex items-center gap-2 min-w-0 shrink">
         <Button
           variant="ghost"
           size="sm"
-          className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10 shrink-0"
+          className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10 shrink-0 h-9"
           onClick={exitToEditor}
         >
           <X className="w-4 h-4" />
-          Exit
+          <span className="hidden sm:inline">Exit</span>
         </Button>
-        {lecture && (
-          <Badge
-            variant="outline"
-            className={
-              lecture.lecture_mode === "webinar"
-                ? "border-teal-400/50 text-teal-100 text-[10px] uppercase tracking-wide shrink-0"
-                : "border-violet-400/45 text-violet-100 text-[10px] uppercase tracking-wide shrink-0"
+        </div>
+
+        <div className="flex items-center justify-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
+          <div
+            className="flex items-center gap-1.5 text-primary-foreground/85 text-sm tabular-nums shrink-0"
+            title={
+              isLive
+                ? `${presenceOnlineCount} online · ${students.length} joined total`
+                : `${students.length} joined`
             }
           >
-            {lecture.lecture_mode === "webinar" ? "Webinar" : "Educator"}
-          </Badge>
-        )}
-        </div>
-
-        <div className="flex items-center gap-4">
-          {showCodeInQR && (
-            <button
-              onClick={copyCode}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-foreground/10 hover:bg-primary-foreground/20 transition-colors"
-            >
-              <span className="font-display font-bold tracking-wider text-xl">{lectureCode}</span>
-              {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-            </button>
-          )}
-          <div className="flex items-center gap-4">
-            <div
-              className="flex items-center gap-2 text-primary-foreground/80"
-              title={
-                isLive
-                  ? `${presenceOnlineCount} online now · ${students.length} total joined`
-                  : `${students.length} joined`
-              }
-            >
-              <Users className="w-4 h-4" />
-              <span className="font-medium">{isLive ? presenceOnlineCount : students.length}</span>
-              {isLive && (
-                <span className="text-xs text-primary-foreground/60 hidden sm:inline">online</span>
-              )}
-            </div>
-            {currentSlide && (isInteractiveSlide(currentSlide.type) || isQuizSlide(currentSlide.type)) && (
-              <div className="flex items-center gap-2 text-primary-foreground/80 text-sm">
-                <span>סה״כ תשובות:</span>
-                <span className="font-bold tabular-nums">{responses.length}</span>
-              </div>
-            )}
-            {participative && hasTimer && inVotingPhase && !Number.isNaN(startedAtMs) && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-violet-500/20 text-violet-100 border border-violet-400/30">
-                <Clock className="w-4 h-4 shrink-0" />
-                <span className="text-sm font-bold tabular-nums">{remainingSec}s</span>
-                <span className="text-xs text-violet-200/90 hidden sm:inline">left</span>
-              </div>
-            )}
-            {participative && hasTimer && inResultsPhase && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-teal-500/20 text-teal-100 text-xs font-medium">
-                Results
-              </div>
-            )}
-            {participative && !hasTimer && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/20 text-emerald-100 text-xs font-medium">
-                Live
-              </div>
-            )}
+            <Users className="w-4 h-4 shrink-0 opacity-80" />
+            <span className="font-medium">{isLive ? presenceOnlineCount : students.length}</span>
+            <span className="hidden md:inline text-xs text-primary-foreground/55">online</span>
           </div>
-          {isLive && (
-            <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-500/20 text-red-400">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <span className="text-sm font-medium">LIVE</span>
+          {currentSlide && (isInteractiveSlide(currentSlide.type) || isQuizSlide(currentSlide.type)) && (
+            <div
+              className="flex items-center gap-1 text-primary-foreground/85 text-xs sm:text-sm shrink min-w-0"
+              title="סה״כ תשובות"
+            >
+              <span className="hidden sm:inline">סה״כ תשובות:</span>
+              <span className="font-bold tabular-nums">{responses.length}</span>
+            </div>
+          )}
+          {participative && hasTimer && inVotingPhase && !Number.isNaN(startedAtMs) && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-violet-500/25 text-violet-50 border border-violet-400/25 shrink-0">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-xs font-bold tabular-nums">{remainingSec}s</span>
+            </div>
+          )}
+          {participative && hasTimer && inResultsPhase && (
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-teal-500/25 text-teal-50 text-[10px] sm:text-xs font-medium shrink-0">
+              Results
             </div>
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {/* Questions button with badge */}
           <Button
             variant="ghost"
             size="sm"
-            className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10 relative"
+            className="h-9 w-9 sm:w-auto sm:px-2 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10 relative p-0 sm:p-2"
             onClick={() => setShowQuestionsPanel(true)}
             title="View student questions"
           >
             <HelpCircle className="w-4 h-4" />
             {unansweredQuestionsCount > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center animate-pulse">
+              <span className="absolute -top-0.5 -right-0.5 min-w-[1.125rem] h-[1.125rem] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
                 {unansweredQuestionsCount}
               </span>
             )}
-          </Button>
-          {/* QR Code button */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            onClick={() => setShowQRCode(true)}
-            title="Show QR code"
-          >
-            <QrCode className="w-4 h-4" />
           </Button>
           {/* Leaderboard (Top 5) toggle */}
           {isLive && students.length > 0 && (
@@ -992,7 +970,7 @@ const Present = () => {
               title={showMiniLeaderboard ? "Hide leaderboard" : "Show leaderboard"}
             >
               {showMiniLeaderboard ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              <span className="ml-1 text-xs">{showMiniLeaderboard ? "Hide" : "Show"} Top 5</span>
+              <span className="ml-1 text-xs hidden lg:inline">{showMiniLeaderboard ? "Hide" : "Show"} Top 5</span>
             </Button>
           )}
           {/* Fullscreen toggle */}
@@ -1064,7 +1042,7 @@ const Present = () => {
       </div>
 
       {/* Main Content - flex-1 min-h-0 so it shrinks and fits viewport */}
-      <div data-present-main-content className="flex-1 min-h-0 flex items-center justify-center p-2 md:p-4 relative">
+      <div data-present-main-content className="flex-1 min-h-0 flex items-center justify-center p-1 md:p-2 relative">
         {/* Left Navigation Arrow - Always visible */}
         <Button
           variant="ghost"
@@ -1090,9 +1068,7 @@ const Present = () => {
               hasTimer &&
               inVotingPhase &&
               currentSlide &&
-              isQuizSlide(currentSlide.type) &&
-              !isPurePoll &&
-              !isWordCloud && (
+              isQuizSlide(currentSlide.type) && (
                 <div
                   className="pointer-events-none absolute top-0 left-1/2 z-30 -translate-x-1/2 px-3 py-1.5 rounded-b-lg bg-black/55 text-white/95 text-xs sm:text-sm font-medium tabular-nums border border-white/15 border-t-0 shadow-lg backdrop-blur-sm max-w-[min(100%,28rem)] text-center"
                   title="Participation while vote breakdown is hidden"
@@ -1138,27 +1114,19 @@ const Present = () => {
           <ChevronRight className="w-10 h-10" />
         </Button>
 
-        {/* First slide: single centered QR share button */}
-        <AnimatePresence>
-          {currentSlideIndex === 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.2 }}
-              className="absolute bottom-6 left-0 right-0 flex justify-center z-30"
-            >
-              <Button
-                onClick={() => setShowQRCode(true)}
-                className="gap-2 rounded-full bg-white/95 hover:bg-white text-foreground shadow-lg border border-white/50 px-5 py-2.5 font-semibold text-sm shrink-0"
-              >
-                <QrCode className="w-5 h-5" />
-                Share with audience — Show QR code
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
+
+      {/* Join QR — always one tap; stays above slide dots */}
+      <Button
+        type="button"
+        onClick={() => setShowQRCode(true)}
+        title="Show join link & QR code"
+        className="fixed bottom-[4.5rem] right-4 z-[35] h-12 sm:h-14 gap-2 rounded-full pl-3 pr-4 sm:pl-4 sm:pr-5 shadow-xl bg-white text-foreground hover:bg-white/95 font-semibold text-sm border border-white/40 pointer-events-auto"
+        size="lg"
+      >
+        <QrCode className="w-6 h-6 shrink-0 text-violet-700" />
+        <span className="hidden sm:inline">Join QR</span>
+      </Button>
 
       {/* End lecture – prominent when on last slide */}
       <AnimatePresence>
@@ -1193,7 +1161,7 @@ const Present = () => {
       </AnimatePresence>
 
       {/* Bottom Navigation - Dots */}
-      <div className="flex-shrink-0 flex flex-col items-center justify-center p-4 bg-background/10 backdrop-blur-sm z-10">
+      <div className="flex-shrink-0 flex flex-col items-center justify-center py-2 px-4 bg-background/10 backdrop-blur-sm z-10">
         <div className="flex items-center gap-2">
           {slides.map((_, index) => (
             <button
