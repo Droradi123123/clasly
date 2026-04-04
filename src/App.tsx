@@ -11,6 +11,7 @@ import {
   Navigate,
   useSearchParams,
   useParams,
+  useLocation,
 } from "react-router-dom";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { Loader2 } from "lucide-react";
@@ -62,21 +63,35 @@ const JoinCodeRedirect = () => {
 const WebinarEditorRedirect = () => {
   const { lectureId } = useParams();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const id = (lectureId ?? "").trim();
   if (!id) return <Navigate to="/webinar/dashboard" replace />;
   const q = new URLSearchParams(searchParams);
   q.set("track", "webinar");
-  return <Navigate to={`/editor/${encodeURIComponent(id)}?${q.toString()}`} replace />;
+  return (
+    <Navigate
+      to={`/editor/${encodeURIComponent(id)}?${q.toString()}`}
+      replace
+      state={location.state}
+    />
+  );
 };
 
 const WebinarPresentRedirect = () => {
   const { lectureId } = useParams();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const id = (lectureId ?? "").trim();
   if (!id) return <Navigate to="/webinar/dashboard" replace />;
   const q = new URLSearchParams(searchParams);
   q.set("track", "webinar");
-  return <Navigate to={`/present/${encodeURIComponent(id)}?${q.toString()}`} replace />;
+  return (
+    <Navigate
+      to={`/present/${encodeURIComponent(id)}?${q.toString()}`}
+      replace
+      state={location.state}
+    />
+  );
 };
 
 // Global error handler for unhandled promise rejections

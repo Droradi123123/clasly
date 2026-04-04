@@ -63,7 +63,9 @@ export function getActivityPhaseState(
       ? Math.max(0, Math.ceil(durationSeconds - elapsedMs / 1000))
       : 0;
 
-  const showLiveResults = !participative || !hasTimer || inResultsPhase;
+  /** Timed activities: show live aggregates during voting; correct answers stay gated via `showCorrectAnswer`. */
+  const showLiveResults =
+    !participative || !hasTimer || inVotingPhase || inResultsPhase;
   const showCorrectAnswer =
     !slide ||
     !isQuizSlide(slide.type) ||

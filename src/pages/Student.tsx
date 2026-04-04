@@ -125,7 +125,7 @@ const Student = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isGameActive, setIsGameActive] = useState(false);
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   const [rankingOrder, setRankingOrder] = useState<string[]>([]);
   // For new slide types
   const [sentimentValue, setSentimentValue] = useState([50]);

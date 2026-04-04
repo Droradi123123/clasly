@@ -433,12 +433,18 @@ async function updateLectureInner(lectureId: string, updates: {
   throw lastError ?? new Error('Failed to update lecture');
 }
 
-// Start a lecture (set to active)
-export async function startLecture(lectureId: string) {
+/** Live session start: must match the slide the presenter is on (incl. "Present from current"). */
+export type StartLectureOptions = {
+  current_slide_index: number;
+  activity_started_at: string | null;
+};
+
+// Start a lecture (set to active) — never reset slide index; students + DB must match the presenter.
+export async function startLecture(lectureId: string, options: StartLectureOptions) {
   return updateLecture(lectureId, {
     status: 'active',
-    current_slide_index: 0,
-    activity_started_at: null,
+    current_slide_index: options.current_slide_index,
+    activity_started_at: options.activity_started_at,
   });
 }
 

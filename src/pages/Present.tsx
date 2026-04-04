@@ -113,7 +113,7 @@ const Present = () => {
   const [floatingReactions, setFloatingReactions] = useState<{ id: number; emoji: string; x: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [showGame, setShowGame] = useState(false);
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   const prevActivityPhaseRef = useRef<"voting" | "results" | "idle">("idle");
   // Questions state
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -428,7 +428,10 @@ const Present = () => {
 
   // Load lecture: use optimistic state from Editor for instant render, then sync from DB in background
   useEffect(() => {
-    if (!lectureId) return;
+    if (!lectureId) {
+      setLoading(false);
+      return;
+    }
 
     const state = location.state as { optimisticSlides?: Slide[]; optimisticLecture?: { id: string; title?: string; lecture_code?: string; slides?: unknown; current_slide_index?: number; settings?: Record<string, unknown> } } | null;
     const optimistic = state?.optimisticSlides?.length && state?.optimisticLecture?.id === lectureId;
@@ -778,10 +781,31 @@ const Present = () => {
   }, [slides.length, currentSlideIndex]);
 
   const handleStartLecture = async () => {
-    if (!lectureId || isStartingLecture) return;
+    if (!lectureId || isStartingLecture || slides.length === 0) return;
     setIsStartingLecture(true);
     try {
-      await startLecture(lectureId);
+      const idx = effectiveSlideIndex;
+      const targetSlide = slides[idx];
+      const activityStartedAt =
+        targetSlide && isParticipativeSlide(targetSlide.type)
+          ? new Date().toISOString()
+          : null;
+      setLecture((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              status: "active",
+              current_slide_index: idx,
+              activity_started_at: activityStartedAt,
+            }
+          : prev,
+      );
+      sendSlideBroadcast(lectureId, idx, activityStartedAt);
+      const updated = await startLecture(lectureId, {
+        current_slide_index: idx,
+        activity_started_at: activityStartedAt,
+      });
+      if (updated) setLecture(updated);
       setIsLive(true);
       setShowQRCode(false);
       toast.success("Presentation started");

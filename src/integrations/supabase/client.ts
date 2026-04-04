@@ -2,8 +2,18 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? '';
+/** Prefer publishable key name; VITE_SUPABASE_ANON_KEY is a common Vercel alias. */
+const SUPABASE_PUBLISHABLE_KEY =
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined)?.trim() ||
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ||
+  '';
+
+if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+  console.error(
+    "[Clasly] Missing Supabase env: set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY) on the build host (e.g. Vercel).",
+  );
+}
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
