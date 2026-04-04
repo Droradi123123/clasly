@@ -689,6 +689,9 @@ const Student = () => {
     if (responseSubmitLockRef.current) return false;
     responseSubmitLockRef.current = true;
 
+    // Optimistic lock + success UI so the phone never looks stuck on "Saving…"
+    // (especially word cloud / slow networks). Roll back on failure.
+    setHasAnswered(true);
     setIsSubmitting(true);
     try {
       await submitResponse(
@@ -699,10 +702,9 @@ const Student = () => {
         isCorrect,
         points
       );
-      setHasAnswered(true);
-      toast.success("Answer recorded", {
-        description: "Your response was saved.",
-        duration: 3500,
+      toast.success("Answer recorded successfully", {
+        description: "Your response was saved. You can’t change it now.",
+        duration: 4000,
       });
       if (isCorrect) {
         setShowConfetti(true);
@@ -723,6 +725,7 @@ const Student = () => {
       return true;
     } catch (error) {
       console.error('Error submitting response:', error);
+      setHasAnswered(false);
       toast.error("Couldn't save your answer. Try again.");
       responseSubmitLockRef.current = false;
       return false;
@@ -741,7 +744,7 @@ const Student = () => {
       };
 
   const handleQuizAnswer = (index: number) => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     setSelectedOption(index);
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctAnswer === index;
@@ -750,13 +753,13 @@ const Student = () => {
   };
 
   const handlePollAnswer = (index: number) => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     setSelectedOption(index);
     handleSubmitResponse({ answer: index }, undefined, pts.pointsForParticipation);
   };
 
   const handleYesNo = (answer: boolean) => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     setSelectedOption(answer ? 0 : 1);
     const content = currentSlide?.content as {
       correctAnswer?: boolean;
@@ -777,14 +780,14 @@ const Student = () => {
 
   const handleWordSubmit = async () => {
     const trimmed = wordInput.trim();
-    if (!trimmed || hasAnswered || inResultsPhase) return;
+    if (!trimmed || hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     const ok = await handleSubmitResponse({ word: trimmed }, undefined, pts.pointsForParticipation);
     if (ok) setWordInput("");
   };
 
   const handleNumberSubmit = () => {
     const num = parseInt(numberInput);
-    if (isNaN(num) || hasAnswered || inResultsPhase) return;
+    if (isNaN(num) || hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     const content = currentSlide?.content as any;
     const isCorrect = content?.correctNumber === num;
     const points = isCorrect ? pts.pointsForCorrect : pts.pointsForParticipation;
@@ -792,22 +795,22 @@ const Student = () => {
   };
 
   const handleScaleSubmit = () => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     handleSubmitResponse({ value: scaleValue[0] }, undefined, pts.pointsForParticipation);
   };
 
   const handleSentimentSubmit = () => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     handleSubmitResponse({ value: sentimentValue[0] }, undefined, pts.pointsForParticipation);
   };
 
   const handleAgreeSubmit = () => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     handleSubmitResponse({ value: agreeValue[0] }, undefined, pts.pointsForParticipation);
   };
 
   const handleRankingSubmit = () => {
-    if (hasAnswered || inResultsPhase) return;
+    if (hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     const items = rankingOrder.length > 0 ? rankingOrder : ((currentSlide?.content as any).items || []);
     handleSubmitResponse({ ranking: items }, undefined, pts.pointsForParticipation);
   };
@@ -986,19 +989,18 @@ const Student = () => {
               </p>
               {ctaHref ? (
                 <>
-                  <a
-                    href={ctaHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full min-h-[3.75rem] rounded-2xl bg-white text-violet-950 text-lg font-bold shadow-lg shadow-black/25 flex items-center justify-center gap-2 active:scale-[0.99] transition-transform hover:bg-violet-50 no-underline"
+                  <button
+                    type="button"
+                    className="w-full min-h-[3.75rem] rounded-2xl bg-white text-violet-950 text-lg font-bold shadow-lg shadow-black/25 flex items-center justify-center gap-2 active:scale-[0.99] transition-transform hover:bg-violet-50"
                     onClick={() => {
                       recordCtaLeadClick();
-                      setCtaOverlay(null);
+                      window.open(ctaHref, "_blank", "noopener,noreferrer");
+                      window.setTimeout(() => setCtaOverlay(null), 0);
                     }}
                   >
                     {ctaOverlay.label}
                     <ExternalLink className="w-5 h-5 opacity-80 shrink-0" aria-hidden />
-                  </a>
+                  </button>
                   <p className="mt-3 text-[11px] text-violet-200/80 break-all font-mono leading-snug text-center">
                     {ctaHref}
                   </p>
@@ -1037,11 +1039,11 @@ const Student = () => {
       >
         <div className="border-b border-primary-foreground/15 pb-3 mb-3 text-center w-full min-w-0">
           {headerLogoUrl ? (
-            <div className="flex justify-center mb-2">
+            <div className="flex justify-center mb-2 shrink-0">
               <img
                 src={headerLogoUrl}
-                alt=""
-                className="max-h-10 sm:max-h-12 w-auto max-w-[min(100%,280px)] object-contain object-center opacity-95 drop-shadow-sm"
+                alt="Host logo"
+                className="max-h-12 sm:max-h-16 w-auto max-w-[min(100%,320px)] object-contain object-center opacity-95 drop-shadow-md"
               />
             </div>
           ) : null}
@@ -1106,7 +1108,7 @@ const Student = () => {
 
       {/* Main Content - wrapped in Error Boundary so one render error does not crash the view */}
       <StudentErrorBoundary onBackToJoin={() => navigate('/join')}>
-        <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-0 sm:px-2">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-0">
         {lecture.status === 'draft' ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -1139,6 +1141,23 @@ const Student = () => {
           </motion.div>
         ) : currentSlide && participativeSlide ? (
           hasTimer && inResultsPhase ? (
+          !hasAnswered ? (
+          <motion.div
+            key={`${currentSlide.id}-timeup`}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ type: "spring", stiffness: 400, damping: 28 }}
+            className="mx-auto flex min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center px-4 py-8 text-center sm:max-w-lg"
+          >
+            <div className="w-full rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-card to-muted/30 p-8 shadow-xl">
+              <Clock className="mx-auto mb-4 h-12 w-12 text-amber-500" />
+              <p className="mb-2 font-display text-lg font-bold text-foreground">Time’s up</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                You didn’t submit an answer in time. Look at the main screen for the results and the correct answer.
+              </p>
+            </div>
+          </motion.div>
+          ) : (
           <motion.div
             key={`${currentSlide.id}-results`}
             initial={{ opacity: 0, y: 16, scale: 0.98 }}
@@ -1150,10 +1169,11 @@ const Student = () => {
               <Sparkles className="mx-auto mb-4 h-12 w-12 text-teal-500" />
               <p className="mb-2 font-display text-lg font-bold text-foreground">Results are live</p>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                The breakdown is on the presenter screen. Keep your phone as your remote — you’re all set.
+                The full breakdown stays on the presenter screen. Your phone is only the remote — you’re not missing slides here on purpose.
               </p>
             </div>
           </motion.div>
+          )
           ) : hasAnswered ? (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
@@ -1162,11 +1182,14 @@ const Student = () => {
           >
             <div className="w-full rounded-2xl border border-border/60 bg-card/80 px-6 py-10 text-center shadow-lg backdrop-blur sm:px-8 sm:py-12">
               <CheckCircle className="mx-auto mb-4 h-14 w-14 text-teal-500" />
-              <p className="mb-2 text-lg font-semibold text-foreground">Answer recorded</p>
+              <p className="mb-2 text-lg font-semibold text-foreground">Answer recorded successfully</p>
               <p className="text-muted-foreground">
-                {hasTimer && inVotingPhase
-                  ? "Waiting for the presenter to continue."
-                  : "Your phone is the remote — follow the main screen. You won’t see the presenter’s slides here."}
+                Your response was saved. You can’t change it now.
+                {hasTimer && inVotingPhase ? (
+                  <span className="block mt-2">Waiting for the presenter to continue.</span>
+                ) : (
+                  <span className="block mt-2">Your phone is the remote — follow the main screen.</span>
+                )}
               </p>
             </div>
           </motion.div>
@@ -1175,7 +1198,8 @@ const Student = () => {
             key={currentSlide.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto rounded-none border-0 border-border/50 bg-card px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg sm:mx-auto sm:max-w-3xl sm:rounded-2xl sm:border sm:p-6"
+            aria-busy={isSubmitting}
+            className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden rounded-none border-0 border-border/50 bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg md:mx-auto md:max-w-3xl md:rounded-2xl md:border md:p-6 ${isSubmitting ? "opacity-[0.92]" : ""}`}
           >
             {participativeSlide && hasTimer && !Number.isNaN(startedAtMs) && (
               <div className="flex items-center justify-between gap-3 mb-4 p-3 rounded-xl bg-violet-500/10 border border-violet-500/25">
@@ -1188,10 +1212,13 @@ const Student = () => {
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-2 text-sm text-primary font-medium mb-4">
+            <div className="flex items-center gap-2 text-sm text-primary font-medium mb-2">
               <Presentation className="w-4 h-4" />
               {SLIDE_TYPES.find(t => t.type === currentSlide.type)?.label || currentSlide.type}
             </div>
+            <p className="text-[11px] sm:text-xs text-muted-foreground text-center sm:text-start mb-4 leading-snug px-0.5">
+              Answer on your phone — slides stay on the main screen.
+            </p>
 
             <h2 className="text-xl font-display font-bold text-foreground mb-6">
               {(currentSlide.content as any).question || (currentSlide.content as any).statement || (currentSlide.content as any).sentenceStart || (currentSlide.content as any).title}
@@ -1205,6 +1232,7 @@ const Student = () => {
               }>
                 {((currentSlide.content as any).options || []).map((option: string, index: number) => (
                   <motion.button
+                    type="button"
                     key={index}
                     onClick={() => (currentSlide.type === 'quiz' || currentSlide.type === 'poll_quiz') ? handleQuizAnswer(index) : handlePollAnswer(index)}
                     disabled={hasAnswered || isSubmitting}
@@ -1226,8 +1254,9 @@ const Student = () => {
 
             {/* Yes/No - Using gradient colors matching presenter */}
             {currentSlide.type === 'yesno' && (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 gap-4 touch-manipulation">
                 <motion.button
+                  type="button"
                   onClick={() => handleYesNo(true)}
                   disabled={hasAnswered || isSubmitting}
                   whileHover={{ scale: hasAnswered ? 1 : 1.05 }}
@@ -1244,6 +1273,7 @@ const Student = () => {
                   <span className="text-xl font-bold">{(currentSlide.content as any).yesLabel || 'Yes'}</span>
                 </motion.button>
                 <motion.button
+                  type="button"
                   onClick={() => handleYesNo(false)}
                   disabled={hasAnswered || isSubmitting}
                   whileHover={{ scale: hasAnswered ? 1 : 1.05 }}
@@ -1270,8 +1300,10 @@ const Student = () => {
                   onChange={(e) => setWordInput(e.target.value)}
                   placeholder="Enter a word..."
                   className="text-lg"
-                  disabled={hasAnswered}
-                  onKeyDown={(e) => e.key === 'Enter' && handleWordSubmit()}
+                  disabled={hasAnswered || isSubmitting}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !hasAnswered && !isSubmitting) void handleWordSubmit();
+                  }}
                 />
                 <Button
                   variant="hero"
@@ -1308,8 +1340,10 @@ const Student = () => {
                   onChange={(e) => setNumberInput(e.target.value)}
                   placeholder="Enter your guess..."
                   className="text-lg text-center"
-                  disabled={hasAnswered}
-                  onKeyDown={(e) => e.key === 'Enter' && handleNumberSubmit()}
+                  disabled={hasAnswered || isSubmitting}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !hasAnswered && !isSubmitting) handleNumberSubmit();
+                  }}
                 />
                 <Button
                   variant="hero"
@@ -1336,7 +1370,7 @@ const Student = () => {
                   min={1}
                   max={(currentSlide.content as any).scaleOptions?.steps || 5}
                   step={1}
-                  disabled={hasAnswered}
+                  disabled={hasAnswered || isSubmitting}
                   className="py-4"
                 />
                 <div className="text-center">
@@ -1367,7 +1401,7 @@ const Student = () => {
                   min={0}
                   max={100}
                   step={1}
-                  disabled={hasAnswered}
+                  disabled={hasAnswered || isSubmitting}
                   className="py-4"
                 />
                 <div className="flex justify-between text-sm text-muted-foreground">
@@ -1398,7 +1432,7 @@ const Student = () => {
                   min={0}
                   max={100}
                   step={1}
-                  disabled={hasAnswered}
+                  disabled={hasAnswered || isSubmitting}
                   className="py-4"
                 />
                 <div className="flex justify-between text-sm text-muted-foreground">

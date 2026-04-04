@@ -96,6 +96,30 @@ interface PlannerTask {
 // UTILITY FUNCTIONS
 // =============================================================================
 
+/** Match frontend `getDefaultActivitySettingsForSlideType` (poll = no timer, no points). */
+const DEFAULT_ACTIVITY_DURATION_SEC = 20;
+const DEFAULT_POINTS_CORRECT = 1000;
+const DEFAULT_POINTS_PARTICIPATION = 500;
+
+function defaultActivitySettingsForSlideType(slideType: string): Record<string, unknown> {
+  if (slideType === "poll") {
+    return {
+      duration: 0,
+      showResults: true,
+      interactionStyle: "bar_chart",
+      pointsForCorrect: 0,
+      pointsForParticipation: 0,
+    };
+  }
+  return {
+    duration: DEFAULT_ACTIVITY_DURATION_SEC,
+    showResults: true,
+    interactionStyle: "bar_chart",
+    pointsForCorrect: DEFAULT_POINTS_CORRECT,
+    pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
+  };
+}
+
 function detectLanguage(text: string): "he" | "en" {
   const hebrewChars = (text.match(/[\u0590-\u05FF]/g) || []).length;
   const latinChars = (text.match(/[a-zA-Z]/g) || []).length;
@@ -890,8 +914,7 @@ async function executeCommands(commands: any[], slides: Slide[]): Promise<Slide[
             direction: lang === "he" ? "rtl" : "ltr",
           },
           layout: "centered",
-          // Default interactive timer should match frontend defaults (20s). `0` is "Off".
-          activitySettings: { duration: 20, showResults: true, interactionStyle: "bar_chart" },
+          activitySettings: defaultActivitySettingsForSlideType(slideType),
         };
 
         // Handle image for new slide

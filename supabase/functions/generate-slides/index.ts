@@ -920,6 +920,17 @@ function validateAndFixSlide(
     fixedSlide.type = index === 0 ? "title" : "content";
   }
 
+  /* Legacy / AI slip: map to wordcloud (product no longer exposes finish_sentence). */
+  const rawType = String(fixedSlide.type);
+  if (rawType === "finish_sentence" || rawType === "finishSentence") {
+    const q =
+      (fixedSlide.content?.sentenceStart && String(fixedSlide.content.sentenceStart).trim()) ||
+      (fixedSlide.content?.question && String(fixedSlide.content.question).trim()) ||
+      (isHe ? `הדבר הכי חשוב ב${shortSub} הוא...` : `The most important thing about ${shortSub} is...`);
+    fixedSlide.type = "wordcloud";
+    fixedSlide.content = { question: q };
+  }
+
   switch (fixedSlide.type) {
     case "title":
       if (!fixedSlide.content.title) {
@@ -1055,16 +1066,6 @@ function validateAndFixSlide(
         0,
         Math.min(fixedSlide.content.correctAnswer, fixedSlide.content.options.length - 1),
       );
-      break;
-    }
-
-    case "finish_sentence": {
-      const q =
-        (fixedSlide.content?.sentenceStart && String(fixedSlide.content.sentenceStart).trim()) ||
-        (fixedSlide.content?.question && String(fixedSlide.content.question).trim()) ||
-        (isHe ? `הדבר הכי חשוב ב${shortSub} הוא...` : `The most important thing about ${shortSub} is...`);
-      fixedSlide.type = "wordcloud";
-      fixedSlide.content = { question: q };
       break;
     }
 
@@ -1589,6 +1590,16 @@ function mapSlideToFrontendFormat(
     duration: 20,
     showResults: true,
     interactionStyle: "bar_chart",
+    pointsForCorrect: 1000,
+    pointsForParticipation: 500,
+  };
+
+  const pollActivitySettings = {
+    duration: 0,
+    showResults: true,
+    interactionStyle: "bar_chart",
+    pointsForCorrect: 0,
+    pointsForParticipation: 0,
   };
 
   const typeMap: Record<string, string> = {
@@ -1602,6 +1613,7 @@ function mapSlideToFrontendFormat(
     sentiment_meter: "sentiment_meter",
     agreeSpectrum: "agree_spectrum",
     agree_spectrum: "agree_spectrum",
+    /** Legacy AI output; never offered in prompts — maps to wordcloud */
     finishSentence: "wordcloud",
     finish_sentence: "wordcloud",
     poll_quiz: "poll_quiz",
@@ -1809,13 +1821,16 @@ function mapSlideToFrontendFormat(
       };
   }
 
+  const activitySettingsForSlide =
+    normalizedType === "poll" ? pollActivitySettings : baseActivitySettings;
+
   return {
     id: generateSlideId(),
     type: normalizedType === "content" ? "content" : normalizedType,
     content: mappedContent,
     design: baseDesign,
     layout: "centered",
-    activitySettings: baseActivitySettings,
+    activitySettings: activitySettingsForSlide,
     order: index,
   };
 }

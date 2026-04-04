@@ -87,6 +87,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface EditorTopToolbarProps {
@@ -106,6 +107,8 @@ interface EditorTopToolbarProps {
   onImportClick?: () => void;
   /** Optional controls shown at the start of the toolbar (e.g. webinar settings). */
   leadingSlot?: React.ReactNode;
+  /** Educator vs Webinar — visible product chip */
+  productMode?: "education" | "webinar";
   /** When true, use compact padding (constrained viewport) */
   compact?: boolean;
   /** Participative slides: timer length and scoring */
@@ -141,6 +144,7 @@ export function EditorTopToolbar({
   className,
   compact = false,
   onUpdateActivitySettings,
+  productMode = "education",
 }: EditorTopToolbarProps) {
   const design = slide.design || {};
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -193,6 +197,17 @@ export function EditorTopToolbar({
       )}
     >
       <div className={`flex items-center gap-1 overflow-x-auto ${compact ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
+        <Badge
+          variant="outline"
+          className={cn(
+            "shrink-0 mr-1 text-[10px] uppercase tracking-wide font-semibold",
+            productMode === "webinar"
+              ? "border-teal-500/50 text-teal-800 dark:text-teal-200"
+              : "border-violet-500/45 text-violet-900 dark:text-violet-100",
+          )}
+        >
+          {productMode === "webinar" ? "Webinar deck" : "Educator deck"}
+        </Badge>
         {/* Text & layout — single compact control */}
         <div className="flex items-center pr-3 border-r border-border/50 shrink-0">
           <Popover>
@@ -387,6 +402,7 @@ export function EditorTopToolbar({
           {/* Participative: timer & points — compact buttons (open popovers) */}
           {showActivityControls && (
             <>
+              {!isPurePoll && (
               <Popover>
                 <PopoverTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
@@ -426,19 +442,11 @@ export function EditorTopToolbar({
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="max-w-xs text-left">
                           <p className="font-medium mb-1">During your live session</p>
-                          {isPurePoll ? (
-                            <p className="text-xs text-muted-foreground">
-                              Charts update live for everyone while votes come in. A timer is
-                              optional—only a visible countdown; it does not hide results on the
-                              present screen.
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground">
-                              The countdown appears for you and your audience. Results stay hidden
-                              until time runs out. Choose <strong>Off</strong> for live-updating
-                              results—no countdown.
-                            </p>
-                          )}
+                          <p className="text-xs text-muted-foreground">
+                            The countdown appears for you and your audience. Results stay hidden
+                            until time runs out. Choose <strong>Off</strong> for live-updating
+                            results—no countdown.
+                          </p>
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -478,6 +486,7 @@ export function EditorTopToolbar({
                   </div>
                 </PopoverContent>
               </Popover>
+              )}
 
               {!isPurePoll && (
                 <Popover>

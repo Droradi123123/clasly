@@ -8,6 +8,7 @@ import {
   DEFAULT_ACTIVITY_DURATION_SEC,
   DEFAULT_POINTS_CORRECT,
   DEFAULT_POINTS_PARTICIPATION,
+  getDefaultActivitySettingsForSlideType,
   isParticipativeSlide,
   migrateLegacySlideTypes,
 } from "@/types/slides";
@@ -70,23 +71,13 @@ function ensureActivitySettings(slide: Slide): Slide {
   if (!isParticipativeSlide(slide.type)) return slide;
   const a = slide.activitySettings || {};
 
-  /** Polls: default no timer, no points — live bars on presenter; quiz types get timer + points. */
-  if (slide.type === "poll") {
-    const dur =
-      a.duration === undefined || a.duration === 0
-        ? 0
-        : typeof a.duration === "number" && a.duration > 0
-          ? a.duration
-          : 0;
+  /** Polls & word clouds: always no timer, no points — live aggregates; AI/legacy JSON cannot keep a countdown. */
+  if (slide.type === "poll" || slide.type === "wordcloud") {
+    const defaults = getDefaultActivitySettingsForSlideType(slide.type);
     const next = {
-      duration: dur,
-      showResults: a.showResults ?? true,
-      interactionStyle: a.interactionStyle ?? ("bar_chart" as const),
-      pointsForCorrect: 0,
-      pointsForParticipation:
-        typeof a.pointsForParticipation === "number" && a.pointsForParticipation >= 0
-          ? a.pointsForParticipation
-          : 0,
+      ...defaults,
+      showResults: a.showResults ?? defaults.showResults ?? true,
+      interactionStyle: a.interactionStyle ?? defaults.interactionStyle ?? ("bar_chart" as const),
     };
     const same =
       slide.activitySettings &&

@@ -24,42 +24,42 @@ import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { ProductContextBar } from "@/components/layout/ProductContextBar";
+import {
+  isAppSurfacePath,
+  isWebinarChromeContext,
+  isWebinarSurfaceActive as isWebinarAppActive,
+  isEducatorSurfaceActive as isEducatorAppActive,
+} from "@/lib/productNavigation";
 
 const Header = () => {
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const trackWebinar = searchParams.get("track") === "webinar";
-  const isHome = location.pathname === "/";
-  const isWebinar = location.pathname === "/webinar";
   const path = location.pathname;
-  const isWebinarProductContext =
-    path === "/webinar" ||
-    path.startsWith("/webinar/") ||
-    (path.startsWith("/editor") && trackWebinar) ||
-    (path.startsWith("/present") && trackWebinar);
+  const isHome = path === "/";
+  const isWebinarLanding = path === "/webinar";
+
+  const isWebinarProductContext = isWebinarChromeContext(path, searchParams);
   const dashboardPath = isWebinarProductContext ? "/webinar/dashboard" : "/dashboard";
   const dashboardLabelFull = isWebinarProductContext ? "Webinar dashboard" : "Educator dashboard";
+  const dashboardLabelShort = isWebinarProductContext ? "Webinar" : "Educator";
 
-  /** In-app surfaces where we show product badge + chrome (not marketing-only pages). */
-  const showProductBadge =
-    path === "/dashboard" ||
-    path.startsWith("/webinar/dashboard") ||
-    path.startsWith("/editor") ||
-    path.startsWith("/present") ||
-    path.includes("/lecture/");
+  const showAppSurfacesChrome = isAppSurfacePath(path);
+
+  /** In-app surfaces where we show product badge on logo (not marketing-only pages). */
+  const showProductBadge = showAppSurfacesChrome;
 
   const { user, isLoading, signOut } = useAuth();
   const { isAdmin } = useIsAdmin();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const { code: referralCode, isLoading: isReferralLoading } = useReferralCode();
-  
-  // Subscription data
-  const { 
-    planName, 
+
+  const {
+    planName,
     isFree,
     isPro,
     isStandard,
-    aiTokensRemaining, 
+    aiTokensRemaining,
     isLoading: isSubLoading,
     plan,
     canAccessWebinarDashboard,
@@ -69,18 +69,9 @@ const Header = () => {
   const hasBothProducts =
     !!user && !isSubLoading && canAccessWebinarDashboard && canAccessEducatorDashboard;
 
-  const isWebinarSurfaceActive =
-    path.startsWith("/webinar/dashboard") ||
-    (path.startsWith("/editor") && trackWebinar) ||
-    (path.startsWith("/present") && trackWebinar);
+  const isWebinarSurfaceActive = isWebinarAppActive(path, searchParams);
+  const isEducatorSurfaceActive = isEducatorAppActive(path, searchParams);
 
-  const isEducatorSurfaceActive =
-    path === "/dashboard" ||
-    (path.startsWith("/editor") && !trackWebinar) ||
-    (path.startsWith("/present") && !trackWebinar) ||
-    /^\/lecture\/[^/]+\/analytics$/.test(path);
-  
-  // Free plan has 0 monthly refill; show balance vs initial 15-credit grant for progress
   const monthlyTokens = plan?.monthly_ai_tokens ?? 0;
   const displayCap = isFree ? 15 : (monthlyTokens || 1);
   const tokenPercentage = displayCap > 0 ? Math.min(100, (aiTokensRemaining / displayCap) * 100) : 0;
@@ -88,12 +79,12 @@ const Header = () => {
 
   const getInitials = (name: string | undefined, email: string | undefined) => {
     if (name) {
-      return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+      return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
     }
     if (email) {
       return email[0].toUpperCase();
     }
-    return 'U';
+    return "U";
   };
 
   const getPlanBadgeVariant = () => {
@@ -102,6 +93,8 @@ const Header = () => {
     return "outline";
   };
 
+  const showMarketingNav = !showAppSurfacesChrome;
+
   return (
     <>
       <header
@@ -109,7 +102,7 @@ const Header = () => {
           "fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-lg border-b",
           isWebinarProductContext
             ? "border-teal-500/35"
-            : showProductBadge && (path === "/dashboard" || path.startsWith("/editor") || path.startsWith("/present") || path.includes("/lecture/"))
+            : showProductBadge && showAppSurfacesChrome
               ? "border-violet-500/25"
               : "border-border/50",
         )}
@@ -135,39 +128,54 @@ const Header = () => {
             )}
           </Link>
 
-          <nav className="hidden md:flex items-center gap-6">
-            <Link
-              to="/"
-              className={`text-sm font-medium transition-colors hover:text-primary ${isHome ? "text-primary" : "text-muted-foreground"}`}
-            >
-              For Educator
-            </Link>
-            <Link
-              to="/webinar"
-              className={`text-sm font-medium transition-colors hover:text-primary ${isWebinar ? "text-primary" : "text-muted-foreground"}`}
-            >
-              For Webinar
-            </Link>
-            <Link
-              to={isWebinarProductContext ? "/webinar/pricing" : "/pricing"}
-              className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
-            >
-              Pricing
-            </Link>
-          </nav>
+          {showMarketingNav ? (
+            <nav className="hidden md:flex items-center gap-6">
+              <Link
+                to="/"
+                className={`text-sm font-medium transition-colors hover:text-primary ${isHome ? "text-primary" : "text-muted-foreground"}`}
+              >
+                For Educator
+              </Link>
+              <Link
+                to="/webinar"
+                className={`text-sm font-medium transition-colors hover:text-primary ${isWebinarLanding ? "text-primary" : "text-muted-foreground"}`}
+              >
+                For Webinar
+              </Link>
+              <Link
+                to={isWebinarProductContext ? "/webinar/pricing" : "/pricing"}
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+              >
+                Pricing
+              </Link>
+            </nav>
+          ) : (
+            <nav className="hidden md:flex items-center gap-5">
+              <Link
+                to="/"
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+                title="Marketing homepage"
+              >
+                Clasly home
+              </Link>
+              <Link
+                to={isWebinarProductContext ? "/webinar/pricing" : "/pricing"}
+                className="text-sm font-medium text-muted-foreground transition-colors hover:text-primary"
+              >
+                Pricing
+              </Link>
+            </nav>
+          )}
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Button variant="ghost" size="sm" asChild>
-              <Link to="/join">
-                Join Session
-              </Link>
+              <Link to="/join">Join Session</Link>
             </Button>
-            
+
             {isLoading ? (
               <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
             ) : user ? (
               <>
-                {/* Referral: share link, get 20 credits per signup */}
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" title="Share & earn 20 credits">
@@ -213,14 +221,12 @@ const Header = () => {
                           {getInitials(user.user_metadata?.full_name, user.email)}
                         </AvatarFallback>
                       </Avatar>
-                      {/* Low credits indicator */}
                       {!isSubLoading && isLowCredits && (
                         <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-destructive rounded-full border-2 border-background" />
                       )}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-64">
-                    {/* User info */}
                     <div className="flex items-center gap-2 p-2">
                       <Avatar className="h-8 w-8">
                         <AvatarImage src={user.user_metadata?.avatar_url} />
@@ -230,37 +236,32 @@ const Header = () => {
                       </Avatar>
                       <div className="flex flex-col flex-1 min-w-0">
                         <span className="text-sm font-medium truncate">
-                          {user.user_metadata?.full_name || 'User'}
+                          {user.user_metadata?.full_name || "User"}
                         </span>
-                        <span className="text-xs text-muted-foreground truncate">
-                          {user.email}
-                        </span>
+                        <span className="text-xs text-muted-foreground truncate">{user.email}</span>
                       </div>
                       <Badge variant={getPlanBadgeVariant()} className="shrink-0">
                         {isPro && <Crown className="w-3 h-3 mr-1" />}
                         {planName}
                       </Badge>
                     </div>
-                    
+
                     <DropdownMenuSeparator />
-                    
-                    {/* Credits section */}
+
                     <div className="p-3 space-y-2">
                       <div className="flex items-center justify-between text-xs">
                         <span className="flex items-center gap-1.5 text-muted-foreground">
                           <Zap className="w-3.5 h-3.5" />
                           AI credits
                         </span>
-                        <span className={`font-medium ${isLowCredits ? 'text-destructive' : ''}`}>
+                        <span className={`font-medium ${isLowCredits ? "text-destructive" : ""}`}>
                           {isSubLoading ? "..." : `${aiTokensRemaining} remaining`}
                         </span>
                       </div>
-                      <Progress 
-                        value={tokenPercentage} 
-                        className={`h-1.5 ${isLowCredits ? '[&>div]:bg-destructive' : ''}`} 
+                      <Progress
+                        value={tokenPercentage}
+                        className={`h-1.5 ${isLowCredits ? "[&>div]:bg-destructive" : ""}`}
                       />
-                      
-                      {/* Low credits warning */}
                       {isLowCredits && (
                         <div className="flex items-center gap-1.5 text-xs text-destructive mt-2">
                           <AlertCircle className="w-3.5 h-3.5" />
@@ -268,18 +269,12 @@ const Header = () => {
                         </div>
                       )}
                     </div>
-                    
-                    {/* Upgrade CTA for free users */}
+
                     {isFree && (
                       <>
                         <DropdownMenuSeparator />
                         <div className="p-2">
-                          <Button 
-                            variant="hero" 
-                            size="sm" 
-                            className="w-full" 
-                            asChild
-                          >
+                          <Button variant="hero" size="sm" className="w-full" asChild>
                             <Link to={isWebinarProductContext ? "/webinar/pricing" : "/pricing"}>
                               <Sparkles className="w-4 h-4 mr-2" />
                               Upgrade to Pro
@@ -288,18 +283,12 @@ const Header = () => {
                         </div>
                       </>
                     )}
-                    
-                    {/* Buy credits link for non-free */}
+
                     {!isFree && isLowCredits && (
                       <>
                         <DropdownMenuSeparator />
                         <div className="p-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="w-full" 
-                            asChild
-                          >
+                          <Button variant="outline" size="sm" className="w-full" asChild>
                             <Link to="/billing">
                               <Coins className="w-4 h-4 mr-2" />
                               Buy More Credits
@@ -308,7 +297,7 @@ const Header = () => {
                         </div>
                       </>
                     )}
-                    
+
                     <DropdownMenuSeparator />
                     {isAdmin && (
                       <DropdownMenuItem asChild>
@@ -320,6 +309,9 @@ const Header = () => {
                     )}
                     {hasBothProducts ? (
                       <>
+                        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Switch product
+                        </div>
                         <DropdownMenuItem asChild>
                           <Link
                             to="/dashboard"
@@ -329,7 +321,7 @@ const Header = () => {
                             )}
                           >
                             <LayoutDashboard className="w-4 h-4 shrink-0" />
-                            <span className="flex-1">Educator dashboard</span>
+                            <span className="flex-1">Clasly for Educator</span>
                             {isEducatorSurfaceActive && <Check className="w-4 h-4 shrink-0" />}
                           </Link>
                         </DropdownMenuItem>
@@ -342,7 +334,7 @@ const Header = () => {
                             )}
                           >
                             <LayoutDashboard className="w-4 h-4 shrink-0" />
-                            <span className="flex-1">Webinar dashboard</span>
+                            <span className="flex-1">Clasly for Webinar</span>
                             {isWebinarSurfaceActive && <Check className="w-4 h-4 shrink-0" />}
                           </Link>
                         </DropdownMenuItem>
@@ -362,29 +354,53 @@ const Header = () => {
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                
+
                 {hasBothProducts ? (
-                  <div className="flex items-center gap-1.5">
-                    <Button variant="hero" size="sm" asChild>
-                      <Link to={dashboardPath} title={dashboardLabelFull}>
-                        <LayoutDashboard className="w-4 h-4 sm:mr-1" />
-                        <span className="hidden sm:inline max-w-[9rem] truncate">{dashboardLabelFull}</span>
-                      </Link>
-                    </Button>
-                    <Button variant="outline" size="sm" asChild className="hidden md:inline-flex px-2">
-                      <Link
-                        to={isWebinarProductContext ? "/dashboard" : "/webinar/dashboard"}
-                        title={isWebinarProductContext ? "Open Educator dashboard" : "Open Webinar dashboard"}
+                  <>
+                    <div
+                      className={cn(
+                        "hidden sm:inline-flex items-center rounded-lg border p-0.5 gap-0.5 shrink-0",
+                        isWebinarSurfaceActive
+                          ? "border-teal-500/35 bg-teal-500/[0.06]"
+                          : "border-violet-500/30 bg-violet-500/[0.06]",
+                      )}
+                      role="group"
+                      aria-label="Switch between Educator and Webinar"
+                    >
+                      <Button
+                        variant={isEducatorSurfaceActive ? "default" : "ghost"}
+                        size="sm"
+                        className="h-8 px-3 rounded-md"
+                        asChild
                       >
-                        {isWebinarProductContext ? "Educator" : "Webinar"}
+                        <Link to="/dashboard" title="Educator dashboard — lectures & classes">
+                          Educator
+                        </Link>
+                      </Button>
+                      <Button
+                        variant={isWebinarSurfaceActive ? "default" : "ghost"}
+                        size="sm"
+                        className="h-8 px-3 rounded-md"
+                        asChild
+                      >
+                        <Link to="/webinar/dashboard" title="Webinar dashboard — live decks & leads">
+                          Webinar
+                        </Link>
+                      </Button>
+                    </div>
+                    <Button variant="hero" size="sm" asChild className="sm:hidden">
+                      <Link to={dashboardPath} title={dashboardLabelFull}>
+                        <LayoutDashboard className="w-4 h-4 mr-1" />
+                        <span className="max-w-[5.5rem] truncate">{dashboardLabelShort}</span>
                       </Link>
                     </Button>
-                  </div>
+                  </>
                 ) : (
                   <Button variant="hero" size="sm" asChild>
                     <Link to={dashboardPath} title={dashboardLabelFull}>
                       <LayoutDashboard className="w-4 h-4 sm:mr-1" />
                       <span className="hidden sm:inline max-w-[11rem] truncate">{dashboardLabelFull}</span>
+                      <span className="sm:hidden">{dashboardLabelShort}</span>
                     </Link>
                   </Button>
                 )}
@@ -397,6 +413,8 @@ const Header = () => {
             )}
           </div>
         </div>
+
+        {showAppSurfacesChrome && <ProductContextBar />}
       </header>
 
       <AuthModal

@@ -246,7 +246,7 @@ export function QuizSlide({
                     Add Option
                   </Button>
                 )}
-                {!isEditing && (!revealStats || !hasResults) && (
+                {!isEditing && !hasResults && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -255,6 +255,20 @@ export function QuizSlide({
                     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
                       <Users className="w-4 h-4" />
                       <span>Waiting for responses...</span>
+                    </div>
+                  </motion.div>
+                )}
+                {!isEditing && hasResults && !revealStats && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-6 text-center"
+                  >
+                    <div className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/80 text-sm max-w-md mx-auto">
+                      <Users className="w-4 h-4 shrink-0" />
+                      <span>
+                        {totalResponses} response{totalResponses === 1 ? "" : "s"} — vote breakdown is hidden until the timer ends or the presenter shows results.
+                      </span>
                     </div>
                   </motion.div>
                 )}
@@ -449,8 +463,8 @@ export function QuizSlide({
                 </motion.div>
               )}
 
-              {/* Waiting / hidden phase: no aggregate stats until timer ends (present mode) */}
-              {!isEditing && (!revealStats || !hasResults) && !(showResults && slide.design?.resultVisualization === 'clean_bars') && (
+              {/* Waiting: no responses yet. Hidden voting phase: responses exist but per-option stats stay masked. */}
+              {!isEditing && !hasResults && !(showResults && slide.design?.resultVisualization === 'clean_bars') && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -477,6 +491,20 @@ export function QuizSlide({
                       ))}
                     </div>
                   </motion.div>
+                </motion.div>
+              )}
+              {!isEditing && hasResults && !revealStats && !(showResults && slide.design?.resultVisualization === 'clean_bars') && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mt-8 text-center px-2"
+                >
+                  <div className="inline-flex flex-wrap items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white/10 backdrop-blur-sm border border-white/20 max-w-lg mx-auto">
+                    <Users className="w-5 h-5 text-white/75 shrink-0" />
+                    <span className="text-white/80 text-sm md:text-base font-medium">
+                      {totalResponses} response{totalResponses === 1 ? "" : "s"} — per-option counts stay hidden until the timer ends or the presenter shows results.
+                    </span>
+                  </div>
                 </motion.div>
               )}
               </>

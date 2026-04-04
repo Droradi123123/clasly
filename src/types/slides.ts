@@ -403,6 +403,41 @@ export function isParticipativeSlide(type: SlideType): boolean {
   return slideInfo?.category === 'interactive' || slideInfo?.category === 'quiz' || false;
 }
 
+/**
+ * Default activity settings when creating or normalizing slides.
+ * Opinion `poll` slides: no timer, no points (live aggregate on presenter).
+ * All other types: default countdown + scoring presets (same as manual new slide).
+ */
+export function getDefaultActivitySettingsForSlideType(type: SlideType): ActivitySettings {
+  if (type === "poll" || type === "wordcloud") {
+    return {
+      duration: 0,
+      showResults: true,
+      interactionStyle: "bar_chart",
+      pointsForCorrect: 0,
+      pointsForParticipation: 0,
+    };
+  }
+  const slideInfo = SLIDE_TYPES.find((t) => t.type === type);
+  /** Quiz-category slides: default countdown + scoring (presenter can turn off in sidebar). */
+  if (slideInfo?.category === "quiz") {
+    return {
+      duration: 30,
+      showResults: true,
+      interactionStyle: "bar_chart",
+      pointsForCorrect: DEFAULT_POINTS_CORRECT,
+      pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
+    };
+  }
+  return {
+    duration: DEFAULT_ACTIVITY_DURATION_SEC,
+    showResults: true,
+    interactionStyle: "bar_chart",
+    pointsForCorrect: DEFAULT_POINTS_CORRECT,
+    pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
+  };
+}
+
 /** Resolved timer/points for runtime (legacy slides may omit fields) */
 export function getResolvedActivitySettings(slide: Slide): {
   /** True when a countdown applies; false when `duration === 0` (live results). */
@@ -415,18 +450,13 @@ export function getResolvedActivitySettings(slide: Slide): {
   const a = slide.activitySettings;
   const raw = a?.duration;
 
-  /** Opinion polls: live results by default — timer only if duration is explicitly greater than 0. */
-  if (slide.type === "poll") {
-    const hasTimerPoll = typeof raw === "number" && raw > 0;
-    const durationSeconds = hasTimerPoll ? raw : 0;
+  /** Opinion polls & word clouds: no timer, no points — aggregates always live on presenter. */
+  if (slide.type === "poll" || slide.type === "wordcloud") {
     return {
-      hasTimer: hasTimerPoll,
-      durationSeconds,
+      hasTimer: false,
+      durationSeconds: 0,
       pointsForCorrect: 0,
-      pointsForParticipation:
-        typeof a?.pointsForParticipation === "number" && a.pointsForParticipation >= 0
-          ? a.pointsForParticipation
-          : 0,
+      pointsForParticipation: 0,
     };
   }
 
@@ -589,22 +619,7 @@ export function createNewSlide(type: SlideType, order: number): Slide {
   const design = type === 'yesno'
     ? { ...baseDesign, yesNoVariant: 'thumbsDynamic' as const }
     : baseDesign;
-  const activitySettings =
-    type === "poll"
-      ? {
-          duration: 0,
-          showResults: true,
-          interactionStyle: "bar_chart" as const,
-          pointsForCorrect: 0,
-          pointsForParticipation: 0,
-        }
-      : {
-          duration: DEFAULT_ACTIVITY_DURATION_SEC,
-          showResults: true,
-          interactionStyle: "bar_chart" as const,
-          pointsForCorrect: DEFAULT_POINTS_CORRECT,
-          pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
-        };
+  const activitySettings = getDefaultActivitySettingsForSlideType(type);
   return {
     id: generateUniqueId(),
     type,

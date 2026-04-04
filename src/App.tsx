@@ -4,7 +4,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate, useSearchParams, useParams } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useSearchParams,
+  useParams,
+} from "react-router-dom";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { Loader2 } from "lucide-react";
 import Index from "./pages/Index";
@@ -51,6 +58,27 @@ const JoinCodeRedirect = () => {
   return <Navigate to={`/join?code=${encodeURIComponent(raw)}`} replace />;
 };
 
+/** Explicit webinar URLs → same Editor/Present with ?track=webinar (preserves other query params e.g. ai=1). */
+const WebinarEditorRedirect = () => {
+  const { lectureId } = useParams();
+  const [searchParams] = useSearchParams();
+  const id = (lectureId ?? "").trim();
+  if (!id) return <Navigate to="/webinar/dashboard" replace />;
+  const q = new URLSearchParams(searchParams);
+  q.set("track", "webinar");
+  return <Navigate to={`/editor/${encodeURIComponent(id)}?${q.toString()}`} replace />;
+};
+
+const WebinarPresentRedirect = () => {
+  const { lectureId } = useParams();
+  const [searchParams] = useSearchParams();
+  const id = (lectureId ?? "").trim();
+  if (!id) return <Navigate to="/webinar/dashboard" replace />;
+  const q = new URLSearchParams(searchParams);
+  q.set("track", "webinar");
+  return <Navigate to={`/present/${encodeURIComponent(id)}?${q.toString()}`} replace />;
+};
+
 // Global error handler for unhandled promise rejections
 const useGlobalErrorHandler = () => {
   useEffect(() => {
@@ -83,7 +111,9 @@ const App = () => {
               <Route path="/webinar/dashboard" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
               <Route path="/dashboard" element={<Suspense fallback={<PageLoader />}><Dashboard /></Suspense>} />
               <Route path="/editor" element={<Navigate to="/editor/new" replace />} />
+              <Route path="/webinar/editor/:lectureId" element={<WebinarEditorRedirect />} />
               <Route path="/editor/:lectureId" element={<Suspense fallback={<PageLoader />}><Editor /></Suspense>} />
+              <Route path="/webinar/present/:lectureId" element={<WebinarPresentRedirect />} />
               <Route path="/present/:lectureId" element={<Suspense fallback={<PageLoader />}><Present /></Suspense>} />
               <Route path="/lecture/:lectureId/analytics" element={<Suspense fallback={<PageLoader />}><LectureAnalytics /></Suspense>} />
               <Route path="/join/:code" element={<JoinCodeRedirect />} />

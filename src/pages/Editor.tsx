@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { EditorTopToolbar } from "@/components/editor/EditorTopToolbar";
+import { ProductContextBar } from "@/components/layout/ProductContextBar";
 import { SlideRenderer } from "@/components/editor/SlideRenderer";
 import { SlideFrame } from "@/components/editor/SlideFrame";
 import { ImportPresentationDialog } from "@/components/editor/ImportPresentationDialog";
@@ -664,9 +665,11 @@ const Editor = () => {
         const settings = { themeId: aiThemeId ?? selectedThemeId, designStyleId: aiDesignStyleId ?? selectedDesignStyleId };
         await updateLecture(newLecture.id, { settings, lecture_mode: lectureMode });
         persistedSettingsRef.current = { ...settings };
-        const aiQuery =
-          lectureMode === "webinar" ? "?ai=1&track=webinar" : "?ai=1";
-        navigate(`/editor/${newLecture.id}${aiQuery}`, {
+        const editorUrl =
+          lectureMode === "webinar"
+            ? `/webinar/editor/${newLecture.id}?ai=1`
+            : `/editor/${newLecture.id}?ai=1`;
+        navigate(editorUrl, {
           replace: true,
           state: { preloadedLecture: { ...newLecture, slides: normalizedSlides, settings } },
         });
@@ -1007,7 +1010,9 @@ const Editor = () => {
         });
         setLectureDbId(newLecture.id);
         setLectureCode(newLecture.lecture_code);
-        window.history.replaceState(null, '', `/editor/${newLecture.id}`);
+        const pathPrefix =
+          lectureMode === "webinar" ? `/webinar/editor/${newLecture.id}` : `/editor/${newLecture.id}`;
+        window.history.replaceState(null, "", pathPrefix);
         await updateLecture(newLecture.id, { settings, lecture_mode: lectureMode });
       }
       persistedSettingsRef.current = { ...settings };
@@ -1248,8 +1253,11 @@ const Editor = () => {
 
     if (lectureDbId) {
       // Navigate immediately – don't block on save. Save in background if there are changes.
-      const presentQs = lectureMode === "webinar" ? "?track=webinar" : "";
-      navigate(`/present/${lectureDbId}${presentQs}`, {
+      const presentPath =
+        lectureMode === "webinar"
+          ? `/webinar/present/${lectureDbId}`
+          : `/present/${lectureDbId}`;
+      navigate(presentPath, {
         state: {
           optimisticSlides: normalizedSlides,
           optimisticLecture: {
@@ -1270,8 +1278,11 @@ const Editor = () => {
     } else {
       createLecture(lectureTitle, normalizedSlides, undefined, { lecture_mode: lectureMode })
         .then((newLecture) => {
-          const presentQsNew = lectureMode === "webinar" ? "?track=webinar" : "";
-          navigate(`/present/${newLecture.id}${presentQsNew}`, {
+          const presentPathNew =
+            lectureMode === "webinar"
+              ? `/webinar/present/${newLecture.id}`
+              : `/present/${newLecture.id}`;
+          navigate(presentPathNew, {
             state: {
               optimisticSlides: (newLecture.slides as unknown as Slide[]) ?? normalizedSlides,
               optimisticLecture: {
@@ -1311,6 +1322,10 @@ const Editor = () => {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <ProductContextBar
+        product={lectureMode}
+        subtitle="Editor"
+      />
       {/* Compact Editor Header - No global nav */}
       <div className="flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
         <div className={`flex items-center justify-between ${isConstrainedViewport ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
@@ -1400,6 +1415,7 @@ const Editor = () => {
         >
       <EditorTopToolbar
         className="border-b-0"
+        productMode={lectureMode}
         slide={currentSlide}
         compact={isConstrainedViewport}
         onUpdateDesign={updateSlideDesign}

@@ -1,6 +1,9 @@
 import type { Slide } from "@/types/slides";
 
-/** First non-empty slide logo URL (Pro branding on slides). */
+/**
+ * Returns the first non-empty `design.logoUrl` found when scanning the deck in slide order.
+ * Use for student header / join branding so any slide-level Pro logo applies app-wide.
+ */
 export function getPresentationLogoUrl(slides: Slide[] | null | undefined): string | undefined {
   if (!slides?.length) return undefined;
   for (const s of slides) {

@@ -17,6 +17,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import Header from "@/components/layout/Header";
+import { appMainPaddingClass } from "@/lib/productNavigation";
 import { DocumentHead } from "@/components/seo/DocumentHead";
 import {
   Plus,
@@ -194,8 +195,10 @@ const Dashboard = () => {
       queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
       resetCreateDialog();
       setIsCreateOpen(false);
-      const edQ = isWebinar ? "?track=webinar" : "";
-      navigate(`/editor/${newLecture.id}${edQ}`, { state: { preloadedLecture: newLecture } });
+      navigate(
+        isWebinar ? `/webinar/editor/${newLecture.id}` : `/editor/${newLecture.id}`,
+        { state: { preloadedLecture: newLecture } },
+      );
     } catch (error) {
       console.error('Error creating lecture:', error);
       toast.error('Failed to create lecture');
@@ -230,8 +233,10 @@ const Dashboard = () => {
       const newLecture = await duplicateLecture(lectureId);
       queryClient.invalidateQueries({ queryKey: ['lectures', user?.id] });
       toast.success("Lecture duplicated. Only content was copied; analytics are not included.");
-      const edQ = isWebinar ? "?track=webinar" : "";
-      navigate(`/editor/${newLecture.id}${edQ}`, { state: { preloadedLecture: newLecture } });
+      navigate(
+        isWebinar ? `/webinar/editor/${newLecture.id}` : `/editor/${newLecture.id}`,
+        { state: { preloadedLecture: newLecture } },
+      );
     } catch (error) {
       console.error("Duplicate failed:", error);
       toast.error("Failed to duplicate lecture");
@@ -307,7 +312,7 @@ const Dashboard = () => {
     return (
       <div className="min-h-screen bg-background">
         <Header />
-        <main className="pt-32 pb-20 px-4">
+        <main className={`${appMainPaddingClass()} pb-20 px-4`}>
           <div className="container mx-auto max-w-4xl text-center">
             <h1 className="text-2xl font-display font-bold mb-4">
               Please sign in to view your lectures
@@ -328,7 +333,7 @@ const Dashboard = () => {
           path="/webinar/dashboard"
         />
         <Header />
-        <main className="pt-32 pb-20 px-4">
+        <main className={`${appMainPaddingClass()} pb-20 px-4`}>
           <div className="container mx-auto max-w-lg">
             <Card className="border-border/60">
               <CardContent className="p-8 space-y-4 text-center">
@@ -377,14 +382,11 @@ const Dashboard = () => {
       />
       <Header />
 
-      <main className="pt-24 pb-12 px-4">
+      <main className={`${appMainPaddingClass()} pb-12 px-4`}>
         <div className="container mx-auto max-w-6xl">
-          {/* Header */}
+          {/* Header — product line also in global ProductContextBar under nav */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                {isWebinar ? "Clasly for Webinar" : "Clasly for Educator"}
-              </p>
               <h1 className="text-3xl font-display font-bold text-foreground mb-2">
                 {isWebinar ? "My Webinars" : "My Lectures"}
               </h1>
@@ -723,7 +725,13 @@ const Dashboard = () => {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => navigate(`/lecture/${lecture.id}/analytics`)}
+                          onClick={() =>
+                          navigate(
+                            `/lecture/${lecture.id}/analytics${
+                              lecture.lecture_mode === "webinar" ? "?track=webinar" : ""
+                            }`,
+                          )
+                        }
                         >
                           <BarChart3 className="w-4 h-4" />
                           Analytics
@@ -750,9 +758,9 @@ const Dashboard = () => {
                         size="sm"
                         onClick={() =>
                           navigate(
-                            `/editor/${lecture.id}${
-                              lecture.lecture_mode === "webinar" ? "?track=webinar" : ""
-                            }`,
+                            lecture.lecture_mode === "webinar"
+                              ? `/webinar/editor/${lecture.id}`
+                              : `/editor/${lecture.id}`,
                           )
                         }
                       >
@@ -762,7 +770,13 @@ const Dashboard = () => {
                       <Button
                         variant="hero"
                         size="sm"
-                        onClick={() => navigate(`/present/${lecture.id}`)}
+                        onClick={() =>
+                          navigate(
+                            lecture.lecture_mode === "webinar"
+                              ? `/webinar/present/${lecture.id}`
+                              : `/present/${lecture.id}`,
+                          )
+                        }
                       >
                         <Play className="w-4 h-4" />
                         Present

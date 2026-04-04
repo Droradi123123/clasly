@@ -24,6 +24,8 @@ import {
   validateLeadAnswers,
   DEFAULT_WEBINAR_PRIMARY_COLOR,
 } from "@/types/webinarRegistration";
+import type { Slide } from "@/types/slides";
+import { getPresentationLogoUrl } from "@/lib/presentationBranding";
 
 const emojis = ["😊", "🎓", "🚀", "💡", "⭐", "🔥", "🎯", "💪", "🌟", "🎨", "📚", "✨"];
 
@@ -65,6 +67,8 @@ const Join = () => {
     defaultWebinarRegistrationConfig(),
   );
   const [leadAnswers, setLeadAnswers] = useState<Record<string, string>>({});
+  /** Logo from slide design (Pro) — shown on join when webinar reg has no logo */
+  const [presentationLogoUrl, setPresentationLogoUrl] = useState<string | undefined>(undefined);
   const processedUrlCodeRef = useRef<string | null>(null);
 
   const normalizedJoinCode = normalizeLectureJoinCode(lectureCode);
@@ -115,6 +119,8 @@ const Join = () => {
       setLectureId(String(lecture.id));
       setLectureName(String(lecture.title ?? ""));
       setLectureCode(code);
+      const slideList = ((lecture as { slides?: unknown }).slides as Slide[] | undefined) || [];
+      setPresentationLogoUrl(getPresentationLogoUrl(slideList));
       const mode = lecture.lecture_mode as string | undefined;
       setWebinarLeadId(null);
       setLeadAnswers({});
@@ -338,11 +344,11 @@ const Join = () => {
                 }}
               >
                 <div className="flex flex-col items-center gap-3 mb-6 text-center px-0.5 w-full min-w-0">
-                  {webinarLogoUrl ? (
+                  {webinarLogoUrl || presentationLogoUrl ? (
                     <img
-                      src={webinarLogoUrl}
+                      src={webinarLogoUrl || presentationLogoUrl}
                       alt=""
-                      className="max-h-14 w-auto max-w-[min(100%,240px)] object-contain object-center"
+                      className="max-h-14 sm:max-h-16 w-auto max-w-[min(100%,280px)] object-contain object-center drop-shadow-sm"
                     />
                   ) : null}
                   {lectureName ? (
@@ -423,6 +429,7 @@ const Join = () => {
                     onClick={() => {
                       setStep("code");
                       setError("");
+                      setPresentationLogoUrl(undefined);
                     }}
                     className="w-full text-center text-sm text-violet-300/70 hover:text-violet-200/90 py-2"
                   >
@@ -439,11 +446,20 @@ const Join = () => {
                 exit={{ opacity: 0, x: -16 }}
                 transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
               >
-                {lectureName ? (
-                  <p className="text-center text-xs font-medium uppercase tracking-wider text-teal-300/90 mb-4 truncate px-1">
-                    {lectureName}
-                  </p>
-                ) : null}
+                <div className="flex flex-col items-center gap-3 mb-5 w-full min-w-0">
+                  {presentationLogoUrl || webinarLogoUrl ? (
+                    <img
+                      src={presentationLogoUrl || webinarLogoUrl}
+                      alt="Host logo"
+                      className="max-h-14 sm:max-h-16 w-auto max-w-[min(100%,280px)] object-contain object-center drop-shadow-sm"
+                    />
+                  ) : null}
+                  {lectureName ? (
+                    <p className="text-center text-xs font-medium uppercase tracking-wider text-teal-300/90 truncate px-1 w-full">
+                      {lectureName}
+                    </p>
+                  ) : null}
+                </div>
 
                 <div className="text-center mb-8">
                   <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-2 tracking-tight">
@@ -519,6 +535,7 @@ const Join = () => {
                       setStep("code");
                       setError("");
                       setName("");
+                      setPresentationLogoUrl(undefined);
                     }}
                     className="w-full text-center text-sm text-violet-300/70 hover:text-violet-200/90 py-2 transition-colors"
                   >

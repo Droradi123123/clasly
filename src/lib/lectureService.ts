@@ -263,10 +263,22 @@ export async function lookupLectureByJoinCode(code: string): Promise<LectureJoin
   }
 }
 
-// Get lecture by code (for students joining). RPC first (bypasses broken RLS in prod), then table read.
+/**
+ * Full lecture row for `/student/:code` — must include `slides`, indexes, and `activity_started_at`
+ * so phone ↔ presenter sync (broadcast + postgres) starts from a correct deck.
+ * `lookupLectureByJoinCode` intentionally returns a minimal row for the Join UI; do not reuse that here.
+ */
 export async function getLectureByCode(code: string) {
-  const r = await lookupLectureByJoinCode(code);
-  return r.ok ? r.lecture : null;
+  const normalized = normalizeLectureJoinCode(code);
+  if (!normalized) return null;
+  try {
+    const row = await getLectureRowByJoinCode(normalized);
+    if (!row?.id) return null;
+    return await getLecture(String(row.id));
+  } catch (e) {
+    console.error("[getLectureByCode] full lecture fetch failed:", e);
+    return null;
+  }
 }
 
 const UPDATE_LECTURE_MAX_RETRIES = 2;

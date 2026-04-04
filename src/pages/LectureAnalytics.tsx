@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Header from "@/components/layout/Header";
+import { appMainPaddingClass } from "@/lib/productNavigation";
 import {
   getLecture,
   getStudents,
@@ -267,7 +268,7 @@ export default function LectureAnalytics() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      <main className="pt-24 pb-12 px-4">
+      <main className={`${appMainPaddingClass()} pb-12 px-4`}>
         <div className="container max-w-4xl mx-auto">
           <div className="flex items-center gap-4 mb-8">
             <Button
@@ -298,7 +299,13 @@ export default function LectureAnalytics() {
                 <Button
                   variant="outline"
                   className="mt-4"
-                  onClick={() => navigate(`/present/${lectureId}`)}
+                  onClick={() =>
+                    navigate(
+                      lecture.lecture_mode === "webinar"
+                        ? `/webinar/present/${lectureId}`
+                        : `/present/${lectureId}`,
+                    )
+                  }
                 >
                   <Presentation className="w-4 h-4 mr-2" />
                   Go to Present

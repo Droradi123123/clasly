@@ -2,6 +2,8 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, startTransit
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ProductContextBar } from "@/components/layout/ProductContextBar";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ChevronLeft,
@@ -248,9 +250,12 @@ const Present = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
-    const edQs = lecture.lecture_mode === "webinar" ? "?track=webinar" : "";
+    const editorPath =
+      lecture.lecture_mode === "webinar"
+        ? `/webinar/editor/${lectureId}`
+        : `/editor/${lectureId}`;
     startTransition(() =>
-      navigate(`/editor/${lectureId}${edQs}`, {
+      navigate(editorPath, {
         state: {
           preloadedLecture: {
             id: lecture.id,
@@ -762,7 +767,9 @@ const Present = () => {
   const handleEndLecture = async () => {
     if (!lectureId || isEnding) return;
     setIsEnding(true);
-    navigate(`/lecture/${lectureId}/analytics`, {
+    const analyticsQs =
+      lecture?.lecture_mode === "webinar" ? "?track=webinar" : "";
+    navigate(`/lecture/${lectureId}/analytics${analyticsQs}`, {
       replace: true,
       state: {
         fromPresent: { lecture, slides, students },
@@ -816,6 +823,13 @@ const Present = () => {
 
   return (
     <div className="h-screen max-h-screen bg-foreground text-primary-foreground flex flex-col relative overflow-hidden">
+      {lecture && (
+        <ProductContextBar
+          product={lecture.lecture_mode === "webinar" ? "webinar" : "education"}
+          subtitle="Present"
+          tone="onDark"
+        />
+      )}
       {/* Background particles */}
       <FloatingParticles count={30} color="rgba(255, 255, 255, 0.1)" />
       
@@ -861,15 +875,29 @@ const Present = () => {
 
       {/* Top Bar */}
       <div className="flex-shrink-0 flex items-center justify-between p-4 bg-background/10 backdrop-blur-sm z-10">
+        <div className="flex items-center gap-3 min-w-0">
         <Button
           variant="ghost"
           size="sm"
-          className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
+          className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10 shrink-0"
           onClick={exitToEditor}
         >
           <X className="w-4 h-4" />
           Exit
         </Button>
+        {lecture && (
+          <Badge
+            variant="outline"
+            className={
+              lecture.lecture_mode === "webinar"
+                ? "border-teal-400/50 text-teal-100 text-[10px] uppercase tracking-wide shrink-0"
+                : "border-violet-400/45 text-violet-100 text-[10px] uppercase tracking-wide shrink-0"
+            }
+          >
+            {lecture.lecture_mode === "webinar" ? "Webinar" : "Educator"}
+          </Badge>
+        )}
+        </div>
 
         <div className="flex items-center gap-4">
           {showCodeInQR && (
@@ -1056,8 +1084,24 @@ const Present = () => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="w-full max-w-full h-full max-h-full min-h-0 min-w-0 flex items-center justify-center mx-2 md:mx-4 lg:mx-6"
+            className="relative w-full max-w-full h-full max-h-full min-h-0 min-w-0 flex items-center justify-center mx-2 md:mx-4 lg:mx-6"
           >
+            {participative &&
+              hasTimer &&
+              inVotingPhase &&
+              currentSlide &&
+              isQuizSlide(currentSlide.type) &&
+              !isPurePoll &&
+              !isWordCloud && (
+                <div
+                  className="pointer-events-none absolute top-0 left-1/2 z-30 -translate-x-1/2 px-3 py-1.5 rounded-b-lg bg-black/55 text-white/95 text-xs sm:text-sm font-medium tabular-nums border border-white/15 border-t-0 shadow-lg backdrop-blur-sm max-w-[min(100%,28rem)] text-center"
+                  title="Participation while vote breakdown is hidden"
+                >
+                  {students.length > 0
+                    ? `${responses.length} / ${students.length} answered`
+                    : `${responses.length} answered`}
+                </div>
+              )}
             {currentSlide && (
               <div className="aspect-video w-full max-w-full max-h-full overflow-hidden rounded-xl">
               <SlideFrame>

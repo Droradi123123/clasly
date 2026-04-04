@@ -63,7 +63,8 @@ export function PollSlide({
   // Use live results if provided, otherwise use zeros
   const results = liveResults || content.options.map(() => 0);
   const hasResults = totalResponses > 0;
-  const revealStats = isEditing || showResults;
+  /** Pure opinion polls always show live aggregates in presentation (not tied to timer). */
+  const revealStats = isEditing || showResults || slide.type === "poll";
 
   // Animation entrance config based on style
   const getEntranceAnimation = (index: number) => {
@@ -196,13 +197,9 @@ export function PollSlide({
           {content.options.map((option, index) => {
             const count = results[index] || 0;
             const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-            // Hide aggregates during timed quiz-style voting (poll_quiz); empty bars until votes + reveal.
+            // Empty bars until there are real responses (no editor demo fill).
             const barWidth =
-              revealStats && totalResponses > 0
-                ? percentage
-                : isEditing
-                  ? 25 + index * 15
-                  : 0;
+              revealStats && totalResponses > 0 ? percentage : 0;
             const entranceAnim = getEntranceAnimation(index);
             
             // Progress bar colors
@@ -360,6 +357,22 @@ export function PollSlide({
                 ))}
               </div>
             </motion.div>
+          </motion.div>
+        )}
+
+        {/* poll_quiz with timer: responses exist but aggregates hidden until results phase */}
+        {!isEditing && slide.type === "poll_quiz" && hasResults && !showResults && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`mt-6 ${textAlign === "center" ? "text-center" : textAlign === "right" ? "text-right" : "text-left"}`}
+          >
+            <div className="inline-flex flex-wrap items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/15 text-white/80 text-sm max-w-xl">
+              <Users className="w-4 h-4 shrink-0" />
+              <span>
+                {totalResponses} response{totalResponses === 1 ? "" : "s"} — bar breakdown is hidden until the timer ends or the presenter shows results.
+              </span>
+            </div>
           </motion.div>
         )}
         </>
