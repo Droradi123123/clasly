@@ -16,6 +16,8 @@ export interface RankingSlideProps {
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
   showCorrectAnswer?: boolean;
+  /** When false (timed quiz, voting phase), hide aggregated ranking results */
+  showResults?: boolean;
 }
 
 const ITEM_COLORS = [
@@ -37,6 +39,7 @@ export function RankingSlide({
   designStyleId = 'dynamic',
   hideFooter = false,
   showCorrectAnswer = false,
+  showResults = true,
 }: RankingSlideProps) {
   const content = slide.content as RankingSlideContent;
   const theme = getTheme(themeId);
@@ -44,13 +47,15 @@ export function RankingSlide({
   const styleConfig = designStyle.config;
 
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
   const isCompact = designStyleId === 'compact';
   const isPodium = slide.design?.rankingVariant === 'podium';
 
   // Sort items by average rank if we have results
-  const displayItems = hasResults && liveResults?.rankings
-    ? liveResults.rankings.sort((a, b) => a.avgRank - b.avgRank).map(r => r.item)
-    : content.items;
+  const displayItems =
+    revealStats && hasResults && liveResults?.rankings
+      ? [...liveResults.rankings].sort((a, b) => a.avgRank - b.avgRank).map((r) => r.item)
+      : content.items;
 
   const handleQuestionChange = (q: string) => {
     onUpdate?.({ ...content, question: q });
@@ -91,7 +96,7 @@ export function RankingSlide({
         
         <div className="flex-1 flex items-center justify-center px-4 md:px-6 pb-4 min-h-0 overflow-y-auto">
           <div className={`w-full max-h-full ${isCompact ? 'flex flex-row flex-wrap justify-center gap-2 md:gap-3 max-w-2xl' : 'max-w-lg space-y-2 md:space-y-3'}`}>
-            {isPodium && hasResults && liveResults?.rankings ? (
+            {isPodium && revealStats && hasResults && liveResults?.rankings ? (
             /* Podium: 1st, 2nd, 3rd with visual bars / medals */
             <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
               {liveResults.rankings.sort((a, b) => a.avgRank - b.avgRank).map((r, index) => {
@@ -179,7 +184,7 @@ export function RankingSlide({
                     )}
 
                     {/* Live rank indicator */}
-                    {!isEditing && hasResults && liveResults?.rankings && (
+                    {!isEditing && revealStats && hasResults && liveResults?.rankings && (
                       <div className="flex items-center gap-1 text-white/80 text-xs md:text-sm flex-shrink-0">
                         <span>דירוג ממוצע: {liveResults.rankings.find(r => r.item === item)?.avgRank.toFixed(1)}</span>
                       </div>
@@ -223,7 +228,7 @@ export function RankingSlide({
             )}
 
             {/* Waiting indicator */}
-            {!isEditing && !hasResults && (
+            {!isEditing && (!revealStats || !hasResults) && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

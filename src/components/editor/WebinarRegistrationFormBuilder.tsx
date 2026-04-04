@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 type Props = {
   value: WebinarRegistrationConfig;
   onChange: (next: WebinarRegistrationConfig) => void;
+  /** Tighter copy for webinar settings wizard */
+  variant?: "default" | "wizard";
 };
 
 const TYPE_LABELS: Record<WebinarRegistrationFieldType, string> = {
@@ -30,8 +32,9 @@ const TYPE_LABELS: Record<WebinarRegistrationFieldType, string> = {
   text: "Free text",
 };
 
-export function WebinarRegistrationFormBuilder({ value, onChange }: Props) {
+export function WebinarRegistrationFormBuilder({ value, onChange, variant = "default" }: Props) {
   const fields = value.fields;
+  const wiz = variant === "wizard";
 
   const updateField = (index: number, patch: Partial<WebinarRegistrationField>) => {
     const next = [...fields];
@@ -65,34 +68,41 @@ export function WebinarRegistrationFormBuilder({ value, onChange }: Props) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className={wiz ? "space-y-4" : "space-y-5"}>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="wr-form-title">Form title</Label>
+          <Label htmlFor="wr-form-title">{wiz ? "Headline on phone" : "Form title"}</Label>
           <Input
             id="wr-form-title"
             value={value.formTitle ?? ""}
             onChange={(e) => onChange({ ...value, formTitle: e.target.value })}
-            placeholder="e.g. Join the webinar"
+            placeholder={wiz ? "e.g. Join the session" : "e.g. Join the webinar"}
           />
         </div>
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="wr-form-sub">Subtitle (optional)</Label>
+          <Label htmlFor="wr-form-sub">{wiz ? "One line under it (optional)" : "Subtitle (optional)"}</Label>
           <Input
             id="wr-form-sub"
             value={value.formSubtitle ?? ""}
             onChange={(e) => onChange({ ...value, formSubtitle: e.target.value })}
-            placeholder="Short line under the title"
+            placeholder={wiz ? "e.g. We’ll only use this to send the replay" : "Short line under the title"}
           />
         </div>
       </div>
 
       <div>
         <div className="flex items-center justify-between mb-2">
-          <p className="text-xs font-semibold text-foreground uppercase tracking-wide">Fields (order = on phone)</p>
+          <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
+            {wiz ? "Questions (order on phone)" : "Fields (order = on phone)"}
+          </p>
           <span className="text-[11px] text-muted-foreground">{fields.length}/12</span>
         </div>
-        <div className="space-y-3 max-h-[min(52vh,420px)] overflow-y-auto pr-1">
+        <div
+          className={cn(
+            "space-y-3 overflow-y-auto pr-1",
+            wiz ? "max-h-[min(38vh,320px)]" : "max-h-[min(52vh,420px)]",
+          )}
+        >
           {fields.map((field, index) => (
             <div
               key={field.id}

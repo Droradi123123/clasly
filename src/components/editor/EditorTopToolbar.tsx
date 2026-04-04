@@ -165,6 +165,7 @@ export function EditorTopToolbar({
 
   const isRtl = design.direction === "rtl";
   const showActivityControls = isParticipativeSlide(slide.type) && onUpdateActivitySettings;
+  const isPurePoll = slide.type === "poll";
   const resolvedActivity = getResolvedActivitySettings(slide);
   const rawDuration = slide.activitySettings?.duration;
   const rawPointsCorrect = slide.activitySettings?.pointsForCorrect;
@@ -425,11 +426,19 @@ export function EditorTopToolbar({
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="max-w-xs text-left">
                           <p className="font-medium mb-1">During your live session</p>
-                          <p className="text-xs text-muted-foreground">
-                            The countdown appears for you and your audience. Results stay hidden
-                            until time runs out. Choose <strong>Off</strong> for live-updating
-                            results—no countdown.
-                          </p>
+                          {isPurePoll ? (
+                            <p className="text-xs text-muted-foreground">
+                              Charts update live for everyone while votes come in. A timer is
+                              optional—only a visible countdown; it does not hide results on the
+                              present screen.
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              The countdown appears for you and your audience. Results stay hidden
+                              until time runs out. Choose <strong>Off</strong> for live-updating
+                              results—no countdown.
+                            </p>
+                          )}
                         </TooltipContent>
                       </Tooltip>
                     </div>
@@ -470,60 +479,62 @@ export function EditorTopToolbar({
                 </PopoverContent>
               </Popover>
 
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
-                    <Award className="w-4 h-4 text-teal-600" />
-                    <span className="hidden sm:inline">
-                      Points{" "}
-                      <span className="text-muted-foreground tabular-nums">
-                        {resolvedActivity.pointsForCorrect}
+              {!isPurePoll && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
+                      <Award className="w-4 h-4 text-teal-600" />
+                      <span className="hidden sm:inline">
+                        Points{" "}
+                        <span className="text-muted-foreground tabular-nums">
+                          {resolvedActivity.pointsForCorrect}
+                        </span>
                       </span>
-                    </span>
-                    {isDefaultPoints && (
-                      <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                        default
-                      </span>
-                    )}
-                    <ChevronDown className="w-3 h-3" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72 p-3" align="start">
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-foreground">Points</p>
-                    <p className="text-[11px] text-muted-foreground leading-snug">
-                      Awarded when students submit (live).
-                    </p>
+                      {isDefaultPoints && (
+                        <span className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          default
+                        </span>
+                      )}
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 p-3" align="start">
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-foreground">Points</p>
+                      <p className="text-[11px] text-muted-foreground leading-snug">
+                        Awarded when students submit (live).
+                      </p>
 
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {POINT_PRESETS.map(({ correct, participation }) => (
-                        <button
-                          key={correct}
-                          type="button"
-                          onClick={() =>
-                            onUpdateActivitySettings!({
-                              pointsForCorrect: correct,
-                              pointsForParticipation: participation,
-                            })
-                          }
-                          className={`rounded-md px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors ${
-                            resolvedActivity.pointsForCorrect === correct
-                              ? "bg-teal-600 text-white shadow-sm"
-                              : "bg-muted/80 text-muted-foreground hover:bg-muted"
-                          }`}
-                        >
-                          <span className="inline-flex items-center gap-1">
-                            {correct}
-                            {correct === DEFAULT_POINTS_CORRECT && isDefaultPoints && (
-                              <span className="text-[10px] opacity-90">(default)</span>
-                            )}
-                          </span>
-                        </button>
-                      ))}
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {POINT_PRESETS.map(({ correct, participation }) => (
+                          <button
+                            key={correct}
+                            type="button"
+                            onClick={() =>
+                              onUpdateActivitySettings!({
+                                pointsForCorrect: correct,
+                                pointsForParticipation: participation,
+                              })
+                            }
+                            className={`rounded-md px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors ${
+                              resolvedActivity.pointsForCorrect === correct
+                                ? "bg-teal-600 text-white shadow-sm"
+                                : "bg-muted/80 text-muted-foreground hover:bg-muted"
+                            }`}
+                          >
+                            <span className="inline-flex items-center gap-1">
+                              {correct}
+                              {correct === DEFAULT_POINTS_CORRECT && isDefaultPoints && (
+                                <span className="text-[10px] opacity-90">(default)</span>
+                              )}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </PopoverContent>
+                </Popover>
+              )}
             </>
           )}
 
@@ -706,7 +717,6 @@ export function EditorTopToolbar({
               scale: { key: 'scaleVariant', variant2: 'stepsClick', label1: 'מטר', label2: 'צעדים', icon1: Sliders, icon2: ListOrdered },
               ranking: { key: 'rankingVariant', variant2: 'podium', label1: 'רשימה', label2: 'פודיום', icon1: List, icon2: LayoutList },
               guess_number: { key: 'guessNumberVariant', variant2: 'thermometer', label1: 'קלט', label2: 'תרמומטר', icon1: Hash, icon2: Thermometer },
-              finish_sentence: { key: 'finishSentenceVariant', variant2: 'wordBank', label1: 'טקסט', label2: 'בנק מילים', icon1: MessageSquare, icon2: List },
               sentiment_meter: { key: 'sentimentMeterVariant', variant2: 'emojiRow', label1: 'סליידר', label2: 'שורת אימוג\'י', icon1: Sliders, icon2: Heart },
               agree_spectrum: { key: 'agreeSpectrumVariant', variant2: 'steps', label1: 'ספקטרום', label2: 'צעדים', icon1: ArrowLeftRight, icon2: ListOrdered },
             };

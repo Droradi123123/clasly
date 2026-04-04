@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, startTransition } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, startTransition } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -298,8 +298,19 @@ const Present = () => {
     []
   );
 
-  currentSlideIndexRef.current = currentSlideIndex;
-  const currentSlide = slides[currentSlideIndex];
+  const effectiveSlideIndex =
+    slides.length > 0
+      ? Math.min(Math.max(0, currentSlideIndex), slides.length - 1)
+      : 0;
+
+  useLayoutEffect(() => {
+    if (slides.length === 0) return;
+    const clamped = Math.min(Math.max(0, currentSlideIndex), slides.length - 1);
+    if (currentSlideIndex !== clamped) setCurrentSlideIndex(clamped);
+  }, [slides.length, currentSlideIndex, slides]);
+
+  currentSlideIndexRef.current = effectiveSlideIndex;
+  const currentSlide = slides.length > 0 ? slides[effectiveSlideIndex] : undefined;
   const unansweredQuestionsCount = questions.filter(q => !q.is_answered).length;
 
   useEffect(() => {
@@ -331,7 +342,11 @@ const Present = () => {
     participative && hasTimer && !Number.isNaN(startedAtMs)
       ? Math.max(0, Math.ceil(durationSec - elapsedMs / 1000))
       : 0;
-  const showLiveResults = !participative || !hasTimer || inResultsPhase;
+  /** Polls & word clouds show aggregate results live; quiz types hide until timer ends (when timer on). */
+  const isPurePoll = currentSlide?.type === "poll";
+  const isWordCloud = currentSlide?.type === "wordcloud";
+  const showLiveResults =
+    !participative || !hasTimer || inResultsPhase || isPurePoll || isWordCloud;
   const showCorrectAnswerEffective =
     !currentSlide ||
     !isQuizSlide(currentSlide.type) ||

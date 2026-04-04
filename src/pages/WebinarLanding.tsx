@@ -49,8 +49,8 @@ const WebinarLanding = () => {
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
       <DocumentHead
-        title="Clasly for Webinar – Interactive Webinars & Lead Capture"
-        description="Turn your topic into an interactive webinar in seconds. AI builds the deck, attendees participate from their phones—no downloads."
+        title="Clasly for Webinar – AI Webinars for Engagement & Conversion"
+        description="Build an interactive webinar in seconds with AI: polls, quizzes, and participation on every phone—plus leads, live CTA, and a clearer path to revenue."
         path="/webinar"
       />
       <StructuredData />

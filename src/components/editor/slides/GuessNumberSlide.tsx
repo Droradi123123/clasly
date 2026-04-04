@@ -15,6 +15,8 @@ interface GuessNumberSlideProps {
   liveResults?: { guesses: number[] };
   totalResponses?: number;
   showAnswer?: boolean;
+  /** When false (voting phase with timer), hide guess distribution / averages */
+  showResults?: boolean;
   themeId?: ThemeId;
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
@@ -27,6 +29,7 @@ export function GuessNumberSlide({
   liveResults,
   totalResponses = 0,
   showAnswer = false,
+  showResults = true,
   themeId = 'neon-cyber',
   designStyleId = 'dynamic',
   hideFooter = false,
@@ -42,6 +45,7 @@ export function GuessNumberSlide({
   // Use live results if provided, otherwise use empty - safely handle undefined guesses
   const guesses = liveResults?.guesses ?? [];
   const hasResults = guesses.length > 0;
+  const revealDist = isEditing || showResults;
   const averageGuess = hasResults 
     ? guesses.reduce((a, b) => a + b, 0) / guesses.length 
     : 0;
@@ -101,7 +105,7 @@ export function GuessNumberSlide({
                   </div>
                   <div className="relative h-12 rounded-full bg-white/20 overflow-hidden">
                     <div className="absolute inset-y-0 left-0 right-0 bg-gradient-to-r from-amber-500 via-orange-400 to-emerald-500 opacity-40" />
-                    {hasResults && (
+                    {revealDist && hasResults && (
                       <motion.div
                         className="absolute top-0 bottom-0 w-2 bg-white/90 rounded-full shadow-lg"
                         initial={{ left: '50%' }}
@@ -134,7 +138,7 @@ export function GuessNumberSlide({
                     </div>
                   </div>
                 )}
-                {!isEditing && hasResults && (
+                {!isEditing && revealDist && hasResults && (
                   <div className="mt-4 flex justify-center gap-4 text-white/80 text-sm">
                     <span>Guesses: {totalResponses}</span>
                     <span>Average: {averageGuess.toFixed(0)}</span>
@@ -260,7 +264,7 @@ export function GuessNumberSlide({
               )}
 
               {/* Live statistics */}
-              {!isEditing && (
+              {!isEditing && revealDist && (
                 <div className="grid grid-cols-3 gap-2 md:gap-3 mt-4 md:mt-6">
                   {/* Guesses count */}
                   <motion.div
@@ -309,8 +313,8 @@ export function GuessNumberSlide({
                 </div>
               )}
 
-              {/* Zero-state waiting indicator */}
-              {!isEditing && !hasResults && (
+              {/* Waiting: no data yet, or voting phase (timer — hide aggregates) */}
+              {!isEditing && (!revealDist || !hasResults) && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}

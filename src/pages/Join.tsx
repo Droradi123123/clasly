@@ -273,13 +273,11 @@ const Join = () => {
                 exit={{ opacity: 0, x: 16 }}
                 transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
               >
-                <div className="text-center mb-8">
-                  <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-2 tracking-tight">
-                    Enter the code
+                <div className="text-center mb-6">
+                  <h1 className="text-xl sm:text-2xl font-display font-bold text-white mb-1.5 tracking-tight">
+                    Enter code
                   </h1>
-                  <p className="text-sm sm:text-base text-violet-200/70 leading-relaxed">
-                    Use the 6-digit code your instructor shows on screen
-                  </p>
+                  <p className="text-sm text-violet-200/75">6 digits from the presenter’s screen</p>
                 </div>
 
                 <div className="space-y-5">
@@ -339,28 +337,30 @@ const Join = () => {
                   padding: "0.5rem",
                 }}
               >
-                {lectureName ? (
-                  <p className="text-center text-xs font-medium uppercase tracking-wider text-teal-300/90 mb-4 truncate px-1">
-                    {lectureName}
-                  </p>
-                ) : null}
-                {webinarLogoUrl ? (
-                  <div className="flex justify-center mb-5">
+                <div className="flex flex-col items-center gap-3 mb-6 text-center px-0.5 w-full min-w-0">
+                  {webinarLogoUrl ? (
                     <img
                       src={webinarLogoUrl}
                       alt=""
-                      className="h-11 max-w-[200px] object-contain"
+                      className="max-h-14 w-auto max-w-[min(100%,240px)] object-contain object-center"
                     />
-                  </div>
-                ) : null}
-                <div className="text-center mb-8">
-                  <h1 className="text-2xl sm:text-3xl font-display font-bold text-white mb-2 tracking-tight">
-                    {webinarRegConfig.formTitle?.trim() || "Webinar registration"}
+                  ) : null}
+                  {lectureName ? (
+                    <p className="text-base sm:text-lg font-semibold text-white leading-snug line-clamp-4 break-words w-full">
+                      {lectureName}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="text-center mb-6">
+                  <h1 className="text-xl sm:text-2xl font-display font-bold text-white mb-1.5 tracking-tight leading-snug px-1">
+                    {webinarRegConfig.formTitle?.trim() || "Sign in to continue"}
                   </h1>
                   {webinarRegConfig.formSubtitle?.trim() ? (
-                    <p className="text-sm sm:text-base text-violet-200/75">{webinarRegConfig.formSubtitle}</p>
+                    <p className="text-sm text-violet-200/80 leading-relaxed px-1 line-clamp-3">
+                      {webinarRegConfig.formSubtitle}
+                    </p>
                   ) : (
-                    <p className="text-sm sm:text-base text-violet-200/75">Fill in the form to continue</p>
+                    <p className="text-sm text-violet-200/80">A few details — then you’re in</p>
                   )}
                 </div>
                 <div className="space-y-4">

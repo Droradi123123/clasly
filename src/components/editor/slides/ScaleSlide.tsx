@@ -16,6 +16,7 @@ interface ScaleSlideProps {
   hideFooter?: boolean;
   /** In presenter mode: force show counts even when minimal */
   forceShowStats?: boolean;
+  showResults?: boolean;
 }
 
 // Color gradient for scale values
@@ -37,6 +38,7 @@ export function ScaleSlide({
   designStyleId = 'dynamic',
   hideFooter = false,
   forceShowStats = false,
+  showResults = true,
 }: ScaleSlideProps) {
   const content = slide.content as ScaleSlideContent;
   const theme = getTheme(themeId);
@@ -48,6 +50,7 @@ export function ScaleSlide({
   // Use live results if provided, otherwise use empty
   const results = liveResults || { average: 0, distribution: Array(steps).fill(0) };
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
   const maxCount = Math.max(...(results.distribution || []), 1);
 
   const isMinimal = designStyleId === 'minimal';
@@ -55,7 +58,7 @@ export function ScaleSlide({
   const isStepsClick = slide.design?.scaleVariant === 'stepsClick';
 
   // Calculate meter position (0-100%)
-  const meterPosition = hasResults ? ((results.average - 1) / (steps - 1)) * 100 : 50;
+  const meterPosition = revealStats && hasResults ? ((results.average - 1) / (steps - 1)) * 100 : 50;
 
   // Get text color from slide design
   const textColor = slide.design?.textColor || '#ffffff';
@@ -129,7 +132,7 @@ export function ScaleSlide({
               <div className="flex justify-center gap-2 md:gap-3 mb-6 flex-wrap">
                 {Array.from({ length: steps }, (_, i) => i + 1).map((value) => {
                   const count = results.distribution?.[value - 1] || 0;
-                  const isHighlighted = hasResults && Math.abs(results.average - value) < 0.5;
+                  const isHighlighted = revealStats && hasResults && Math.abs(results.average - value) < 0.5;
                   return (
                     <motion.div
                       key={value}
@@ -142,12 +145,12 @@ export function ScaleSlide({
                       style={{ color: textColor }}
                     >
                       <span>{value}</span>
-                      {hasResults && <span className="text-xs font-medium opacity-80">{count}</span>}
+                      {revealStats && hasResults && <span className="text-xs font-medium opacity-80">{count}</span>}
                     </motion.div>
                   );
                 })}
               </div>
-              {hasResults && results.average > 0 && (
+              {revealStats && hasResults && results.average > 0 && (
                 <div className="text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/20">
                     <span className="text-white/70 text-sm">Average:</span>
@@ -155,7 +158,7 @@ export function ScaleSlide({
                   </div>
                 </div>
               )}
-              {!hasResults && (
+              {(!revealStats || !hasResults) && (
                 <div className="text-center mt-4">
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
                     <Users className="w-4 h-4" />
@@ -175,7 +178,7 @@ export function ScaleSlide({
               {/* Meter Track */}
               <div className={`relative rounded-2xl bg-gradient-to-r from-red-500/30 via-amber-500/30 to-emerald-500/30 border-2 border-white/20 overflow-hidden ${isCompact ? 'h-8 md:h-10' : 'h-12 md:h-16'}`}>
                 {/* Gradient fill based on average */}
-                {hasResults && (
+                {revealStats && hasResults && (
                   <motion.div
                     className="absolute inset-y-0 left-0 bg-gradient-to-r from-red-500 via-amber-500 to-emerald-500"
                     initial={{ width: 0 }}
@@ -192,7 +195,7 @@ export function ScaleSlide({
                 <motion.div
                   className="absolute top-0 bottom-0 w-1 bg-white shadow-lg"
                   initial={{ left: '50%' }}
-                  animate={{ left: `${hasResults ? meterPosition : 50}%` }}
+                  animate={{ left: `${revealStats && hasResults ? meterPosition : 50}%` }}
                   transition={isMinimal 
                     ? { duration: 0.5, ease: "easeOut" }
                     : { type: "spring", stiffness: 100, damping: 20 }
@@ -217,7 +220,7 @@ export function ScaleSlide({
             <div className="flex justify-between gap-1 md:gap-2 mb-4">
               {Array.from({ length: steps }, (_, i) => i + 1).map((value, index) => {
                 const count = results.distribution?.[index] || 0;
-                const heightPercent = hasResults ? Math.max((count / maxCount) * 100, 5) : 10;
+                const heightPercent = revealStats && hasResults ? Math.max((count / maxCount) * 100, 5) : 10;
                 const colorIndex = Math.floor((index / (steps - 1)) * (SCALE_COLORS.length - 1));
 
                 return (
@@ -237,7 +240,7 @@ export function ScaleSlide({
                           animate={{ scale: 1, opacity: 1 }}
                           className="text-white/80 font-bold text-xs md:text-sm mb-1"
                         >
-                          {hasResults ? count : ''}
+                          {revealStats && hasResults ? count : ''}
                         </motion.span>
                       </AnimatePresence>
                     )}
@@ -260,7 +263,7 @@ export function ScaleSlide({
             </div>
 
             {/* Average indicator */}
-            {!isEditing && hasResults && results.average > 0 && (
+            {!isEditing && revealStats && hasResults && results.average > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -273,8 +276,8 @@ export function ScaleSlide({
               </motion.div>
             )}
 
-            {/* Zero-state waiting indicator */}
-            {!isEditing && !hasResults && (
+            {/* Zero-state / hidden-phase waiting indicator */}
+            {!isEditing && (!revealStats || !hasResults) && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

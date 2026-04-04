@@ -18,6 +18,7 @@ interface SentimentMeterSlideProps {
   themeId?: ThemeId;
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
+  showResults?: boolean;
 }
 
 // Sentiment gradient colors
@@ -49,12 +50,15 @@ export function SentimentMeterSlide({
   themeId = 'neon-cyber',
   designStyleId = 'dynamic',
   hideFooter = false,
+  showResults = true,
 }: SentimentMeterSlideProps) {
   const content = slide.content as SentimentMeterSlideContent;
   const designStyle = getDesignStyle(designStyleId);
   const styleConfig = designStyle.config;
   
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
+  const agg = revealStats && hasResults;
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
   const isEmojiRow = slide.design?.sentimentMeterVariant === 'emojiRow';
@@ -102,7 +106,7 @@ export function SentimentMeterSlide({
                     className="flex flex-col items-center gap-2 flex-1"
                   >
                     <span className="text-4xl md:text-5xl cursor-default select-none">{emoji}</span>
-                    {hasResults && (
+                    {agg && (
                       <motion.div
                         className="w-full bg-white/30 rounded-t max-h-16 min-h-[4px]"
                         initial={{ height: 0 }}
@@ -110,16 +114,16 @@ export function SentimentMeterSlide({
                         transition={{ type: 'spring', stiffness: 150 }}
                       />
                     )}
-                    {hasResults && <span className="text-white/70 text-xs">{emojiCounts[i]}</span>}
+                    {agg && <span className="text-white/70 text-xs">{emojiCounts[i]}</span>}
                   </motion.div>
                 ))}
               </div>
-              {hasResults && (
+              {agg && (
                 <div className="text-center">
                   <span className="text-white/80 text-sm">Average: {(average / 100 * (emojiRow.length - 1) + 1).toFixed(1)} / {emojiRow.length}</span>
                 </div>
               )}
-              {!hasResults && (
+              {!agg && (
                 <div className="text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
                     <Users className="w-4 h-4" />
@@ -196,7 +200,7 @@ export function SentimentMeterSlide({
                 <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent" />
                 
                 {/* Distribution overlay */}
-                {hasResults && (
+                {agg && (
                   <div className="absolute inset-0 flex">
                     {distribution.map((count, i) => {
                       const height = (count / maxCount) * 100;
@@ -218,9 +222,9 @@ export function SentimentMeterSlide({
               {/* Average Indicator */}
               <motion.div
                 className="absolute top-0 bottom-0"
-                style={{ left: `${hasResults ? average : 50}%` }}
+                style={{ left: `${agg ? average : 50}%` }}
                 initial={{ left: '50%' }}
-                animate={{ left: `${hasResults ? average : 50}%` }}
+                animate={{ left: `${agg ? average : 50}%` }}
                 transition={isMinimal 
                   ? { duration: 0.5 }
                   : { type: "spring", stiffness: 100, damping: 20 }
@@ -236,9 +240,9 @@ export function SentimentMeterSlide({
                   animate={{ y: 0, opacity: 1 }}
                 >
                   <span className="text-3xl mb-1">
-                    {hasResults ? getSentimentEmoji(average, leftEmoji, rightEmoji) : '❓'}
+                    {agg ? getSentimentEmoji(average, leftEmoji, rightEmoji) : '❓'}
                   </span>
-                  {hasResults && (
+                  {agg && (
                     <div className="px-3 py-1 rounded-full bg-black/60 backdrop-blur-sm">
                       <span className="text-white font-bold text-sm">{Math.round(average)}%</span>
                     </div>
@@ -248,7 +252,7 @@ export function SentimentMeterSlide({
             </motion.div>
 
             {/* Response count or waiting */}
-            {hasResults ? (
+            {agg ? (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

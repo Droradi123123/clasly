@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { Slide } from "@/types/slides";
+import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 import { Json } from "@/integrations/supabase/types";
 import { z } from "zod";
 
@@ -478,7 +479,7 @@ export async function getAllResponsesForLecture(lectureId: string) {
 export async function duplicateLecture(lectureId: string) {
   const lecture = await getLecture(lectureId);
   if (!lecture) throw new Error('Lecture not found');
-  const slides = (lecture.slides as unknown as Slide[]) || [];
+  const slides = ensureSlidesDesignDefaults((lecture.slides as unknown as Slide[]) || []);
   const newTitle = `${lecture.title} (Copy)`;
   const mode = (lecture as { lecture_mode?: string }).lecture_mode === "webinar" ? "webinar" : "education";
   return createLecture(newTitle, slides.length ? [...slides] : [], undefined, { lecture_mode: mode });

@@ -9,6 +9,7 @@ import {
   DEFAULT_POINTS_CORRECT,
   DEFAULT_POINTS_PARTICIPATION,
   isParticipativeSlide,
+  migrateLegacySlideTypes,
 } from "@/types/slides";
 import type { DesignStyleId } from "@/types/designStyles";
 import type { ThemeId } from "@/types/themes";
@@ -68,6 +69,36 @@ export function ensureDesignDefaults(slide: Slide): Slide {
 function ensureActivitySettings(slide: Slide): Slide {
   if (!isParticipativeSlide(slide.type)) return slide;
   const a = slide.activitySettings || {};
+
+  /** Polls: default no timer, no points — live bars on presenter; quiz types get timer + points. */
+  if (slide.type === "poll") {
+    const dur =
+      a.duration === undefined || a.duration === 0
+        ? 0
+        : typeof a.duration === "number" && a.duration > 0
+          ? a.duration
+          : 0;
+    const next = {
+      duration: dur,
+      showResults: a.showResults ?? true,
+      interactionStyle: a.interactionStyle ?? ("bar_chart" as const),
+      pointsForCorrect: 0,
+      pointsForParticipation:
+        typeof a.pointsForParticipation === "number" && a.pointsForParticipation >= 0
+          ? a.pointsForParticipation
+          : 0,
+    };
+    const same =
+      slide.activitySettings &&
+      slide.activitySettings.duration === next.duration &&
+      slide.activitySettings.showResults === next.showResults &&
+      slide.activitySettings.interactionStyle === next.interactionStyle &&
+      slide.activitySettings.pointsForCorrect === next.pointsForCorrect &&
+      slide.activitySettings.pointsForParticipation === next.pointsForParticipation;
+    if (same) return slide;
+    return { ...slide, activitySettings: next };
+  }
+
   const next = {
     duration:
       a.duration === 0
@@ -101,7 +132,7 @@ function ensureActivitySettings(slide: Slide): Slide {
  * Normalize an array of slides - ensures all have stable design values.
  */
 export function ensureSlidesDesignDefaults(slides: Slide[]): Slide[] {
-  return slides.map((s) => ensureDesignDefaults(ensureActivitySettings(s)));
+  return migrateLegacySlideTypes(slides).map((s) => ensureDesignDefaults(ensureActivitySettings(s)));
 }
 
 /**

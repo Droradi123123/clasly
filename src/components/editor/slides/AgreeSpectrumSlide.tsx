@@ -18,6 +18,7 @@ interface AgreeSpectrumSlideProps {
   themeId?: ThemeId;
   designStyleId?: DesignStyleId;
   hideFooter?: boolean;
+  showResults?: boolean;
 }
 
 // Spectrum colors
@@ -36,6 +37,7 @@ export function AgreeSpectrumSlide({
   themeId = 'neon-cyber',
   designStyleId = 'dynamic',
   hideFooter = false,
+  showResults = true,
 }: AgreeSpectrumSlideProps) {
   const rawContent = slide.content as AgreeSpectrumSlideContent;
   const content = {
@@ -48,6 +50,8 @@ export function AgreeSpectrumSlide({
   const styleConfig = designStyle.config;
   
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
+  const agg = revealStats && hasResults;
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
   const isSteps = slide.design?.agreeSpectrumVariant === 'steps';
@@ -69,7 +73,7 @@ export function AgreeSpectrumSlide({
   });
   const maxBucket = Math.max(...buckets, 1);
 
-  const stepBuckets = isSteps && hasResults
+  const stepBuckets = isSteps && agg
     ? [0, 1, 2, 3, 4].map((i) => {
         const low = i * 4;
         const high = (i + 1) * 4;
@@ -134,7 +138,7 @@ export function AgreeSpectrumSlide({
                         />
                       ) : label}
                     </div>
-                    {hasResults && (
+                    {agg && (
                       <motion.div
                         className="w-full bg-white/30 rounded max-h-12 min-h-[4px]"
                         initial={{ height: 0 }}
@@ -142,14 +146,14 @@ export function AgreeSpectrumSlide({
                         transition={{ type: 'spring', stiffness: 150 }}
                       />
                     )}
-                    {hasResults && <span className="text-white/70 text-xs">{stepBuckets[i]}</span>}
+                    {agg && <span className="text-white/70 text-xs">{stepBuckets[i]}</span>}
                   </motion.div>
                 ))}
               </div>
-              {hasResults && (
+              {agg && (
                 <div className="text-center text-white/80 text-sm">Average: {Math.round(average)}%</div>
               )}
-              {!hasResults && (
+              {!agg && (
                 <div className="text-center">
                   <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
                     <Users className="w-4 h-4" />
@@ -198,7 +202,7 @@ export function AgreeSpectrumSlide({
               {/* Track */}
               <div className={`rounded-2xl bg-gradient-to-r from-red-500/20 via-neutral-500/20 to-green-500/20 border-2 border-white/20 relative overflow-hidden ${isCompact ? 'h-14 md:h-16' : 'h-20 md:h-24'}`}>
                 {/* Distribution bars */}
-                {hasResults && (
+                {agg && (
                   <div className="absolute inset-0 flex items-end px-1">
                     {buckets.map((count, i) => {
                       const height = (count / maxBucket) * 80;
@@ -225,7 +229,7 @@ export function AgreeSpectrumSlide({
                 )}
 
                 {/* Individual dot markers for positions */}
-                {hasResults && positions.slice(0, 30).map((pos, i) => (
+                {agg && positions.slice(0, 30).map((pos, i) => (
                   <motion.div
                     key={i}
                     className="absolute top-1/2 w-3 h-3 rounded-full border-2 border-white shadow-lg"
@@ -245,7 +249,7 @@ export function AgreeSpectrumSlide({
               </div>
 
               {/* Average indicator */}
-              {hasResults && (
+              {agg && (
                 <motion.div
                   className="absolute -bottom-8"
                   style={{ left: `${average}%` }}
@@ -263,7 +267,7 @@ export function AgreeSpectrumSlide({
             </motion.div>
 
             {/* Stats */}
-            {hasResults && (
+                {agg && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -293,7 +297,7 @@ export function AgreeSpectrumSlide({
             )}
 
             {/* Zero state */}
-            {!isEditing && !hasResults && (
+            {!isEditing && !agg && (
               <motion.div
                 animate={!isMinimal ? { opacity: isCompact ? [0.6, 0.9, 0.6] : [0.5, 1, 0.5] } : undefined}
                 transition={{ duration: 2, repeat: Infinity }}

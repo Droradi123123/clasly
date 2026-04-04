@@ -14,7 +14,7 @@ import { WebinarCtaLivePreview } from "@/components/editor/WebinarCtaLivePreview
 import { uploadWebinarRegistrationLogo } from "@/lib/webinarRegistrationLogoUpload";
 import { cn } from "@/lib/utils";
 
-const STEPS = 3;
+const STEPS = 2;
 
 function isValidHttpUrl(s: string): boolean {
   const t = s.trim();
@@ -129,14 +129,19 @@ export function WebinarSettingsWizard({
       </p>
 
       {step === 0 && (
-        <div className="grid gap-8 lg:grid-cols-[1fr_minmax(260px,320px)] lg:items-start">
-          <div className="space-y-6 min-w-0">
+        <div className="grid gap-6 lg:grid-cols-[1fr_minmax(260px,320px)] lg:items-start">
+          <div className="space-y-5 min-w-0">
+            <div className="rounded-xl border border-border/50 bg-muted/15 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">Registration</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Choose what to ask, then match colors and logo to your brand — preview updates live.
+              </p>
+            </div>
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">Registration form</h3>
-              <WebinarRegistrationFormBuilder value={webinarRegConfig} onChange={onWebinarRegChange} />
+              <WebinarRegistrationFormBuilder value={webinarRegConfig} onChange={onWebinarRegChange} variant="wizard" />
             </section>
             <section className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Branding</h3>
+              <h3 className="text-sm font-semibold text-foreground">Look &amp; logo</h3>
               <div className="space-y-2">
                 <Label className="text-xs flex items-center gap-1.5">
                   Primary color
@@ -234,12 +239,14 @@ export function WebinarSettingsWizard({
       )}
 
       {step === 1 && (
-        <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">Live CTA (during session)</h3>
-            <p className="text-sm text-muted-foreground">
-              Button text attendees see on their phones when you send the CTA from Present mode.
-            </p>
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border/50 bg-muted/15 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">Live CTA button</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Text and link attendees see on their phones when you tap <strong className="text-foreground">CTA</strong> in Present mode.
+              </p>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="wiz-cta-label">Button label</Label>
               <Input
@@ -249,23 +256,8 @@ export function WebinarSettingsWizard({
                 onChange={(e) => onWebinarCtaLabelChange(e.target.value)}
               />
             </div>
-          </div>
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Preview</p>
-            <WebinarCtaLivePreview label={webinarCtaLabel} variant="button_only" />
-          </div>
-        </div>
-      )}
-
-      {step === 2 && (
-        <div className="grid gap-8 lg:grid-cols-2 lg:items-start">
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-foreground border-b border-border/60 pb-2">Destination URL</h3>
-            <p className="text-sm text-muted-foreground">
-              Full link opened when attendees tap the button. Use <code className="text-xs bg-muted px-1 rounded">https://</code>
-            </p>
             <div className="space-y-2">
-              <Label htmlFor="wiz-cta-url">URL</Label>
+              <Label htmlFor="wiz-cta-url">Opens (URL)</Label>
               <Input
                 id="wiz-cta-url"
                 type="url"
@@ -280,26 +272,15 @@ export function WebinarSettingsWizard({
                 className={urlInvalid ? "border-destructive focus-visible:ring-destructive" : ""}
               />
               {urlInvalid ? (
-                <p className="text-xs text-destructive">Enter a valid URL starting with https://</p>
+                <p className="text-xs text-destructive">Use a full URL starting with https://</p>
               ) : (
-                <p className="text-xs text-muted-foreground">You can leave this empty until you are ready.</p>
+                <p className="text-xs text-muted-foreground">Optional until you go live.</p>
               )}
             </div>
-            <div className="rounded-lg border border-border/60 bg-muted/30 p-4 space-y-2 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">How to activate in Present</p>
-              <p>
-                In Present mode, tap <strong className="text-foreground">CTA</strong> in the top toolbar to broadcast this button
-                to every attendee.
-              </p>
-            </div>
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 lg:sticky lg:top-0">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Preview</p>
-            <WebinarCtaLivePreview
-              label={webinarCtaLabel}
-              url={webinarCtaUrl}
-              variant="with_url"
-            />
+            <WebinarCtaLivePreview label={webinarCtaLabel} url={webinarCtaUrl} variant="with_url" />
           </div>
         </div>
       )}

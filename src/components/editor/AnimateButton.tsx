@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Play, Pause, Sparkles, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Slide, SlideType, QuizSlideContent, PollSlideContent, YesNoSlideContent, ScaleSlideContent, GuessNumberSlideContent, WordCloudSlideContent, RankingSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent, FinishSentenceSlideContent } from '@/types/slides';
+import { Slide, SlideType, QuizSlideContent, PollSlideContent, YesNoSlideContent, ScaleSlideContent, GuessNumberSlideContent, WordCloudSlideContent, RankingSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent } from '@/types/slides';
 import { useSimulation } from '@/hooks/useSimulation';
 import {
   simulateQuizResponses,
@@ -14,7 +14,6 @@ import {
   simulateRanking,
   simulateSentiment,
   simulateAgreeSpectrum,
-  simulateFinishSentence,
 } from '@/lib/simulationData';
 
 interface AnimateButtonProps {
@@ -180,18 +179,6 @@ export function AnimateButton({ slide, onSimulationData, hasSimulationData = fal
         );
         break;
       }
-      case 'finish_sentence': {
-        cancelRef.current = simulateFinishSentence(
-          30,
-          (results, total) => {
-            onSimulationData({ ...results, total });
-            setProgress((total / 30) * 100);
-            setResponseCount(total);
-          },
-          duration
-        );
-        break;
-      }
       default:
         setLocalSimulating(false);
         stopSimulation();
@@ -225,7 +212,7 @@ export function AnimateButton({ slide, onSimulationData, hasSimulationData = fal
   }, []);
 
   // Check if this slide type supports simulation
-  const supportsSimulation = ['quiz', 'poll', 'poll_quiz', 'yesno', 'scale', 'guess_number', 'wordcloud', 'ranking', 'finish_sentence', 'sentiment_meter', 'agree_spectrum'].includes(slide.type);
+  const supportsSimulation = ['quiz', 'poll', 'poll_quiz', 'yesno', 'scale', 'guess_number', 'wordcloud', 'ranking', 'sentiment_meter', 'agree_spectrum'].includes(slide.type);
 
   if (!supportsSimulation) {
     return null;

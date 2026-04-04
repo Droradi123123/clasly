@@ -67,7 +67,6 @@ import {
   Wand2,
   Sparkles,
   Upload,
-  MessageSquare,
   Heart,
   ArrowLeftRight,
   Eye,
@@ -189,7 +188,6 @@ const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
   ranking: ListOrdered,
   guess_number: Hash,
   scale: Sliders,
-  finish_sentence: MessageSquare,
   sentiment_meter: Heart,
   agree_spectrum: ArrowLeftRight,
 };
@@ -288,8 +286,12 @@ const Editor = () => {
     isAIPanelOpen &&
     effectiveLectureId === String(sessionLectureId);
   const displaySlides = useSandbox ? sandboxSlides : slides;
-  const safeIndex = Math.min(currentSlideIndex, Math.max(0, displaySlides.length - 1));
-  const currentSlide = displaySlides[safeIndex];
+  const safeIndex =
+    displaySlides.length > 0
+      ? Math.min(currentSlideIndex, displaySlides.length - 1)
+      : 0;
+  const currentSlide =
+    displaySlides.length > 0 ? displaySlides[safeIndex] : undefined;
   const slidesGenerationLocked = isGenerating || isInitialGenerating;
   const slidePreviewRef = useRef<HTMLDivElement>(null);
   const isConstrainedViewport = useConstrainedViewport();
@@ -408,7 +410,8 @@ const Editor = () => {
 
   const runGenerateSlides = useCallback(async (prompt: string, audience: string) => {
     const slideCount = Math.min(maxSlides ?? (isFree ? 5 : 8), 10);
-    if (!hasAITokens(slideCount)) {
+    // Server charges 1 (plan) + N (slides) for internal pipeline or plan+progressive; align client gate.
+    if (!hasAITokens(slideCount + 1)) {
       addMessage({ role: 'assistant', content: 'אין לך מספיק קרדיטים. שדרג את התוכנית שלך או רכוש קרדיטים נוספים כדי להמשיך.\n\nYou don\'t have enough credits. Upgrade your plan or purchase more credits to continue.', isLoading: false });
       setShowOutOfCreditsModal(true);
       return;
@@ -1293,6 +1296,19 @@ const Editor = () => {
     );
   }
 
+  if (!currentSlide) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-6">
+        <p className="text-muted-foreground text-center max-w-md">
+          This lecture has no slides. Add slides in the dashboard or create a new presentation.
+        </p>
+        <Button onClick={() => navigate(dashboardHome)} variant="hero">
+          Back to dashboard
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
       {/* Compact Editor Header - No global nav */}
@@ -1438,14 +1454,9 @@ const Editor = () => {
         <DialogContent className="sm:max-w-4xl max-h-[min(92vh,900px)] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Webinar settings</DialogTitle>
-            <DialogDescription className="text-left text-muted-foreground space-y-2 pt-1">
-              <span className="block">
-                Configure the <strong className="text-foreground">registration form</strong> attendees see after they scan the QR
-                or enter the join code, and the <strong className="text-foreground">live CTA</strong> you trigger during the session.
-              </span>
-              <span className="block text-sm">
-                Click <strong className="text-foreground">Save</strong> in the editor header to persist changes.
-              </span>
+            <DialogDescription className="text-left text-muted-foreground text-sm pt-0.5">
+              Registration after join, and the CTA you send from Present mode.{" "}
+              <strong className="text-foreground">Save</strong> in the editor header applies changes.
             </DialogDescription>
           </DialogHeader>
           <WebinarSettingsWizard

@@ -188,9 +188,9 @@ const Pricing = () => {
     }
     return [
       ...educator,
-      "Lead capture (email & name) before attendees join",
-      "Live CTA button sent to attendees' phones during the session",
-      "Webinar dashboard and lead-focused session analytics",
+      "Registration form & lead capture before attendees join",
+      "Live CTA broadcast to attendees' phones during the session",
+      "Webinar dashboard: leads and session analytics",
     ];
   };
 
@@ -221,7 +221,7 @@ const Pricing = () => {
 
   const pageTitle = "Pricing – Clasly";
   const pageDescription =
-    "Clasly for Webinar and Clasly for Educator — separate plans. Webinar pricing is 2× Educator at each tier.";
+    "Clasly pricing for Educator and Webinar: interactive slides, AI credits per tier, polls and quizzes—and on Webinar, lead capture, live CTA to phones, and webinar analytics.";
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -239,8 +239,11 @@ const Pricing = () => {
               Simple, transparent pricing
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
-              Choose your product line. Webinar includes everything at the Educator tier, plus webinar-only
-              tools. Paid plans are billed per product — one active subscription at a time.
+              <strong className="text-foreground">Educator</strong> is built for teaching and training: AI
+              decks, interactive slide types, import, and classroom-focused analytics.{" "}
+              <strong className="text-foreground">Webinar</strong> adds lead capture before join, a live CTA
+              broadcast to attendees&apos; phones, and webinar-focused analytics—on top of the same slide
+              limits and AI credits per tier. One paid subscription at a time per account.
             </p>
 
             <div className="flex flex-col items-center gap-4 mb-8">
@@ -258,10 +261,10 @@ const Pricing = () => {
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-              <p className="text-sm text-muted-foreground max-w-xl">
+              <p className="text-sm text-muted-foreground max-w-xl text-center leading-relaxed">
                 {productLine === "webinar"
-                  ? "Built for live webinars and large audiences. Prices are 2× the Educator tier at the same level."
-                  : "Built for teaching and training. Switch to the Webinar tab to see webinar-specific features and pricing."}
+                  ? "Registration form before the room, leads in your dashboard, and a one-tap CTA you send during the session—plus the same AI-built interactive decks and slide limits as Educator, listed in the cards below."
+                  : "AI-built presentations, polls, quizzes, word clouds, and analytics tuned for class and training. Switch to the Webinar tab for lead capture, live CTA, and webinar analytics."}
               </p>
             </div>
 
@@ -412,8 +415,10 @@ const Pricing = () => {
                 the educator dashboard. Education Free can open both dashboards for trying either product.
               </li>
               <li>
-                <strong className="text-foreground">Webinar vs Educator pricing</strong> — Webinar tiers are
-                priced at 2× the Educator tier (same slide limits and AI credits).
+                <strong className="text-foreground">What Webinar adds on top of Educator.</strong> Lead
+                capture (email and custom fields), live CTA to attendees&apos; phones, and webinar/lead
+                analytics—same slide caps and monthly AI credits as the matching Educator tier. List prices
+                differ by product line; compare the numbers above when you switch tabs.
               </li>
             </ul>
           </motion.div>

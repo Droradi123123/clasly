@@ -16,6 +16,7 @@ import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase } from '@/integrations/supabase/client';
 import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus, withTimeout } from '@/lib/supabaseFunctions';
 import { ensureSlidesDesignDefaults } from '@/lib/designDefaults';
+import { hydratePendingSlideImages, type PendingSlideImage } from '@/lib/hydrateSlideImages';
 import { useSubscriptionContext } from '@/contexts/SubscriptionContext';
 import { OutOfCreditsModal } from '@/components/credits/OutOfCreditsModal';
 
@@ -24,7 +25,10 @@ const ConversationalBuilder: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { user, isLoading: isAuthLoading } = useAuth();
   const isMobile = useIsMobile();
-  const { maxSlides, isFree, hasAITokens, isLoading: isSubLoading } = useSubscriptionContext();
+  const { maxSlides, isFree, hasAITokens, isPro, isStandard, isLoading: isSubLoading } =
+    useSubscriptionContext();
+  /** Standard + Pro: same plan + progressive flow as Editor (server charges 1 + N credits). */
+  const usePaidProgressive = isPro || isStandard;
   
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -157,8 +161,12 @@ const ConversationalBuilder: React.FC = () => {
   
   const generateInitialPresentation = async (prompt: string, contentType: 'interactive' | 'with_content') => {
     const slideCount = isFree ? (maxSlides ?? 5) : Math.min(10, maxSlides ?? 10);
-    // No client-side credit block; server is source of truth (ensureUserCredits + checkCreditsBalance).
-    // On 402, catch handler sets showOutOfCreditsModal.
+    const lectureMode = builderTrack === 'webinar' ? ('webinar' as const) : ('education' as const);
+    // Server uses internal plan + per-slide for batch (1+N credits); plan+progressive is also 1+N.
+    if (!hasAITokens(slideCount + 1)) {
+      setShowOutOfCreditsModal(true);
+      return;
+    }
 
     setIsInitialLoading(true);
     setIsGenerating(true);
@@ -168,58 +176,253 @@ const ConversationalBuilder: React.FC = () => {
     addMessage({
       role: 'assistant',
       content: `I'm building a presentation now:\n\n"${prompt}"`,
+      isLoading: true,
     });
-    
+
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
       if (sessionError || !session) {
         throw new Error("Please sign in to generate presentations");
       }
 
-      let invokeResult = await supabase.functions.invoke('generate-slides', {
-        body: {
-          description: prompt,
-          contentType,
-          difficulty: 'intermediate',
-          slideCount,
-          maxImages: isFree ? 3 : 6,
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
-        await new Promise((r) => setTimeout(r, 2500));
-        invokeResult = await supabase.functions.invoke('generate-slides', {
+      let resData: {
+        error?: string;
+        slides?: unknown[];
+        theme?: unknown;
+        plan?: string;
+        interpretation?: string;
+        pendingSlideImages?: PendingSlideImage[];
+      };
+
+      if (usePaidProgressive) {
+        let planData: { interpretation?: string; plan?: string; slideTypes?: string[] } | null = null;
+        let planRes = await supabase.functions.invoke('generate-slides', {
+          body: {
+            description: prompt,
+            contentType,
+            targetAudience,
+            slideCount,
+            phase: 'plan',
+            lectureMode,
+          },
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (planRes.error && getEdgeFunctionStatus(planRes.error) === 503) {
+          await new Promise((r) => setTimeout(r, 2500));
+          planRes = await supabase.functions.invoke('generate-slides', {
+            body: {
+              description: prompt,
+              contentType,
+              targetAudience,
+              slideCount,
+              phase: 'plan',
+              lectureMode,
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+        }
+        if (planRes.error) {
+          if (getEdgeFunctionStatus(planRes.error) === 402) setShowOutOfCreditsModal(true);
+          throw new Error(await getEdgeFunctionErrorMessage(planRes.error, 'Failed to plan presentation.'));
+        }
+        const planPayload = planRes.data as {
+          interpretation?: string;
+          plan?: string;
+          slideTypes?: string[];
+          error?: string;
+        };
+        if (planPayload?.error) throw new Error(planPayload.error);
+        if (planPayload?.interpretation || planPayload?.plan) {
+          planData = {
+            interpretation: planPayload.interpretation,
+            plan: planPayload.plan,
+            slideTypes: planPayload.slideTypes || [],
+          };
+          let planMsg = '';
+          if (planPayload.interpretation) planMsg += `**What I understood:** ${planPayload.interpretation}\n\n`;
+          if (planPayload.plan) planMsg += `**My plan:** ${planPayload.plan}\n\n`;
+          planMsg += 'Building your slides one by one...';
+          updateLastMessage(planMsg);
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+
+        if (planData?.slideTypes?.length) {
+          const accumulated: Slide[] = [];
+          let generatedTheme: unknown = null;
+          for (let i = 0; i < planData.slideTypes.length; i++) {
+            let progRes = await supabase.functions.invoke('generate-slides', {
+              body: {
+                lectureMode,
+                progressiveSlide: {
+                  index: i,
+                  slideType: planData.slideTypes[i],
+                  description: prompt,
+                  plan: planData.plan,
+                  interpretation: planData.interpretation,
+                  contentType,
+                },
+              },
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+            if (progRes.error && getEdgeFunctionStatus(progRes.error) === 503) {
+              await new Promise((r) => setTimeout(r, 2500));
+              progRes = await supabase.functions.invoke('generate-slides', {
+                body: {
+                  lectureMode,
+                  progressiveSlide: {
+                    index: i,
+                    slideType: planData.slideTypes[i],
+                    description: prompt,
+                    plan: planData.plan,
+                    interpretation: planData.interpretation,
+                    contentType,
+                  },
+                },
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              });
+            }
+            if (progRes.error) {
+              if (getEdgeFunctionStatus(progRes.error) === 402) setShowOutOfCreditsModal(true);
+              throw new Error(await getEdgeFunctionErrorMessage(progRes.error, `Failed to generate slide ${i + 1}.`));
+            }
+            const progPayload = progRes.data as { slide?: unknown; theme?: unknown; error?: string };
+            if (progPayload?.error) throw new Error(progPayload.error);
+            if (progPayload?.slide) {
+              const s = progPayload.slide as Record<string, unknown>;
+              accumulated.push({
+                ...s,
+                id: (s.id as string) || `${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`,
+                order: i,
+              } as Slide);
+              if (progPayload.theme) generatedTheme = progPayload.theme;
+              setSandboxSlides(
+                ensureSlidesDesignDefaults(accumulated.map((slide, idx) => ({ ...slide, order: idx }))),
+              );
+              updateLastMessage(
+                (planData.interpretation
+                  ? `**What I understood:** ${planData.interpretation}\n\n**My plan:** ${planData.plan}\n\n`
+                  : '') + `Slide ${i + 1} of ${planData.slideTypes!.length} ready...`,
+              );
+            }
+          }
+          resData = {
+            slides: accumulated,
+            theme: generatedTheme,
+            plan: planData.plan,
+            interpretation: planData.interpretation,
+          };
+        } else {
+          let invokeResult = await supabase.functions.invoke('generate-slides', {
+            body: {
+              description: prompt,
+              contentType,
+              targetAudience,
+              difficulty: 'intermediate',
+              slideCount,
+              maxImages: 6,
+              lectureMode,
+              ...(planData &&
+                planData.slideTypes?.length && {
+                  plan: planData.plan,
+                  interpretation: planData.interpretation,
+                  slideTypes: planData.slideTypes,
+                }),
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
+            await new Promise((r) => setTimeout(r, 2500));
+            invokeResult = await supabase.functions.invoke('generate-slides', {
+              body: {
+                description: prompt,
+                contentType,
+                targetAudience,
+                difficulty: 'intermediate',
+                slideCount,
+                maxImages: 6,
+                lectureMode,
+                ...(planData &&
+                  planData.slideTypes?.length && {
+                    plan: planData.plan,
+                    interpretation: planData.interpretation,
+                    slideTypes: planData.slideTypes,
+                  }),
+              },
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            });
+          }
+          const { data, error: fnError } = invokeResult;
+          if (fnError) {
+            if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
+            const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
+            throw new Error(msg);
+          }
+          resData = data as typeof resData;
+        }
+      } else {
+        let invokeResult = await supabase.functions.invoke('generate-slides', {
           body: {
             description: prompt,
             contentType,
             difficulty: 'intermediate',
             slideCount,
             maxImages: isFree ? 3 : 6,
+            lectureMode,
+            targetAudience,
           },
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
+        if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
+          await new Promise((r) => setTimeout(r, 2500));
+          invokeResult = await supabase.functions.invoke('generate-slides', {
+            body: {
+              description: prompt,
+              contentType,
+              difficulty: 'intermediate',
+              slideCount,
+              maxImages: isFree ? 3 : 6,
+              lectureMode,
+              targetAudience,
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+        }
+        const { data, error: fnError } = invokeResult;
+        if (fnError) {
+          if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
+          const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
+          throw new Error(msg);
+        }
+        resData = data as typeof resData;
       }
-      const { data, error: fnError } = invokeResult;
-      if (fnError) {
-        if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
-        const msg = await getEdgeFunctionErrorMessage(fnError, 'Failed to generate presentation.');
-        throw new Error(msg);
-      }
-      const resData = data as {
-        error?: string;
-        slides?: unknown[];
-        theme?: unknown;
-        plan?: string;
-        interpretation?: string;
-      };
+
       if (resData?.error) throw new Error(resData.error);
       if (!resData?.slides?.length) throw new Error('No slides returned');
 
-      const processedSlides: Slide[] = ensureSlidesDesignDefaults((resData.slides as any[]).map((slide: any, index: number) => ({
-        ...slide,
-        id: slide.id || `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
-        order: index,
-      })));
+      let processedSlides: Slide[] = ensureSlidesDesignDefaults(
+        (resData.slides as unknown[]).map((slide: unknown, index: number) => {
+          const s = slide as Slide;
+          return {
+            ...s,
+            id: s.id || `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+            order: index,
+          };
+        }),
+      );
+
+      const pendingImgs = resData.pendingSlideImages;
+      if (pendingImgs?.length) {
+        const { data: sessHydrate } = await supabase.auth.getSession();
+        const tok = sessHydrate?.session?.access_token;
+        if (tok) {
+          processedSlides = ensureSlidesDesignDefaults(
+            await hydratePendingSlideImages(processedSlides, pendingImgs, tok, (upd) => {
+              setSandboxSlides(ensureSlidesDesignDefaults(upd));
+            }),
+          );
+        }
+      }
+
       setSandboxSlides(processedSlides);
       setGeneratedTheme(resData.theme);
 
@@ -232,7 +435,7 @@ const ConversationalBuilder: React.FC = () => {
         console.warn('Failed to auto-save draft:', e);
       }
 
-      // Build success message: for Pro, include interpretation + plan (reasoning reflection)
+      // Build success message: include interpretation + plan when present
       let successMsg = '';
       if (resData.interpretation || resData.plan) {
         if (resData.interpretation) {
@@ -383,7 +586,8 @@ const ConversationalBuilder: React.FC = () => {
         let title = originalPrompt || '';
         if (!title && sandboxSlides.length > 0) {
           const firstSlide = sandboxSlides[0];
-          title = (firstSlide.content as any)?.title || (firstSlide.content as any)?.question || 'Untitled Presentation';
+          const c = firstSlide.content as { title?: string; question?: string } | undefined;
+          title = c?.title || c?.question || 'Untitled Presentation';
         }
         title = title.slice(0, 50) + (title.length > 50 ? '...' : '');
         const newLecture = await createLecture(title || 'Untitled Presentation', sandboxSlides);

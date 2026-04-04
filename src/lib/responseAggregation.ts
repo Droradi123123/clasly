@@ -86,11 +86,6 @@ export function buildLiveResultsPayload(
         results: { average, distribution },
       };
     }
-    case "finish_sentence":
-      return {
-        type: "finish_sentence",
-        results: aggregateFinishSentenceResponses(responses),
-      };
     default:
       return null;
   }
@@ -126,9 +121,9 @@ export function aggregateYesNoResponses(responses: { response_data?: any }[]) {
 export function aggregateWordCloudResponses(responses: { response_data?: any }[]) {
   const words: Record<string, number> = {};
   responses.forEach((r) => {
-    const word = r.response_data?.word;
+    const word = r.response_data?.word ?? r.response_data?.text;
     if (word) {
-      const k = word.toLowerCase();
+      const k = String(word).toLowerCase();
       words[k] = (words[k] || 0) + 1;
     }
   });
@@ -196,11 +191,3 @@ export function aggregateSentimentResponses(responses: { response_data?: any }[]
   return { average, distribution: values };
 }
 
-export function aggregateFinishSentenceResponses(responses: { response_data?: any }[]) {
-  const texts: string[] = [];
-  responses.forEach((r) => {
-    const text = r.response_data?.text;
-    if (text) texts.push(text);
-  });
-  return { texts };
-}

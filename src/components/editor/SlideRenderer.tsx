@@ -8,7 +8,6 @@ import {
   RankingSlideContent,
   GuessNumberSlideContent,
   ScaleSlideContent,
-  FinishSentenceSlideContent,
   SentimentMeterSlideContent,
   AgreeSpectrumSlideContent,
   SplitContentSlideContent,
@@ -28,7 +27,6 @@ import {
   GuessNumberSlide,
   ScaleSlide,
   SlideWrapper,
-  FinishSentenceSlide,
   SentimentMeterSlide,
   AgreeSpectrumSlide,
   SplitContentSlide,
@@ -143,6 +141,7 @@ export function SlideRenderer({
           totalResponses={totalResponses}
           themeId={themeId}
           hideFooter={hideFooter}
+          showResults={showResults}
         />
       );
 
@@ -175,6 +174,7 @@ export function SlideRenderer({
           designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
           showCorrectAnswer={showCorrectAnswer}
+          showResults={showResults}
         />
       );
 
@@ -187,6 +187,7 @@ export function SlideRenderer({
           liveResults={liveResults?.results}
           totalResponses={totalResponses}
           showAnswer={showCorrectAnswer}
+          showResults={showResults}
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
@@ -205,21 +206,7 @@ export function SlideRenderer({
           designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
           forceShowStats={forceShowStats}
-        />
-      );
-
-    // Advanced interactive slides
-    case "finish_sentence":
-      return (
-        <FinishSentenceSlide
-          slide={slide}
-          isEditing={isEditing}
-          onUpdate={(content) => onUpdateContent?.(content)}
-          liveResults={liveResults}
-          totalResponses={totalResponses}
-          themeId={themeId}
-          designStyleId={effectiveDesignStyleId}
-          hideFooter={hideFooter}
+          showResults={showResults}
         />
       );
 
@@ -234,6 +221,7 @@ export function SlideRenderer({
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
+          showResults={showResults}
         />
       );
 
@@ -248,6 +236,7 @@ export function SlideRenderer({
           themeId={themeId}
           designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
+          showResults={showResults}
         />
       );
 

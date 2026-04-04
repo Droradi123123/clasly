@@ -17,7 +17,6 @@ export * from './RankingSlide';
 export * from './GuessNumberSlide';
 export * from './ScaleSlide';
 // Advanced interactive slides
-export * from './FinishSentenceSlide';
 export * from './SentimentMeterSlide';
 export * from './AgreeSpectrumSlide';
 // Content slides

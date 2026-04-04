@@ -13,6 +13,8 @@ interface WordCloudSlideProps {
   totalResponses?: number;
   themeId?: ThemeId;
   hideFooter?: boolean;
+  /** When false (e.g. non-present contexts), hide live aggregate words */
+  showResults?: boolean;
 }
 
 // Color palette – blue/purple and red/pink tones (like reference image)
@@ -44,9 +46,12 @@ export function WordCloudSlide({
   totalResponses = 0,
   themeId = 'neon-cyber',
   hideFooter = false,
+  showResults = true,
 }: WordCloudSlideProps) {
   const content = slide.content as WordCloudSlideContent;
-  const hasResults = liveWords.length > 0;
+  const revealWords = isEditing || showResults;
+  const wordsForDisplay = revealWords ? liveWords : [];
+  const hasResults = wordsForDisplay.length > 0;
   const wordCloudStyleId = slide.design?.wordCloudStyleId || 'compact';
   const isCompactStyle = wordCloudStyleId === 'compact';
 
@@ -65,7 +70,7 @@ export function WordCloudSlide({
   ];
 
   // Use live words in presentation, placeholder in editor
-  const displayWords = isEditing ? placeholderWords : liveWords;
+  const displayWords = isEditing ? placeholderWords : wordsForDisplay;
   const maxCount = Math.max(...displayWords.map(w => w.count), 1);
 
   // Font size range: larger and more readable (compact: 18-48px, classic/organic: 24-72px)

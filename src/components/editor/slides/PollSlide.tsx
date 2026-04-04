@@ -63,6 +63,7 @@ export function PollSlide({
   // Use live results if provided, otherwise use zeros
   const results = liveResults || content.options.map(() => 0);
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
 
   // Animation entrance config based on style
   const getEntranceAnimation = (index: number) => {
@@ -195,7 +196,13 @@ export function PollSlide({
           {content.options.map((option, index) => {
             const count = results[index] || 0;
             const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
-            const barWidth = totalResponses > 0 ? percentage : (hasResults ? 0 : 25 + index * 15);
+            // Hide aggregates during timed quiz-style voting (poll_quiz); empty bars until votes + reveal.
+            const barWidth =
+              revealStats && totalResponses > 0
+                ? percentage
+                : isEditing
+                  ? 25 + index * 15
+                  : 0;
             const entranceAnim = getEntranceAnimation(index);
             
             // Progress bar colors
@@ -269,13 +276,13 @@ export function PollSlide({
                       )}
                       <AnimatePresence mode="wait">
                         <motion.span
-                          key={`${count}-${percentage}`}
+                          key={`${count}-${percentage}-${revealStats}`}
                           initial={{ opacity: 0, scale: 0.8 }}
                           animate={{ opacity: 1, scale: 1 }}
                           className="text-sm md:text-base font-bold"
                           style={{ color: textColor }}
                         >
-                          {hasResults ? `${count} (${percentage}%)` : '0%'}
+                          {revealStats && hasResults ? `${count} (${percentage}%)` : '—'}
                         </motion.span>
                       </AnimatePresence>
                     </div>

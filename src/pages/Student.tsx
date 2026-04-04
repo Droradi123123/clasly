@@ -1,20 +1,18 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence, Reorder } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
-import { Presentation, Send, MessageCircle, X, CheckCircle, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock, Sparkles, ExternalLink, PartyPopper } from "lucide-react";
+import { Presentation, Send, MessageCircle, X, CheckCircle, Check, Trophy, Loader2, ThumbsUp, ThumbsDown, GripVertical, RefreshCw, Clock, Sparkles, ExternalLink } from "lucide-react";
 import { Confetti } from "@/components/effects/Confetti";
+import { toast } from "sonner";
 import {
   decodeJoinUrlFragment,
   getLectureByCode,
   normalizeLectureJoinCode,
   subscribeLecture,
   submitResponse,
-  getResponses,
-  subscribeResponses,
   setStudentActive,
 } from "@/lib/lectureService";
 import {
@@ -23,21 +21,13 @@ import {
   createGameChannel,
   createStudentPresenceChannel,
 } from "@/lib/liveChannels";
-import { buildLiveResultsPayload } from "@/lib/responseAggregation";
-import { SlideRenderer } from "@/components/editor/SlideRenderer";
-import { SlideFrame } from "@/components/editor/SlideFrame";
-import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
-import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
-import { DesignStyleId } from "@/types/designStyles";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Slide,
   SLIDE_TYPES,
-  FinishSentenceSlideContent,
   SentimentMeterSlideContent,
   AgreeSpectrumSlideContent,
   isParticipativeSlide,
-  isQuizSlide,
   getResolvedActivitySettings,
   DEFAULT_POINTS_CORRECT,
   DEFAULT_POINTS_PARTICIPATION,
@@ -45,11 +35,26 @@ import {
 import { Json } from "@/integrations/supabase/types";
 import { StudentGameControls } from "@/components/game";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
-import { getPresentationLogoUrl } from "@/lib/presentationBranding";
+import { darkenHex, getPresentationLogoUrl } from "@/lib/presentationBranding";
+import {
+  DEFAULT_WEBINAR_PRIMARY_COLOR,
+  mergeWebinarRegistrationFromSettings,
+} from "@/types/webinarRegistration";
 import { SlideChromeProvider } from "@/contexts/SlideChromeContext";
+import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 
 const REALTIME_RESUBSCRIBE_DELAY_MS = 1000;
 const BROADCAST_REFETCH_DEBOUNCE_MS = 280;
+
+/** Ensure CTA opens on mobile (many browsers require a sync navigation from the tap). */
+function normalizeCtaUrl(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  const lower = t.toLowerCase();
+  if (lower.startsWith("javascript:") || lower.startsWith("data:")) return "";
+  if (/^https?:\/\//i.test(t) || /^mailto:/i.test(t) || /^tel:/i.test(t)) return t;
+  return `https://${t}`;
+}
 
 // Error boundary so one render error does not crash the whole student view
 class StudentErrorBoundary extends React.Component<
@@ -88,35 +93,6 @@ class StudentErrorBoundary extends React.Component<
   }
 }
 
-/** Isolates SlideRenderer failures so one bad slide does not blank the whole student session. */
-class SingleSlideErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean }
-> {
-  state = { hasError: false };
-
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error("[Student] Slide render error:", error, info);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-destructive/30 bg-destructive/5 p-8 text-center min-h-[200px]">
-          <p className="text-sm text-muted-foreground">
-            This slide could not be displayed. Try refreshing the page.
-          </p>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
 const emojis = ["👍", "❤️", "🎉", "🤔", "💡", "👏"];
 
 const Student = () => {
@@ -139,6 +115,7 @@ const Student = () => {
   const [showQuestionForm, setShowQuestionForm] = useState(false);
   const [questionText, setQuestionText] = useState("");
   const [questionError, setQuestionError] = useState<string | null>(null);
+  const [isSubmittingQuestion, setIsSubmittingQuestion] = useState(false);
   const [lastReaction, setLastReaction] = useState<string | null>(null);
   /** postgres_changes on lectures */
   const [isDbRealtimeConnected, setIsDbRealtimeConnected] = useState(true);
@@ -149,18 +126,17 @@ const Student = () => {
   const [loading, setLoading] = useState(true);
   const [isGameActive, setIsGameActive] = useState(false);
   const [, setTick] = useState(0);
-  const [slideResponses, setSlideResponses] = useState<unknown[]>([]);
   const [rankingOrder, setRankingOrder] = useState<string[]>([]);
   // For new slide types
   const [sentimentValue, setSentimentValue] = useState([50]);
   const [agreeValue, setAgreeValue] = useState([50]);
-  const [sentenceInput, setSentenceInput] = useState("");
   const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
-  const [answerAckKey, setAnswerAckKey] = useState(0);
   const [realtimeReconnectKey, setRealtimeReconnectKey] = useState(0);
   const [ctaOverlay, setCtaOverlay] = useState<{ label: string; url: string } | null>(null);
   const [studentRaffleName, setStudentRaffleName] = useState<string | null>(null);
   const previousPointsRef = React.useRef<number>(0);
+  /** Prevents double / rapid taps from submitting multiple responses before React state updates. */
+  const responseSubmitLockRef = useRef(false);
   const lastBroadcastSlideIndexRef = React.useRef<number | null>(null);
   const lastBroadcastTsRef = React.useRef<number>(0);
   const broadcastRefetchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,34 +193,33 @@ const Student = () => {
     return () => clearInterval(id);
   }, [lecture?.id]);
 
-  useEffect(() => {
-    if (!lecture?.id || !currentSlide || !participativeSlide) {
-      setSlideResponses([]);
-      return;
-    }
-    const load = async () => {
-      try {
-        const data = await getResponses(lecture.id, currentSlideIndex);
-        setSlideResponses(data);
-      } catch (e) {
-        console.error("[Student] load responses:", e);
-      }
-    };
-    load();
-    const channel = subscribeResponses(lecture.id, currentSlideIndex, (rows) => {
-      setSlideResponses(rows as unknown[]);
-    });
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [lecture?.id, currentSlideIndex, currentSlide?.id, participativeSlide]);
-
-  const aggregatedLiveResults = useMemo(
-    () => buildLiveResultsPayload(currentSlide, slideResponses as { response_data?: unknown }[]),
-    [currentSlide, slideResponses]
-  );
-
   const presentationLogoUrl = useMemo(() => getPresentationLogoUrl(slides), [slides]);
+
+  const webinarReg = useMemo(
+    () => mergeWebinarRegistrationFromSettings(lecture?.settings),
+    [lecture?.settings],
+  );
+  const webinarLogoUrl = webinarReg.branding?.logoUrl?.trim();
+  const webinarPrimary =
+    webinarReg.branding?.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(webinarReg.branding.primaryColor)
+      ? webinarReg.branding.primaryColor
+      : DEFAULT_WEBINAR_PRIMARY_COLOR;
+  /** Slide logo wins; else logo from webinar registration settings (same as join form). */
+  const headerLogoUrl = presentationLogoUrl ?? webinarLogoUrl;
+  const isWebinarLecture = lecture?.lecture_mode === "webinar";
+  const headerSurfaceStyle = useMemo((): React.CSSProperties | undefined => {
+    if (!isWebinarLecture) return undefined;
+    const deep = darkenHex(webinarPrimary, 0.32);
+    return {
+      background: `linear-gradient(145deg, ${webinarPrimary} 0%, ${deep} 52%, #0a0f18 100%)`,
+    };
+  }, [isWebinarLecture, webinarPrimary]);
+
+  // After a successful submit the lock stays true until the slide changes; broadcast slide_changed
+  // used to reset hasAnswered but not the lock — taps were ignored on the next slide.
+  useEffect(() => {
+    responseSubmitLockRef.current = false;
+  }, [effectiveSlideIndex, currentSlide?.id]);
 
   // Theme from current slide design first, then lecture settings, so option colors match presenter
   const themeId: ThemeId = (currentSlide?.design?.themeId as ThemeId) ?? (lecture?.settings?.themeId as ThemeId) ?? 'academic-pro';
@@ -263,7 +238,7 @@ const Student = () => {
         const data = await getLectureByCode(lectureJoinCode);
         if (data) {
           setLecture(data);
-          setSlides((data.slides as unknown as Slide[]) || []);
+          setSlides(ensureSlidesDesignDefaults((data.slides as unknown as Slide[]) || []));
           setCurrentSlideIndex(data.current_slide_index || 0);
         }
       } catch (error) {
@@ -292,7 +267,7 @@ const Student = () => {
     if (incomingUpdatedAt) lastAppliedUpdatedAtRef.current = incomingUpdatedAt;
 
     const newSlideIndex = updatedLecture.current_slide_index;
-    const newSlides = (updatedLecture.slides as unknown as Slide[]) || [];
+    const newSlides = ensureSlidesDesignDefaults((updatedLecture.slides as unknown as Slide[]) || []);
     const now = Date.now();
     const recentlyFromBroadcast =
       lastBroadcastTsRef.current > 0 &&
@@ -313,6 +288,7 @@ const Student = () => {
     // Reset answer state when slide changes
     setCurrentSlideIndex((prevIndex: number) => {
       if (indexToApply !== prevIndex) {
+        responseSubmitLockRef.current = false;
         setHasAnswered(false);
         setSelectedOption(null);
         setWordInput("");
@@ -321,7 +297,6 @@ const Student = () => {
         setRankingOrder([]);
         setSentimentValue([50]);
         setAgreeValue([50]);
-        setSentenceInput("");
       }
       return indexToApply;
     });
@@ -533,6 +508,7 @@ const Student = () => {
               prev ? { ...prev, activity_started_at: p.activityStartedAt } : prev
             );
           }
+          responseSubmitLockRef.current = false;
           setHasAnswered(false);
           setSelectedOption(null);
           setWordInput('');
@@ -541,7 +517,6 @@ const Student = () => {
           setRankingOrder([]);
           setSentimentValue([50]);
           setAgreeValue([50]);
-          setSentenceInput('');
           const lid = lecture.id;
           void refetchLectureState(lid, true);
           if (broadcastRefetchTimeoutRef.current) clearTimeout(broadcastRefetchTimeoutRef.current);
@@ -683,9 +658,11 @@ const Student = () => {
       
       if (data) {
         setHasAnswered(true);
-        // Restore selected option if quiz/poll
-        if (data.response_data && typeof (data.response_data as any).answer === 'number') {
-          setSelectedOption((data.response_data as any).answer);
+        const rd = data.response_data as { answer?: unknown } | null;
+        if (rd && typeof rd.answer === "number") {
+          setSelectedOption(rd.answer);
+        } else if (rd && typeof rd.answer === "boolean") {
+          setSelectedOption(rd.answer ? 0 : 1);
         }
       }
     };
@@ -703,8 +680,14 @@ const Student = () => {
     }
   }, [currentSlide, rankingOrder.length]);
 
-  const handleSubmitResponse = async (responseData: any, isCorrect?: boolean, points?: number) => {
-    if (!lecture?.id || !studentId || hasAnswered || inResultsPhase) return;
+  const handleSubmitResponse = async (
+    responseData: any,
+    isCorrect?: boolean,
+    points?: number
+  ): Promise<boolean> => {
+    if (!lecture?.id || !studentId || hasAnswered || inResultsPhase) return false;
+    if (responseSubmitLockRef.current) return false;
+    responseSubmitLockRef.current = true;
 
     setIsSubmitting(true);
     try {
@@ -717,17 +700,18 @@ const Student = () => {
         points
       );
       setHasAnswered(true);
-      setAnswerAckKey((k) => k + 1);
+      toast.success("Answer recorded", {
+        description: "Your response was saved.",
+        duration: 3500,
+      });
       if (isCorrect) {
         setShowConfetti(true);
         setTimeout(() => setShowConfetti(false), 3000);
       }
-      // Broadcast so presenter gets instant update (fallback if postgres_changes delays)
       const ch = lectureSyncChannelRef.current;
       const responsePayload = { lectureId: lecture.id, slideIndex: currentSlideIndex };
       if (ch) {
         ch.send({ type: 'broadcast', event: 'response_changed', payload: responsePayload });
-        // Redundant send — presenter may subscribe milliseconds later; improves perceived latency
         setTimeout(() => {
           lectureSyncChannelRef.current?.send({
             type: 'broadcast',
@@ -736,8 +720,12 @@ const Student = () => {
           });
         }, 220);
       }
+      return true;
     } catch (error) {
       console.error('Error submitting response:', error);
+      toast.error("Couldn't save your answer. Try again.");
+      responseSubmitLockRef.current = false;
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -770,18 +758,28 @@ const Student = () => {
   const handleYesNo = (answer: boolean) => {
     if (hasAnswered || inResultsPhase) return;
     setSelectedOption(answer ? 0 : 1);
-    const content = currentSlide?.content as any;
+    const content = currentSlide?.content as {
+      correctAnswer?: boolean;
+      correctIsYes?: boolean;
+    };
+    const correctYes =
+      typeof content?.correctAnswer === "boolean"
+        ? content.correctAnswer
+        : typeof content?.correctIsYes === "boolean"
+          ? content.correctIsYes
+          : undefined;
     const isCorrect =
-      typeof content?.correctAnswer === "boolean" ? content.correctAnswer === answer : undefined;
+      typeof correctYes === "boolean" ? correctYes === answer : undefined;
     const points =
       isCorrect === true ? pts.pointsForCorrect : isCorrect === false ? pts.pointsForParticipation : pts.pointsForParticipation;
     handleSubmitResponse({ answer }, isCorrect, points);
   };
 
-  const handleWordSubmit = () => {
-    if (!wordInput.trim() || hasAnswered || inResultsPhase) return;
-    handleSubmitResponse({ word: wordInput.trim() }, undefined, pts.pointsForParticipation);
-    setWordInput("");
+  const handleWordSubmit = async () => {
+    const trimmed = wordInput.trim();
+    if (!trimmed || hasAnswered || inResultsPhase) return;
+    const ok = await handleSubmitResponse({ word: trimmed }, undefined, pts.pointsForParticipation);
+    if (ok) setWordInput("");
   };
 
   const handleNumberSubmit = () => {
@@ -806,12 +804,6 @@ const Student = () => {
   const handleAgreeSubmit = () => {
     if (hasAnswered || inResultsPhase) return;
     handleSubmitResponse({ value: agreeValue[0] }, undefined, pts.pointsForParticipation);
-  };
-
-  const handleSentenceSubmit = () => {
-    if (!sentenceInput.trim() || hasAnswered || inResultsPhase) return;
-    handleSubmitResponse({ text: sentenceInput.trim() }, undefined, pts.pointsForParticipation);
-    setSentenceInput("");
   };
 
   const handleRankingSubmit = () => {
@@ -868,9 +860,10 @@ const Student = () => {
 
   // Submit question to database
   const handleSubmitQuestion = async () => {
-    if (!questionText.trim() || !lecture?.id) return;
-    
+    if (!questionText.trim() || !lecture?.id || isSubmittingQuestion) return;
+
     try {
+      setIsSubmittingQuestion(true);
       setQuestionError(null);
       const { error } = await supabase.from('questions').insert({
         lecture_id: lecture.id,
@@ -884,11 +877,17 @@ const Student = () => {
         event: "question_new",
         payload: { lectureId: lecture.id },
       }).catch(() => {});
+      toast.success("Question sent", {
+        description: "The presenter can see it in their queue.",
+        duration: 4000,
+      });
       setQuestionText("");
       setShowQuestionForm(false);
     } catch (error) {
       console.error('Error submitting question:', error);
       setQuestionError("Couldn’t send your question. Check your connection and try again.");
+    } finally {
+      setIsSubmittingQuestion(false);
     }
   };
 
@@ -939,31 +938,27 @@ const Student = () => {
     );
   }
 
-  const handleCtaOpen = async (url: string) => {
+  const recordCtaLeadClick = () => {
     if (lecture?.id) {
-      try {
-        const lid = sessionStorage.getItem(`clasly_lead_${lecture.id}`);
-        if (lid) {
-          await supabase
-            .from("lecture_leads")
-            .update({ cta_clicked_at: new Date().toISOString() })
-            .eq("id", lid);
-        }
-      } catch {
-        /* ignore */
+      const leadId = sessionStorage.getItem(`clasly_lead_${lecture.id}`);
+      if (leadId) {
+        void supabase
+          .from("lecture_leads")
+          .update({ cta_clicked_at: new Date().toISOString() })
+          .eq("id", leadId);
       }
     }
-    setCtaOverlay(null);
-    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
-    <SlideChromeProvider hideCornerLogo={!!presentationLogoUrl}>
-    <div className="min-h-screen bg-background flex flex-col">
+    <SlideChromeProvider hideCornerLogo={!!headerLogoUrl}>
+    <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background">
       <Confetti isActive={showConfetti} />
 
       <AnimatePresence>
-        {ctaOverlay && (
+        {ctaOverlay && (() => {
+          const ctaHref = normalizeCtaUrl(ctaOverlay.url);
+          return (
           <motion.div
             key="cta"
             initial={{ opacity: 0 }}
@@ -977,23 +972,40 @@ const Student = () => {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 32, opacity: 0 }}
               transition={{ type: "spring", damping: 26, stiffness: 320 }}
-              className="w-full max-w-lg mx-auto rounded-3xl border border-white/10 bg-gradient-to-b from-violet-600/95 via-violet-700/98 to-[#0f172a] p-5 shadow-2xl shadow-violet-900/50"
+              className="w-full max-w-lg mx-auto rounded-3xl border border-white/10 p-5 shadow-2xl shadow-black/40"
+              style={{
+                background: `linear-gradient(to bottom, ${webinarPrimary}f2, ${darkenHex(webinarPrimary, 0.25)} 45%, #0f172a 100%)`,
+              }}
             >
               <div className="flex items-center gap-2 text-violet-100/90 text-xs font-semibold uppercase tracking-wider mb-3">
                 <Sparkles className="w-4 h-4 text-amber-300 shrink-0" aria-hidden />
                 From the host
               </div>
               <p className="text-sm text-violet-100/80 mb-4 leading-snug">
-                Tap the button to open the link in your browser. You can close this anytime.
+                Opens in a new tab. You can close this card anytime.
               </p>
-              <button
-                type="button"
-                onClick={() => void handleCtaOpen(ctaOverlay.url)}
-                className="w-full min-h-[3.75rem] rounded-2xl bg-white text-violet-950 text-lg font-bold shadow-lg shadow-black/25 flex items-center justify-center gap-2 active:scale-[0.99] transition-transform hover:bg-violet-50"
-              >
-                {ctaOverlay.label}
-                <ExternalLink className="w-5 h-5 opacity-80 shrink-0" aria-hidden />
-              </button>
+              {ctaHref ? (
+                <>
+                  <a
+                    href={ctaHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full min-h-[3.75rem] rounded-2xl bg-white text-violet-950 text-lg font-bold shadow-lg shadow-black/25 flex items-center justify-center gap-2 active:scale-[0.99] transition-transform hover:bg-violet-50 no-underline"
+                    onClick={() => {
+                      recordCtaLeadClick();
+                      setCtaOverlay(null);
+                    }}
+                  >
+                    {ctaOverlay.label}
+                    <ExternalLink className="w-5 h-5 opacity-80 shrink-0" aria-hidden />
+                  </a>
+                  <p className="mt-3 text-[11px] text-violet-200/80 break-all font-mono leading-snug text-center">
+                    {ctaHref}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-amber-200/90 text-center py-2">Invalid link from host. Ask them to check the URL in editor.</p>
+              )}
               <button
                 type="button"
                 onClick={() => setCtaOverlay(null)}
@@ -1003,7 +1015,8 @@ const Student = () => {
               </button>
             </motion.div>
           </motion.div>
-        )}
+          );
+        })()}
       </AnimatePresence>
 
       {studentRaffleName && (
@@ -1015,18 +1028,37 @@ const Student = () => {
         </div>
       )}
 
-      {/* Header */}
-      <header className="bg-gradient-primary text-primary-foreground p-4 relative">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary-foreground/20 flex items-center justify-center text-xl">
+      {/* Header: session title + logo first, then participant row */}
+      <header
+        className={`relative shrink-0 px-3 sm:px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] text-primary-foreground ${
+          headerSurfaceStyle ? "" : "bg-gradient-primary"
+        }`}
+        style={headerSurfaceStyle}
+      >
+        <div className="border-b border-primary-foreground/15 pb-3 mb-3 text-center w-full min-w-0">
+          {headerLogoUrl ? (
+            <div className="flex justify-center mb-2">
+              <img
+                src={headerLogoUrl}
+                alt=""
+                className="max-h-10 sm:max-h-12 w-auto max-w-[min(100%,280px)] object-contain object-center opacity-95 drop-shadow-sm"
+              />
+            </div>
+          ) : null}
+          <h1 className="font-display font-semibold text-[15px] sm:text-base leading-snug text-primary-foreground px-1 break-words hyphens-auto max-w-full mx-auto line-clamp-4">
+            {(lecture?.title && String(lecture.title).trim()) || "Live session"}
+          </h1>
+        </div>
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 rounded-full bg-primary-foreground/20 flex items-center justify-center text-lg sm:text-xl">
               {student?.emoji || "😊"}
             </div>
-            <div className="relative">
-              <p className="font-medium">{student?.name || "Student"}</p>
+            <div className="relative min-w-0 flex-1">
+              <p className="font-medium truncate">{student?.name || "Student"}</p>
               <div className="flex items-center gap-1 text-sm text-primary-foreground/80">
-                <Trophy className="w-3 h-3" />
-                <span>{student?.points ?? 0} points</span>
+                <Trophy className="w-3 h-3 shrink-0" />
+                <span className="tabular-nums">{student?.points ?? 0} points</span>
               </div>
               <AnimatePresence>
                 {pointsEarnedAnimation != null && (
@@ -1044,7 +1076,7 @@ const Student = () => {
               </AnimatePresence>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <Button
               variant="ghost"
               size="icon"
@@ -1055,7 +1087,7 @@ const Student = () => {
               <RefreshCw className="w-4 h-4" />
             </Button>
             <span
-              className="flex items-center gap-1.5 text-sm text-primary-foreground/80"
+              className="flex items-center gap-1 sm:gap-1.5 text-[10px] sm:text-sm text-primary-foreground/80 shrink-0"
               title="DB = postgres realtime on lectures. Live = slide broadcast channel."
             >
               <span className="flex items-center gap-1">
@@ -1070,25 +1102,16 @@ const Student = () => {
             </span>
           </div>
         </div>
-        {presentationLogoUrl ? (
-          <div className="mt-3 flex justify-center border-t border-primary-foreground/15 pt-3">
-            <img
-              src={presentationLogoUrl}
-              alt=""
-              className="max-h-9 w-auto max-w-[min(220px,78vw)] object-contain object-center opacity-95"
-            />
-          </div>
-        ) : null}
       </header>
 
       {/* Main Content - wrapped in Error Boundary so one render error does not crash the view */}
       <StudentErrorBoundary onBackToJoin={() => navigate('/join')}>
-        <main className="flex-1 p-4 overflow-auto">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden px-0 sm:px-2">
         {lecture.status === 'draft' ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center justify-center h-full text-center"
+            className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-4 py-6 text-center"
           >
             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
               <Presentation className="w-10 h-10 text-primary" />
@@ -1104,7 +1127,7 @@ const Student = () => {
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center justify-center h-full text-center gap-4 px-4"
+            className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 overflow-y-auto px-4 py-6 text-center"
           >
             <Loader2 className="w-12 h-12 text-primary animate-spin" />
             <h2 className="text-xl font-display font-bold text-foreground">
@@ -1118,57 +1141,41 @@ const Student = () => {
           hasTimer && inResultsPhase ? (
           <motion.div
             key={`${currentSlide.id}-results`}
-            initial={{ opacity: 0, y: 20, scale: 0.97 }}
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ type: "spring", stiffness: 400, damping: 28 }}
-            className="w-full max-w-4xl mx-auto rounded-2xl overflow-hidden border border-border/50 shadow-xl bg-card"
+            className="mx-auto flex min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center px-4 py-8 text-center sm:max-w-lg"
           >
-            <div className="px-4 py-3 border-b border-border/50 bg-gradient-to-r from-primary/10 via-muted/30 to-teal-500/10 text-sm font-semibold text-center text-foreground">
-              Results are in
-            </div>
-            <div className="aspect-video w-full max-h-[70vh] min-h-[240px]">
-              <SlideFrame>
-                <SingleSlideErrorBoundary key={`${currentSlide.id}-results`}>
-                  <BuilderPreviewProvider allowContentScroll>
-                    <SlideLayoutProvider slide={currentSlide}>
-                      <SlideRenderer
-                        slide={currentSlide}
-                        isEditing={false}
-                        showResults
-                        showCorrectAnswer={isQuizSlide(currentSlide.type)}
-                        liveResults={aggregatedLiveResults}
-                        totalResponses={slideResponses.length}
-                        hideFooter
-                        forceShowStats
-                        themeId={themeId}
-                        designStyleId={
-                          ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
-                            (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
-                            "dynamic") as DesignStyleId
-                        }
-                      />
-                    </SlideLayoutProvider>
-                  </BuilderPreviewProvider>
-                </SingleSlideErrorBoundary>
-              </SlideFrame>
+            <div className="w-full rounded-2xl border border-border/60 bg-gradient-to-br from-teal-500/10 via-card to-violet-500/10 p-8 shadow-xl">
+              <Sparkles className="mx-auto mb-4 h-12 w-12 text-teal-500" />
+              <p className="mb-2 font-display text-lg font-bold text-foreground">Results are live</p>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                The breakdown is on the presenter screen. Keep your phone as your remote — you’re all set.
+              </p>
             </div>
           </motion.div>
-          ) : hasTimer && inVotingPhase && hasAnswered ? (
+          ) : hasAnswered ? (
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-md mx-auto mt-12 rounded-2xl border border-border/60 bg-card/80 backdrop-blur px-8 py-12 text-center shadow-lg"
+            className="mx-auto flex min-h-0 w-full max-w-full flex-1 flex-col items-center justify-center px-4 py-8 text-center sm:max-w-lg"
           >
-            <CheckCircle className="w-14 h-14 text-teal-500 mx-auto mb-4" />
-            <p className="text-lg font-semibold text-foreground mb-2">Answer received</p>
-            <p className="text-muted-foreground">Waiting for the presenter to continue.</p>
+            <div className="w-full rounded-2xl border border-border/60 bg-card/80 px-6 py-10 text-center shadow-lg backdrop-blur sm:px-8 sm:py-12">
+              <CheckCircle className="mx-auto mb-4 h-14 w-14 text-teal-500" />
+              <p className="mb-2 text-lg font-semibold text-foreground">Answer recorded</p>
+              <p className="text-muted-foreground">
+                {hasTimer && inVotingPhase
+                  ? "Waiting for the presenter to continue."
+                  : "Your phone is the remote — follow the main screen. You won’t see the presenter’s slides here."}
+              </p>
+            </div>
           </motion.div>
           ) : (
           <motion.div
             key={currentSlide.id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-card rounded-2xl shadow-lg border border-border/50 p-6"
+            className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto rounded-none border-0 border-border/50 bg-card px-3 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg sm:mx-auto sm:max-w-3xl sm:rounded-2xl sm:border sm:p-6"
           >
             {participativeSlide && hasTimer && !Number.isNaN(startedAtMs) && (
               <div className="flex items-center justify-between gap-3 mb-4 p-3 rounded-xl bg-violet-500/10 border border-violet-500/25">
@@ -1269,11 +1276,22 @@ const Student = () => {
                 <Button
                   variant="hero"
                   className="w-full"
-                  onClick={handleWordSubmit}
+                  onClick={() => void handleWordSubmit()}
                   disabled={!wordInput.trim() || hasAnswered || isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  Submit
+                  {hasAnswered ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      Recorded
+                    </>
+                  ) : isSubmitting ? (
+                    <span className="text-sm font-medium">Saving…</span>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      Submit
+                    </>
+                  )}
                 </Button>
               </div>
             )}
@@ -1402,34 +1420,6 @@ const Student = () => {
               </div>
             )}
 
-            {/* Finish the Sentence - Text input */}
-            {currentSlide.type === 'finish_sentence' && (
-              <div className="space-y-4">
-                <p className="text-lg font-medium text-foreground italic">
-                  "{(currentSlide.content as FinishSentenceSlideContent).sentenceStart}"
-                </p>
-                <Textarea
-                  value={sentenceInput}
-                  onChange={(e) => setSentenceInput(e.target.value.slice(0, (currentSlide.content as FinishSentenceSlideContent).maxCharacters || 100))}
-                  placeholder="Complete the sentence..."
-                  className="min-h-[100px]"
-                  disabled={hasAnswered}
-                />
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{sentenceInput.length} / {(currentSlide.content as FinishSentenceSlideContent).maxCharacters || 100}</span>
-                </div>
-                <Button
-                  variant="hero"
-                  className="w-full"
-                  onClick={handleSentenceSubmit}
-                  disabled={!sentenceInput.trim() || hasAnswered || isSubmitting}
-                >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  Submit
-                </Button>
-              </div>
-            )}
-
             {/* Ranking with smooth Reorder drag-and-drop */}
             {currentSlide.type === 'ranking' && (
               <div className="space-y-3">
@@ -1468,66 +1458,13 @@ const Student = () => {
                 </Button>
               </div>
             )}
-
-            {/* Live results (no timer — same slide as voting) */}
-            {!hasTimer && (
-              <div className="mt-6 rounded-2xl border border-border/50 overflow-hidden bg-card/80">
-                <div className="px-3 py-2 border-b border-border/50 bg-muted/30 text-xs font-medium text-center text-muted-foreground">
-                  Live results
-                </div>
-                <div className="max-h-[min(50vh,420px)] min-h-[180px] overflow-y-auto">
-                  <SlideFrame>
-                    <SingleSlideErrorBoundary key={`${currentSlide.id}-live`}>
-                      <BuilderPreviewProvider allowContentScroll>
-                        <SlideLayoutProvider slide={currentSlide}>
-                          <SlideRenderer
-                            slide={currentSlide}
-                            isEditing={false}
-                            showResults
-                            showCorrectAnswer={isQuizSlide(currentSlide.type)}
-                            liveResults={aggregatedLiveResults}
-                            totalResponses={slideResponses.length}
-                            hideFooter
-                            forceShowStats
-                            themeId={themeId}
-                            designStyleId={
-                              ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
-                                (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
-                                "dynamic") as DesignStyleId
-                            }
-                          />
-                        </SlideLayoutProvider>
-                      </BuilderPreviewProvider>
-                    </SingleSlideErrorBoundary>
-                  </SlideFrame>
-                </div>
-              </div>
-            )}
-
-            {/* Answer received message (fun, English) */}
-            {hasAnswered && (
-              <motion.div
-                key={`ack-${answerAckKey}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-6 text-center"
-              >
-                <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-teal-500/10 text-teal-600">
-                  <PartyPopper className="w-5 h-5" />
-                  <span className="font-semibold">Answer received</span>
-                </div>
-                <p className="text-sm text-muted-foreground mt-2">
-                  {hasTimer ? "Nice. Hang tight — results are coming up." : "You’re all set. Keep watching for the next prompt."}
-                </p>
-              </motion.div>
-            )}
           </motion.div>
           )
         ) : (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-3xl mx-auto space-y-4"
+            className="mx-auto flex min-h-0 w-full max-w-full flex-1 flex-col space-y-4 overflow-y-auto px-4 py-4 sm:max-w-3xl"
           >
             <div className="rounded-2xl border border-border/60 bg-card/70 backdrop-blur p-5 text-center shadow-lg">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-sm font-semibold">
@@ -1545,32 +1482,12 @@ const Student = () => {
             </div>
 
             {lecture.status === "active" && currentSlide ? (
-              <div className="rounded-2xl overflow-hidden border border-border/60 bg-card shadow-xl">
-                <div className="px-4 py-3 border-b border-border/50 bg-gradient-to-r from-primary/10 via-muted/30 to-teal-500/10 text-sm font-semibold text-center text-foreground">
-                  Current slide
-                </div>
-                <div className="aspect-video w-full max-h-[55vh] min-h-[220px]">
-                  <SlideFrame>
-                    <SingleSlideErrorBoundary key={`${currentSlide.id}-watch`}>
-                      <BuilderPreviewProvider allowContentScroll>
-                        <SlideLayoutProvider slide={currentSlide}>
-                          <SlideRenderer
-                            slide={currentSlide}
-                            isEditing={false}
-                            showResults={false}
-                            hideFooter
-                            themeId={themeId}
-                            designStyleId={
-                              ((currentSlide.design as { designStyleId?: string } | undefined)?.designStyleId ??
-                                (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ??
-                                "dynamic") as DesignStyleId
-                            }
-                          />
-                        </SlideLayoutProvider>
-                      </BuilderPreviewProvider>
-                    </SingleSlideErrorBoundary>
-                  </SlideFrame>
-                </div>
+              <div className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur p-6 text-center shadow-lg">
+                <Sparkles className="w-10 h-10 text-primary mx-auto mb-3 opacity-90" />
+                <p className="font-semibold text-foreground">Follow the main screen</p>
+                <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                  Your phone is the remote. Slides and visuals stay on the presenter display — you’ll get prompts here when it’s time to interact.
+                </p>
               </div>
             ) : null}
           </motion.div>
@@ -1579,7 +1496,7 @@ const Student = () => {
       </StudentErrorBoundary>
 
       {/* Reaction Bar */}
-      <div className="p-4 border-t border-border/50 bg-card/50">
+      <div className="shrink-0 border-t border-border/50 bg-card/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-2">
             {emojis.map((emoji) => (
@@ -1653,9 +1570,13 @@ const Student = () => {
                   variant="hero"
                   className="w-full"
                   onClick={handleSubmitQuestion}
-                  disabled={!questionText.trim()}
+                  disabled={!questionText.trim() || isSubmittingQuestion}
                 >
-                  <Send className="w-4 h-4" />
+                  {isSubmittingQuestion ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                   Send Question
                 </Button>
               </div>

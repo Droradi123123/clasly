@@ -19,7 +19,6 @@ export type SlideType =
   | 'ranking' 
   | 'guess_number' 
   | 'scale'
-  | 'finish_sentence'
   | 'sentiment_meter'
   | 'agree_spectrum';
 
@@ -229,7 +228,7 @@ export interface ScaleSlideContent extends BaseSlideContent {
   scaleOptions: ScaleOptions;
 }
 
-// Finish the Sentence slide content (AI-powered)
+/** @deprecated Legacy JSON only — migrated to word cloud at load time */
 export interface FinishSentenceSlideContent extends BaseSlideContent {
   sentenceStart: string; // The sentence to complete, e.g., "The best part of today's session was..."
   maxCharacters?: number;
@@ -307,7 +306,6 @@ export type SlideContent =
   | RankingSlideContent 
   | GuessNumberSlideContent 
   | ScaleSlideContent
-  | FinishSentenceSlideContent
   | ImageGuessSlideContent
   | SentimentMeterSlideContent
   | AgreeSpectrumSlideContent
@@ -326,6 +324,23 @@ export interface Slide {
   layout: LayoutType;
   activitySettings?: ActivitySettings;
   order: number;
+}
+
+/** Maps deprecated slide types from stored JSON so runtime only uses supported `SlideType` values. */
+export function migrateLegacySlideTypes(slides: Slide[]): Slide[] {
+  return slides.map((slide) => {
+    if ((slide.type as string) !== "finish_sentence") return slide;
+    const c = slide.content as FinishSentenceSlideContent & { question?: string };
+    const q =
+      (typeof c.sentenceStart === "string" && c.sentenceStart.trim()) ||
+      (typeof c.question === "string" && c.question.trim()) ||
+      "Share a word…";
+    return {
+      ...slide,
+      type: "wordcloud",
+      content: { question: q },
+    };
+  });
 }
 
 // Slide type metadata for the editor
@@ -362,7 +377,6 @@ export const SLIDE_TYPES: SlideTypeInfo[] = [
   { type: 'scale', label: 'Scale', labelHe: 'סולם', icon: 'Sliders', category: 'interactive', description: 'Rate on a scale' },
   { type: 'sentiment_meter', label: 'Sentiment', labelHe: 'סנטימנט', icon: 'Heart', category: 'interactive', description: 'Continuous emotional scale' },
   { type: 'agree_spectrum', label: 'Agree/Disagree', labelHe: 'מסכים/לא', icon: 'ArrowLeftRight', category: 'interactive', description: 'Opinion spectrum on a statement' },
-  { type: 'finish_sentence', label: 'Finish Sentence', labelHe: 'השלם משפט', icon: 'MessageSquare', category: 'interactive', description: 'AI groups open-ended responses' },
   
   // Quiz slides - competition focused, with correct answers
   { type: 'quiz', label: 'Quiz', labelHe: 'מבחן', icon: 'HelpCircle', category: 'quiz', description: 'Multiple choice with correct answer', supportsCorrectAnswer: true },
@@ -400,6 +414,22 @@ export function getResolvedActivitySettings(slide: Slide): {
 } {
   const a = slide.activitySettings;
   const raw = a?.duration;
+
+  /** Opinion polls: live results by default — timer only if duration is explicitly greater than 0. */
+  if (slide.type === "poll") {
+    const hasTimerPoll = typeof raw === "number" && raw > 0;
+    const durationSeconds = hasTimerPoll ? raw : 0;
+    return {
+      hasTimer: hasTimerPoll,
+      durationSeconds,
+      pointsForCorrect: 0,
+      pointsForParticipation:
+        typeof a?.pointsForParticipation === "number" && a.pointsForParticipation >= 0
+          ? a.pointsForParticipation
+          : 0,
+    };
+  }
+
   if (raw === 0) {
     return {
       hasTimer: false,
@@ -476,11 +506,6 @@ export function createDefaultSlideContent(type: SlideType): SlideContent {
       return { 
         question: 'How do you feel about this?', 
         scaleOptions: { minLabel: 'Not at all', maxLabel: 'Absolutely', steps: 5 } 
-      };
-    case 'finish_sentence':
-      return {
-        sentenceStart: 'The best part of today was...',
-        maxCharacters: 100,
       };
     case 'sentiment_meter':
       return {
@@ -564,19 +589,29 @@ export function createNewSlide(type: SlideType, order: number): Slide {
   const design = type === 'yesno'
     ? { ...baseDesign, yesNoVariant: 'thumbsDynamic' as const }
     : baseDesign;
+  const activitySettings =
+    type === "poll"
+      ? {
+          duration: 0,
+          showResults: true,
+          interactionStyle: "bar_chart" as const,
+          pointsForCorrect: 0,
+          pointsForParticipation: 0,
+        }
+      : {
+          duration: DEFAULT_ACTIVITY_DURATION_SEC,
+          showResults: true,
+          interactionStyle: "bar_chart" as const,
+          pointsForCorrect: DEFAULT_POINTS_CORRECT,
+          pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
+        };
   return {
     id: generateUniqueId(),
     type,
     content: createDefaultSlideContent(type),
     design,
     layout: 'centered',
-    activitySettings: {
-      duration: DEFAULT_ACTIVITY_DURATION_SEC,
-      showResults: true,
-      interactionStyle: 'bar_chart',
-      pointsForCorrect: DEFAULT_POINTS_CORRECT,
-      pointsForParticipation: DEFAULT_POINTS_PARTICIPATION,
-    },
+    activitySettings,
     order,
   };
 }

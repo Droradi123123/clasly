@@ -50,6 +50,7 @@ export function YesNoSlide({
   // Use live results if provided, otherwise use zeros
   const results = liveResults || { yes: 0, no: 0 };
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
   const yesPercentage = totalResponses > 0 ? Math.round((results.yes / totalResponses) * 100) : 0;
   const noPercentage = totalResponses > 0 ? Math.round((results.no / totalResponses) * 100) : 0;
 
@@ -142,18 +143,18 @@ export function YesNoSlide({
                 )}
                 <motion.div
                   className="flex flex-col items-center cursor-default"
-                  animate={hasResults ? (yesPercentage >= noPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
+                  animate={revealStats && hasResults ? (yesPercentage >= noPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                 >
                   <div className={`p-4 md:p-6 rounded-full transition-all ${
-                    hasResults && yesPercentage >= noPercentage ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50 ring-4 ring-white/40' : 'bg-emerald-500/90'
+                    revealStats && hasResults && yesPercentage >= noPercentage ? 'bg-emerald-500 shadow-lg shadow-emerald-500/50 ring-4 ring-white/40' : 'bg-emerald-500/90'
                   }`}>
                     <ThumbsUp className="w-14 h-14 md:w-20 md:h-20 text-white" />
                   </div>
                   {(content.yesLabel || isEditing) && (
                     <span className="text-white/90 text-sm mt-1 font-medium">{content.yesLabel || 'Yes'}</span>
                   )}
-                  {!isEditing && hasResults && <span className="text-white/80 text-lg font-bold">{yesPercentage}%</span>}
+                  {!isEditing && revealStats && hasResults && <span className="text-white/80 text-lg font-bold">{yesPercentage}%</span>}
                 </motion.div>
               </motion.div>
               <motion.div
@@ -172,21 +173,21 @@ export function YesNoSlide({
                 )}
                 <motion.div
                   className="flex flex-col items-center cursor-default"
-                  animate={hasResults ? (noPercentage > yesPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
+                  animate={revealStats && hasResults ? (noPercentage > yesPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                 >
                   <div className={`p-4 md:p-6 rounded-full transition-all ${
-                    hasResults && noPercentage > yesPercentage ? 'bg-rose-500 shadow-lg shadow-rose-500/50 ring-4 ring-white/40' : 'bg-rose-500/90'
+                    revealStats && hasResults && noPercentage > yesPercentage ? 'bg-rose-500 shadow-lg shadow-rose-500/50 ring-4 ring-white/40' : 'bg-rose-500/90'
                   }`}>
                     <ThumbsDown className="w-14 h-14 md:w-20 md:h-20 text-white" />
                   </div>
                   {(content.noLabel || isEditing) && (
                     <span className="text-white/90 text-sm mt-1 font-medium">{content.noLabel || 'No'}</span>
                   )}
-                  {!isEditing && hasResults && <span className="text-white/80 text-lg font-bold">{noPercentage}%</span>}
+                  {!isEditing && revealStats && hasResults && <span className="text-white/80 text-lg font-bold">{noPercentage}%</span>}
                 </motion.div>
               </motion.div>
-              {!isEditing && !hasResults && (
+              {!isEditing && (!revealStats || !hasResults) && (
                 <div className="absolute bottom-0 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white/70 text-sm">
                   <Users className="w-4 h-4" />
                   <span>Waiting for votes...</span>
@@ -275,7 +276,7 @@ export function YesNoSlide({
                           exit={styleConfig.showAnimatedNumbers ? { scale: 0.5, opacity: 0 } : undefined}
                           className="mt-2 flex items-center gap-2"
                         >
-                          {hasResults ? (
+                          {revealStats && hasResults ? (
                             <>
                               {showCounts && (
                                 <span className="text-2xl md:text-3xl font-bold">{results.yes}</span>
@@ -297,7 +298,7 @@ export function YesNoSlide({
                   </div>
 
                   {/* Progress bar */}
-                  {!isEditing && hasResults && styleConfig.showProgressBars && (
+                  {!isEditing && revealStats && hasResults && styleConfig.showProgressBars && (
                     <motion.div
                       className="absolute bottom-0 left-0 h-1.5 bg-white/30 rounded-b-2xl"
                       initial={{ width: 0 }}
@@ -386,7 +387,7 @@ export function YesNoSlide({
                           exit={styleConfig.showAnimatedNumbers ? { scale: 0.5, opacity: 0 } : undefined}
                           className="mt-2 flex items-center gap-2"
                         >
-                          {hasResults ? (
+                          {revealStats && hasResults ? (
                             <>
                               {showCounts && (
                                 <span className="text-2xl md:text-3xl font-bold">{results.no}</span>
@@ -408,7 +409,7 @@ export function YesNoSlide({
                   </div>
 
                   {/* Progress bar */}
-                  {!isEditing && hasResults && styleConfig.showProgressBars && (
+                  {!isEditing && revealStats && hasResults && styleConfig.showProgressBars && (
                     <motion.div
                       className="absolute bottom-0 left-0 h-1.5 bg-white/30 rounded-b-2xl"
                       initial={{ width: 0 }}
@@ -424,7 +425,7 @@ export function YesNoSlide({
             </div>
 
             {/* Zero-state waiting indicator - only for non-thumbsDynamic */}
-            {!isThumbsDynamic && !isEditing && !hasResults && (
+            {!isThumbsDynamic && !isEditing && (!revealStats || !hasResults) && (
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}

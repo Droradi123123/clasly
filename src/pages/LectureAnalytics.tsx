@@ -28,10 +28,10 @@ import {
   aggregateGuessResponses,
   aggregateRankingResponses,
   aggregateSentimentResponses,
-  aggregateFinishSentenceResponses,
 } from "@/lib/responseAggregation";
 import { supabase } from "@/integrations/supabase/client";
 import { Slide } from "@/types/slides";
+import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 
 const INTERACTIVE_TYPES = new Set([
   "quiz",
@@ -44,7 +44,6 @@ const INTERACTIVE_TYPES = new Set([
   "ranking",
   "sentiment_meter",
   "agree_spectrum",
-  "finish_sentence",
 ]);
 
 interface QuestionRow {
@@ -78,7 +77,7 @@ export default function LectureAnalytics() {
     }
     if (fromPresent && fromPresent.lecture?.id === lectureId) {
       setLecture(fromPresent.lecture);
-      setSlides(fromPresent.slides || []);
+      setSlides(ensureSlidesDesignDefaults(fromPresent.slides || []));
       setStudents(fromPresent.students || []);
       setLoading(false);
     }
@@ -100,7 +99,7 @@ export default function LectureAnalytics() {
         ]);
         if (cancelled) return;
         setLecture(lectureData);
-        setSlides((lectureData?.slides as Slide[]) || []);
+        setSlides(ensureSlidesDesignDefaults((lectureData?.slides as Slide[]) || []));
         setStudents(studentsData || []);
         setAllResponses(responsesData || []);
 
@@ -204,12 +203,6 @@ export default function LectureAnalytics() {
         return {
           type: slide.type,
           ...aggregateSentimentResponses(responses),
-          total: responses.length,
-        };
-      case "finish_sentence":
-        return {
-          type: "finish_sentence",
-          ...aggregateFinishSentenceResponses(responses),
           total: responses.length,
         };
       default:

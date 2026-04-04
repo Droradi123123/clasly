@@ -13,7 +13,7 @@ import {
   ThumbsDown,
   GripVertical
 } from "lucide-react";
-import { Slide, SLIDE_TYPES, QuizSlideContent, PollSlideContent, YesNoSlideContent, ScaleSlideContent, WordCloudSlideContent, GuessNumberSlideContent, RankingSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent, FinishSentenceSlideContent } from "@/types/slides";
+import { Slide, SLIDE_TYPES, QuizSlideContent, PollSlideContent, YesNoSlideContent, ScaleSlideContent, WordCloudSlideContent, GuessNumberSlideContent, RankingSlideContent, SentimentMeterSlideContent, AgreeSpectrumSlideContent } from "@/types/slides";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
 
 interface StudentPreviewProps {
@@ -30,7 +30,6 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
   const [rankingOrder, setRankingOrder] = useState<string[]>([]);
   const [sentimentValue, setSentimentValue] = useState([50]);
   const [agreeValue, setAgreeValue] = useState([50]);
-  const [sentenceInput, setSentenceInput] = useState("");
 
   const handleReset = useCallback(() => {
     setSelectedOption(null);
@@ -41,7 +40,6 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
     setRankingOrder([]);
     setSentimentValue([50]);
     setAgreeValue([50]);
-    setSentenceInput("");
   }, []);
 
   // Reset preview state when switching slides (must run before any early return — Rules of Hooks).
@@ -352,34 +350,6 @@ export function StudentPreview({ slide, themeId }: StudentPreviewProps) {
                   className="w-full"
                   onClick={handleSubmit}
                   disabled={hasAnswered}
-                >
-                  <Send className="w-4 h-4" />
-                  Submit
-                </Button>
-              </div>
-            )}
-
-            {/* Finish the Sentence */}
-            {slide.type === 'finish_sentence' && (
-              <div className="space-y-3">
-                <p className="text-base font-medium text-foreground italic">
-                  "{(content as FinishSentenceSlideContent).sentenceStart}"
-                </p>
-                <Textarea
-                  value={sentenceInput}
-                  onChange={(e) => setSentenceInput(e.target.value.slice(0, (content as FinishSentenceSlideContent).maxCharacters || 100))}
-                  placeholder="Complete the sentence..."
-                  className="min-h-[80px]"
-                  disabled={hasAnswered}
-                />
-                <div className="text-xs text-muted-foreground">
-                  {sentenceInput.length} / {(content as FinishSentenceSlideContent).maxCharacters || 100}
-                </div>
-                <Button
-                  variant="hero"
-                  className="w-full"
-                  onClick={handleSubmit}
-                  disabled={!sentenceInput.trim() || hasAnswered}
                 >
                   <Send className="w-4 h-4" />
                   Submit

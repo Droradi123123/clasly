@@ -6,20 +6,20 @@
 import { Sparkles, Zap, Palette, LayoutGrid, Users, Clock, BarChart3, MessageSquare, Cloud, HelpCircle } from "lucide-react";
 
 export const webinarHeroContent = {
-  headline: "Turn your topic into an",
-  headlineHighlight: "interactive webinar in seconds.",
+  headline: "In seconds, AI builds a webinar that",
+  headlineHighlight: "engages—and converts.",
   subheadline:
-    "AI builds the full experience: an interactive deck for your screen and a live interface so every attendee can participate from their phone—no downloads.",
+    "One prompt: interactive slides for you, participation on every phone, and built-in flows for leads and follow-ups—so you lift engagement and revenue without a heavy prep day.",
   placeholder:
-    "Describe your workshop topic and we'll build your presentation…\n\nExample: Sales mindset workshop with opening poll, quiz checkpoints, and closing reflection.",
+    "Describe your offer or topic—we’ll build polls, quizzes, and CTAs…\n\nExample: Product launch with live poll, objection-handling quiz, and CTA to book a call.",
   suggestions: [
-    "Sales mindset workshop with poll",
-    "Lead generation webinar with quiz",
-    "Coaching session icebreaker + feedback",
+    "Launch webinar: poll + quiz + next-step CTA",
+    "Lead gen session with capture-ready questions",
+    "Demo + Q&A with word cloud and poll",
   ],
   hints: [
-    { text: "Ready in seconds" },
-    { text: "No setup required" },
+    { text: "Built in seconds with AI" },
+    { text: "Engagement + conversion-ready" },
   ],
 };
 
@@ -36,110 +36,110 @@ export const webinarQuizContent = {
 
 export const webinarHowItWorksContent = {
   title: "How it works",
-  subtitle: "Describe your topic → Share the join code → Run an interactive webinar.",
+  subtitle: "Prompt → join → engage—then turn attention into action.",
   steps: [
     {
       number: 1,
-      title: "Write & AI builds",
+      title: "Prompt & AI builds",
       description:
-        "Describe your topic—AI creates the full presentation. Edit, customize, done.",
+        "Describe your topic and offer. AI builds a full interactive deck—quizzes, polls, and structure—so you’re ready in seconds, not days.",
     },
     {
       number: 2,
-      title: "Share code, attendees join",
+      title: "Share code, capture leads",
       description:
-        "Participants enter the code on their phone. No apps to install.",
+        "Attendees join from their phone—no app. Collect registration and leads before they enter, so you can follow up after the session.",
     },
     {
       number: 3,
-      title: "Interactive webinar & insights",
+      title: "Engage live, then convert",
       description:
-        "Live quizzes, polls, reactions. Keep attendees engaged. See what landed.",
+        "Run polls and quizzes in real time, send a CTA when the moment is right, and use what you learn to improve the next funnel step.",
     },
   ],
 };
 
 export const webinarDemoContent = {
-  header: "Your next webinar could look like this",
+  header: "Your next session could look like this",
   subheadline: (
     <>
-      Participants vote on their phone.
+      Answers flow from the room in real time.
       <br />
-      You see results live on your screen.
+      You see what resonates—then drive the next step.
       <br />
-      <span className="text-foreground font-medium">Real-time engagement.</span>
+      <span className="text-foreground font-medium">Engagement and clarity for the offer.</span>
     </>
   ),
 };
 
 export const webinarAIFeaturesContent = {
-  badge: "Why AI-Powered?",
-  title: "Let AI Do the Heavy Lifting",
+  badge: "AI in seconds",
+  title: "Engagement and conversion—without the grind",
   description:
-    "Our AI turns your topic into an interactive deck in seconds. Quizzes, polls, word clouds—built in. You focus on delivery; we handle the deck.",
+    "Clasly’s AI turns your topic into a full interactive webinar: participation, questions, and room for your offer—so you spend energy on delivery and revenue, not slide prep.",
   features: [
     {
       icon: Sparkles,
-      title: "AI Content Generation",
+      title: "AI-built deck & prompts",
       description:
-        "Describe your topic, AI writes compelling content, questions, and talking points.",
+        "From one description: content, questions, and interactive beats aligned to your talk—ready to present.",
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
     {
       icon: LayoutGrid,
-      title: "Smart Slide Structure",
+      title: "Structure for webinars",
       description:
-        "AI picks the right mix of content slides and interactive moments for webinars.",
+        "The right mix of teaching slides, polls, quizzes, and moments that invite action—not a wall of slides.",
       color: "text-accent",
       bgColor: "bg-accent/10",
     },
     {
       icon: Palette,
-      title: "Visual Consistency",
+      title: "Polished, on-brand look",
       description:
-        "Every slide is professionally designed with cohesive themes and animations.",
+        "Cohesive themes and visuals so your session feels credible before you make the ask.",
       color: "text-success",
       bgColor: "bg-success/10",
     },
     {
       icon: Users,
-      title: "Instant Engagement",
+      title: "Participation on every phone",
       description:
-        "Built-in quizzes, polls, word clouds—designed for webinar engagement.",
+        "Quizzes, polls, word clouds—built to keep attention high and responses flowing.",
       color: "text-primary",
       bgColor: "bg-primary/10",
     },
     {
       icon: Clock,
-      title: "Save Hours",
+      title: "Seconds to ship",
       description:
-        "Cut prep from hours to minutes. Focus on delivery, not design.",
+        "Swap the long pre-webinar prep day for a short prompt—iterate when you need to.",
       color: "text-accent",
       bgColor: "bg-accent/10",
     },
     {
       icon: Zap,
-      title: "Real-Time Results",
+      title: "Live signals & next steps",
       description:
-        "See responses live. React and adapt in the moment.",
+        "See what lands in real time; pair with lead capture and a CTA when you’re ready to convert.",
       color: "text-success",
       bgColor: "bg-success/10",
     },
   ],
   traditionalItems: [
-    "Research and write content manually",
-    "Design each slide from scratch",
-    "Create quiz questions separately",
-    "No real-time audience feedback",
-    "Takes 2-4 hours per presentation",
+    "Hours writing and designing slides",
+    "Guessing what the room cares about",
+    "No structured path from attention to action",
+    "Follow-up lists built manually",
+    "Same prep time every time you pitch",
   ],
   claslyItems: [
-    "AI generates content from your topic",
-    "Professional design applied instantly",
-    "Interactive elements built-in",
-    "Live responses and engagement",
-    "Ready in under 30 seconds",
+    "AI generates the full interactive flow from your prompt",
+    "Professional layout and themes in one pass",
+    "Polls, quizzes, and word clouds included",
+    "Live responses and engagement you can see",
+    "Ready in seconds—tune and repeat for the next offer",
   ],
 };
 
@@ -150,30 +150,30 @@ export const webinarTrustContent = {
       description: "Your data is encrypted and protected.",
     },
     {
-      title: "No Commitment Required",
+      title: "Start free",
       description:
-        "Start for free. No credit card. Create your first deck in seconds.",
+        "Try the flow: build a deck in seconds, no credit card required to explore.",
     },
     {
-      title: "Trusted by Course Creators & Coaches",
+      title: "Built for hosts who sell & teach",
       description:
-        "Used by webinar hosts and trainers to engage their audiences.",
+        "Teams and solo hosts use Clasly to run interactive sessions and follow up with real leads.",
     },
     {
-      title: "Private by Default",
-      description: "Your content and audience data stay private.",
+      title: "Private by default",
+      description: "Your content and audience data stay under your control.",
     },
   ],
 };
 
 export const webinarCTAContent = {
-  title: "Ready to Run Your Next Webinar Differently?",
+  title: "Ready for a higher-converting webinar?",
   description:
-    "Your first interactive deck is one prompt away. No credit card required to try.",
+    "One prompt: interactive slides, room-wide participation, and a path to leads and your next offer—try it free.",
 };
 
 export const webinarFooterContent = {
-  tagline: "Making webinars interactive.",
+  tagline: "Interactive webinars in seconds—with AI.",
 };
 
 export interface GeneratedSlide {

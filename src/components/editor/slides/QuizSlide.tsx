@@ -64,6 +64,7 @@ export function QuizSlide({
   // Use live results if provided, otherwise use zeros
   const results = liveResults || content.options.map(() => 0);
   const hasResults = totalResponses > 0;
+  const revealStats = isEditing || showResults;
 
   // Trigger celebration when showResults becomes true (only for dynamic style)
   if (showResults && !prevShowResults && hasResults && styleConfig.celebrationOnResults) {
@@ -203,7 +204,7 @@ export function QuizSlide({
                             <FormattedText>{String(option || "")}</FormattedText>
                           </span>
                         )}
-                        {!isEditing && hasResults && (
+                        {!isEditing && revealStats && hasResults && (
                           <span className="text-white/80 text-sm font-medium flex-shrink-0">{percentage}%</span>
                         )}
                       </div>
@@ -245,7 +246,7 @@ export function QuizSlide({
                     Add Option
                   </Button>
                 )}
-                {!isEditing && !hasResults && (
+                {!isEditing && (!revealStats || !hasResults) && (
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -317,7 +318,7 @@ export function QuizSlide({
                           ${themeId === 'swiss-minimal' ? 'border-black border-[3px]' : ''}
                         `}
                         whileHover={!isEditing && !isMinimal ? { scale: 1.03 } : undefined}
-                        animate={styleConfig.pulseOnNewVote && !isEditing && hasResults ? {
+                        animate={styleConfig.pulseOnNewVote && !isEditing && revealStats && hasResults ? {
                           scale: [1, 1.01, 1],
                         } : undefined}
                         transition={styleConfig.pulseOnNewVote ? { duration: 0.3 } : undefined}
@@ -350,7 +351,7 @@ export function QuizSlide({
                           )}
                           
                           {/* Live count indicator - based on style config (forceShowStats in presenter) */}
-                          {!isEditing && hasResults && (showCounts || showPercentages) && (
+                          {!isEditing && revealStats && hasResults && (showCounts || showPercentages) && (
                             <AnimatePresence mode="wait">
                               <motion.span 
                                 key={count}
@@ -367,7 +368,7 @@ export function QuizSlide({
                         </div>
 
                         {/* Progress bar overlay for presentation mode */}
-                        {!isEditing && hasResults && styleConfig.showProgressBars && (
+                        {!isEditing && revealStats && hasResults && styleConfig.showProgressBars && (
                           <motion.div
                             className="absolute bottom-0 left-0 h-1 bg-white/30 rounded-b-xl"
                             initial={{ width: 0 }}
@@ -448,8 +449,8 @@ export function QuizSlide({
                 </motion.div>
               )}
 
-              {/* Zero-state waiting indicator - only in presentation mode with no results */}
-              {!isEditing && !hasResults && !(showResults && slide.design?.resultVisualization === 'clean_bars') && (
+              {/* Waiting / hidden phase: no aggregate stats until timer ends (present mode) */}
+              {!isEditing && (!revealStats || !hasResults) && !(showResults && slide.design?.resultVisualization === 'clean_bars') && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}

@@ -14,7 +14,6 @@ import {
   ListOrdered,
   Hash,
   Sliders,
-  MessageSquare,
   Heart,
   Sparkles,
 } from "lucide-react";
@@ -44,7 +43,6 @@ const SLIDE_ICONS: Record<SlideType, React.ElementType> = {
   ranking: ListOrdered,
   guess_number: Hash,
   scale: Sliders,
-  finish_sentence: MessageSquare,
   sentiment_meter: Heart,
   agree_spectrum: ArrowLeftRight,
 };
