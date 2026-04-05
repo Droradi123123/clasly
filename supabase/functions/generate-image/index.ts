@@ -7,6 +7,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Module-scoped singletons — reused across requests to avoid connection pool exhaustion
+const _sbUrl = Deno.env.get("SUPABASE_URL") ?? "";
+const _sbAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const _sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const supabaseAnon = _sbUrl && _sbAnonKey ? createClient(_sbUrl, _sbAnonKey) : null;
+const supabaseAdmin = _sbUrl && _sbServiceKey ? createClient(_sbUrl, _sbServiceKey) : null;
+
 interface GenerateImageRequest {
   prompt: string;
   style?: string;
@@ -22,14 +29,11 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { user: null, error: "Missing token" };
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) {
+  if (!supabaseAnon) {
     return { user: null, error: "Server configuration error" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
+  const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
   if (error || !user) {
     return { user: null, error: error?.message || "Invalid or expired authentication token" };
   }
@@ -40,13 +44,10 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
 const CREDITS_PER_IMAGE = 1;
 
 async function checkCredits(userId: string, amount: number): Promise<{ allowed: boolean; error?: string }> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) {
+  if (!supabaseAdmin) {
     return { allowed: false, error: "Server configuration error" };
   }
-  const supabase = createClient(supabaseUrl, serviceKey);
-  const { data: credits, error: fetchError } = await supabase
+  const { data: credits, error: fetchError } = await supabaseAdmin
     .from("user_credits")
     .select("ai_tokens_balance")
     .eq("user_id", userId)
@@ -61,33 +62,18 @@ async function checkCredits(userId: string, amount: number): Promise<{ allowed: 
 }
 
 async function consumeCredits(userId: string, amount: number, description: string): Promise<boolean> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceKey) return false;
-  const supabase = createClient(supabaseUrl, serviceKey);
-  const { data: credits, error: fetchError } = await supabase
-    .from("user_credits")
-    .select("ai_tokens_balance, ai_tokens_consumed")
-    .eq("user_id", userId)
-    .single();
-  if (fetchError || !credits || credits.ai_tokens_balance < amount) return false;
-  const { error: updateError } = await supabase
-    .from("user_credits")
-    .update({
-      ai_tokens_balance: credits.ai_tokens_balance - amount,
-      ai_tokens_consumed: (credits.ai_tokens_consumed || 0) + amount,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
-  if (updateError) return false;
-  await supabase.from("credit_transactions").insert({
-    user_id: userId,
-    credit_type: "ai_tokens",
-    transaction_type: "consume",
-    amount: -amount,
-    description,
+  if (!supabaseAdmin) return false;
+  const { data, error: rpcError } = await supabaseAdmin.rpc("atomic_consume_credits", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_description: description,
   });
-  return true;
+  if (rpcError) {
+    console.error("atomic_consume_credits RPC error:", rpcError);
+    return false;
+  }
+  const newBalance = typeof data === "number" ? data : Number(data);
+  return !Number.isNaN(newBalance) && newBalance !== -1;
 }
 
 serve(async (req) => {
@@ -175,7 +161,41 @@ The image should be visually striking and work well as a slide background or vis
     }
 
     const mimeType = inlineData.mimeType || "image/png";
-    const imageUrl = `data:${mimeType};base64,${inlineData.data}`;
+
+    // Upload to Supabase Storage instead of returning base64 (prevents DB bloat)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    let imageUrl: string;
+
+    if (supabaseUrl && serviceKey) {
+      const binaryString = atob(inlineData.data);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const ext = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+      const filename = `generated/${Date.now()}-${Math.random().toString(36).substring(2, 10)}.${ext}`;
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/slide-images/${filename}`;
+      const uploadResponse = await fetch(uploadUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${serviceKey}`,
+          "Content-Type": mimeType,
+          "x-upsert": "true",
+        },
+        body: bytes,
+      });
+
+      if (uploadResponse.ok) {
+        imageUrl = `${supabaseUrl}/storage/v1/object/public/slide-images/${filename}`;
+        console.log("Image uploaded to Storage:", imageUrl.substring(0, 80));
+      } else {
+        console.error("Storage upload failed:", uploadResponse.status, await uploadResponse.text());
+        throw new Error("Image storage upload failed");
+      }
+    } else {
+      throw new Error("Server storage configuration error");
+    }
 
     await consumeCredits(user.id, CREDITS_PER_IMAGE, "Generate image");
     console.log("Image generated successfully");

@@ -37,7 +37,7 @@ export function BarChartSlide({
   slide,
   isEditing = false,
   onUpdate,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
 }: BarChartSlideProps) {
   const content = slide.content as BarChartSlideContent;
   const textColor = slide.design?.textColor || '#ffffff';

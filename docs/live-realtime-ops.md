@@ -20,23 +20,28 @@ Reducing the number of simultaneous Realtime channels per student (e.g. merging 
 
 ### Current channel inventory (per live session)
 
-**Student** (6 channels):
+**Student** (4 channels — down from 6 after optimization):
 - `lecture-live-{id}` -- postgres_changes on `lectures` (slide index + status)
-- `lecture-sync-{id}` -- broadcast: `slide_changed`, `cta_show`, `raffle_winner`
-- `game-{id}` -- broadcast: `game_state`
+- `lecture-sync-{id}` -- broadcast: `slide_changed`, `cta_show`, `raffle_winner`, `emoji_reaction`, `game_active`
 - `student-{studentId}` -- postgres_changes on `students` (points)
 - `lecture-presence-{id}` -- presence (online tracking)
-- `reactions-{id}` -- broadcast: `emoji_reaction`
 
-**Presenter** (6 channels):
-- `lecture-sync-{id}` -- broadcast: `response_changed`, `question_new`
+*Eliminated:* `reactions-{id}` merged into `lecture-sync`; `game-{id}` lazy-joined only when game starts (via `StudentGameControls`).
+
+**Presenter** (5 channels — down from 6):
+- `lecture-sync-{id}` -- broadcast: `response_changed`, `question_new`, `emoji_reaction`, `game_active`
 - `students-{id}` -- postgres_changes on `students` (join events)
-- `responses-{id}-{slideIdx}` -- postgres_changes on `responses` (current slide)
+- `responses-{id}` -- postgres_changes on `responses` (all slides; stable, no churn per slide)
 - `lecture-presence-{id}` -- presence (online count)
-- `reactions-{id}` -- broadcast: `emoji_reaction`
 - `questions-{id}` -- postgres_changes on `questions`
 
-**Merge candidates** (deferred until measured under load): `lecture-sync` + `reactions` share the same broadcast transport and could be combined; `game` is only used when a game is active and could be lazy-joined. No action taken yet -- measure WebSocket count in Supabase Realtime Inspector first.
+*Eliminated:* `reactions-{id}` merged into `lecture-sync`; `responses-{id}-{slideIdx}` replaced with stable `responses-{id}` (no recreation per slide change).
+
+## Connection recovery and cleanup
+
+- Supabase client uses `reconnectAfterMs` with exponential backoff (500ms → 15s) for WebSocket drops.
+- `eventsPerSecond` reduced to 10 (from 32) to lower server-side Realtime pressure.
+- Both `Present` and `Student` call `removeAllChannels()` on unmount to prevent orphaned channels from consuming Realtime slots after navigation.
 
 ## Related: API timeouts and log interpretation
 

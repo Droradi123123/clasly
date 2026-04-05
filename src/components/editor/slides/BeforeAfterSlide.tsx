@@ -21,7 +21,7 @@ export function BeforeAfterSlide({
   slide,
   isEditing = false,
   onUpdate,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
 }: BeforeAfterSlideProps) {
   const content = slide.content as BeforeAfterSlideContent;
   const theme = getTheme(themeId);

@@ -25,16 +25,17 @@ const VALID_DESIGN_STYLES: DesignStyleId[] = ["minimal", "dynamic", "compact"];
 /** Valid ThemeIds for normalization */
 const VALID_THEME_IDS: ThemeId[] = ["neon-cyber", "soft-pop", "academic-pro", "swiss-minimal", "sunset-warmth", "ocean-breeze"];
 
-function normalizeDesignStyleId(id: string | undefined): DesignStyleId | undefined {
-  if (!id) return undefined;
-  if (VALID_DESIGN_STYLES.includes(id as DesignStyleId)) return id as DesignStyleId;
-  return "dynamic";
+const DEFAULT_DESIGN_STYLE: DesignStyleId = "dynamic";
+const DEFAULT_THEME: ThemeId = "academic-pro";
+
+function normalizeDesignStyleId(id: string | undefined): DesignStyleId {
+  if (id && VALID_DESIGN_STYLES.includes(id as DesignStyleId)) return id as DesignStyleId;
+  return DEFAULT_DESIGN_STYLE;
 }
 
-function normalizeThemeId(id: string | undefined): ThemeId | undefined {
-  if (!id) return undefined;
-  if (VALID_THEME_IDS.includes(id as ThemeId)) return id as ThemeId;
-  return undefined;
+function normalizeThemeId(id: string | undefined): ThemeId {
+  if (id && VALID_THEME_IDS.includes(id as ThemeId)) return id as ThemeId;
+  return DEFAULT_THEME;
 }
 
 /**
@@ -45,14 +46,14 @@ export function ensureDesignDefaults(slide: Slide): Slide {
   const design = slide.design || {};
   const direction = getEffectiveDirection(slide);
   const textAlign = getEffectiveTextAlign(slide, direction);
-  const normalizedDesignStyleId = normalizeDesignStyleId(design.designStyleId as string);
-  const normalizedThemeId = normalizeThemeId(design.themeId as string);
+  const designStyleId = normalizeDesignStyleId(design.designStyleId as string);
+  const themeId = normalizeThemeId(design.themeId as string);
 
   const hasChanges =
     design.textAlign !== textAlign ||
     design.direction !== direction ||
-    (normalizedDesignStyleId && design.designStyleId !== normalizedDesignStyleId) ||
-    (normalizedThemeId && design.themeId !== normalizedThemeId);
+    design.designStyleId !== designStyleId ||
+    design.themeId !== themeId;
 
   if (!hasChanges) return slide;
 
@@ -62,8 +63,8 @@ export function ensureDesignDefaults(slide: Slide): Slide {
       ...design,
       textAlign,
       direction,
-      ...(normalizedDesignStyleId && { designStyleId: normalizedDesignStyleId }),
-      ...(normalizedThemeId && { themeId: normalizedThemeId }),
+      designStyleId,
+      themeId,
     },
   };
 }

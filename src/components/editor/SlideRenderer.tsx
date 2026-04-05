@@ -69,7 +69,7 @@ export function SlideRenderer({
   onUpdateContent,
   liveResults,
   totalResponses = 0,
-  themeId = "neon-cyber",
+  themeId = "academic-pro",
   designStyleId = "dynamic",
   hideFooter = false,
   showCorrectAnswer = false,

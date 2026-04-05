@@ -12,29 +12,22 @@ done
 if [ "$SKIP_DB" = false ]; then
   echo "=== 1. מריצים מיגרציות Supabase ==="
   echo "אם עדיין לא קישרת את הפרויקט, הרץ קודם: npx supabase link --project-ref gctdhjgxrshrltbntjqj"
-  npx -y supabase db push || { echo "המיגרציות נכשלו. אם הרצת manual-schema-setup.sql ידנית, הרץ: ./scripts/deploy-production.sh --skip-db"; exit 1; }
+  npx -y supabase db push --include-all --yes || { echo "המיגרציות נכשלו. אם הרצת manual-schema-setup.sql ידנית, הרץ: ./scripts/deploy-production.sh --skip-db"; exit 1; }
 else
   echo "=== 1. מדלג על מיגרציות (--skip-db) ==="
 fi
 
 echo ""
-echo "=== 2. מעלים Edge Functions (AI, משחקים, תמונות) ==="
+echo "=== 2. מעלים את כל ה-Edge Functions ב-Supabase ==="
 npm run deploy:functions
 
 echo ""
-echo "=== 3. מעלים פונקציות PayPal ==="
-npm run deploy:paypal
-
-echo ""
-echo "=== 4. מעלים את ה-Frontend ל-Vercel ==="
+echo "=== 3. מעלים את ה-Frontend ל-Vercel ==="
 if command -v vercel &> /dev/null; then
-  vercel --prod
+  vercel --prod --yes
 else
-  echo "Vercel CLI לא מותקן. התקן עם: npm i -g vercel"
-  echo "או פשוט עשה push ל-GitHub – Vercel יעלה אוטומטית אם מחובר."
-  echo ""
-  echo "להעלאה ידנית:"
-  echo "  git add . && git commit -m 'Deploy updates' && git push origin main"
+  echo "Vercel לא ב-PATH — משתמשים ב-npx vercel"
+  npx -y vercel --prod --yes
 fi
 
 echo ""

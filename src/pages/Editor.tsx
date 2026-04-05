@@ -76,6 +76,7 @@ import {
   BarChart,
   Home,
   Video,
+  Settings2,
 } from "lucide-react";
 import { getLecture, updateLecture, createLecture } from "@/lib/lectureService";
 import { hydratePendingSlideImages, type PendingSlideImage } from "@/lib/hydrateSlideImages";
@@ -99,6 +100,7 @@ import {
   sanitizeWebinarRegistrationForSave,
 } from "@/types/webinarRegistration";
 import { WebinarSettingsWizard } from "@/components/editor/WebinarSettingsWizard";
+import { PresentationBrandingPanel } from "@/components/editor/PresentationBrandingPanel";
 import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
@@ -223,6 +225,7 @@ const Editor = () => {
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showAddSlidePicker, setShowAddSlidePicker] = useState(false);
   const [showWebinarSettingsDialog, setShowWebinarSettingsDialog] = useState(false);
+  const [showPresentationSettingsDialog, setShowPresentationSettingsDialog] = useState(false);
   const [selectedThemeId, setSelectedThemeId] = useState<ThemeId>('academic-pro');
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
@@ -1049,17 +1052,11 @@ const Editor = () => {
     webinarRegConfig,
   ]);
 
-  // Save title changes (persist current display slides so title + slides stay in sync)
-  const saveTitleToDatabase = useCallback(async () => {
-    if (!lectureDbId) return;
-    
-    try {
-      const slidesToSave = sandboxSlides.length > 0 ? sandboxSlides : slides;
-      await updateLecture(lectureDbId, { slides: slidesToSave });
-    } catch (error) {
-      console.error('Error saving title:', error);
-    }
-  }, [lectureDbId, slides, sandboxSlides]);
+  // Mark changes on title blur so the next explicit save includes the title.
+  // Previously this sent the full slides array on every blur — wasteful multi-hundred-KB write.
+  const saveTitleToDatabase = useCallback(() => {
+    if (lectureDbId) setHasChanges(true);
+  }, [lectureDbId]);
 
   // Save only on milestones: AI complete, navigate away, Cmd+S. No auto-save debounce.
 
@@ -1401,7 +1398,7 @@ const Editor = () => {
         </div>
       </div>
 
-      {/* Top Toolbar - Google Slides style; webinar settings stay clickable while AI generates slides */}
+      {/* Top Toolbar - Google Slides style; settings stay clickable while AI generates slides */}
       <div className="flex flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
         {lectureMode === "webinar" && (
           <div className="flex items-center px-2 sm:px-3 border-r border-border/50 shrink-0 bg-card/80">
@@ -1411,11 +1408,37 @@ const Editor = () => {
               size="sm"
               className="h-8 gap-1.5 shrink-0"
               onClick={() => setShowWebinarSettingsDialog(true)}
-              title='Live CTA for phones: set label and URL here, then tap "CTA" in Present mode.'
+              title='Branding, registration form, and live CTA settings'
             >
               <Video className="w-4 h-4 shrink-0" />
               <span className="hidden sm:inline">Webinar settings</span>
               <span className="sm:hidden">Webinar</span>
+            </Button>
+          </div>
+        )}
+        {lectureMode === "education" && (
+          <div className="flex items-center px-2 sm:px-3 border-r border-border/50 shrink-0 bg-card/80">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 shrink-0"
+              onClick={() => {
+                if (!isPro) {
+                  showUpgradeModal({
+                    feature: "presentation settings",
+                    title: "Presentation settings",
+                    description: "Custom logo and accent color are available on the Pro plan. Upgrade to brand your presentations.",
+                  });
+                  return;
+                }
+                setShowPresentationSettingsDialog(true);
+              }}
+              title='Custom logo and accent color for your presentation'
+            >
+              <Settings2 className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline">Presentation settings</span>
+              <span className="sm:hidden">Settings</span>
             </Button>
           </div>
         )}
@@ -1518,6 +1541,45 @@ const Editor = () => {
           />
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={() => setShowWebinarSettingsDialog(false)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Presentation Settings (education mode - branding only) */}
+      <Dialog open={showPresentationSettingsDialog} onOpenChange={setShowPresentationSettingsDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Presentation settings</DialogTitle>
+            <DialogDescription className="text-sm">
+              Custom branding for your presentation. <strong className="text-foreground">Save</strong> in the editor header to apply.
+            </DialogDescription>
+          </DialogHeader>
+          <PresentationBrandingPanel
+            branding={webinarRegConfig.branding}
+            onBrandingChange={(branding) => {
+              setWebinarRegConfig((prev) => ({ ...prev, branding }));
+              setHasChanges(true);
+            }}
+            isPro={!!isPro}
+            onPremiumLogoBlocked={() =>
+              showUpgradeModal({
+                feature: "logo",
+                title: "Logo upload",
+                description: "Logo upload is available on the Pro plan. Upgrade to add your brand logo.",
+              })
+            }
+            onPremiumColorBlocked={() =>
+              showUpgradeModal({
+                feature: "custom color",
+                title: "Custom color picker",
+                description: "Custom accent color is available on the Pro plan. Upgrade to unlock.",
+              })
+            }
+          />
+          <DialogFooter>
+            <Button type="button" variant="secondary" onClick={() => setShowPresentationSettingsDialog(false)}>
               Done
             </Button>
           </DialogFooter>

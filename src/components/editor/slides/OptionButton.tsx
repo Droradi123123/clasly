@@ -30,7 +30,7 @@ export function OptionButton({
   editable = false,
   variant = 'quiz',
   totalOptions = 4,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
 }: OptionButtonProps) {
   const theme = getTheme(themeId);
   const colorClass = getSafeOptionColor(theme, index);

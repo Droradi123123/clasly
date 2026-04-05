@@ -105,7 +105,7 @@ export function useSubscription(): SubscriptionState & SubscriptionHelpers {
         const shouldRetry = attempt < FETCH_RETRY_MAX;
         if (shouldRetry) {
           await new Promise((r) => setTimeout(r, FETCH_RETRY_DELAY_MS));
-          fetchData(attempt + 1);
+          return fetchData(attempt + 1);
         } else {
           console.error("Error fetching subscription:", error);
           setState((prev) => ({

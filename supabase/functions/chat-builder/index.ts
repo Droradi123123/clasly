@@ -8,6 +8,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Module-scoped singletons — reused across requests to avoid connection pool exhaustion
+const _sbUrl = Deno.env.get("SUPABASE_URL") ?? "";
+const _sbAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const _sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const supabaseAnon = _sbUrl && _sbAnonKey ? createClient(_sbUrl, _sbAnonKey) : null;
+const supabaseAdmin = _sbUrl && _sbServiceKey ? createClient(_sbUrl, _sbServiceKey) : null;
+
 // =============================================================================
 // AUTH HELPER
 // =============================================================================
@@ -19,15 +26,12 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { user: null, error: "Missing token" };
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) return { user: null, error: "Server configuration error" };
+  if (!supabaseAnon) return { user: null, error: "Server configuration error" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
+  } = await supabaseAnon.auth.getUser(token);
   if (error || !user) {
     return { user: null, error: error?.message || "Invalid or expired authentication token" };
   }
@@ -1135,12 +1139,9 @@ function buildNewSlideContent(slideType: string, raw: any): SlideContent {
 // =============================================================================
 
 async function getUserMaxSlides(userId: string): Promise<number> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) return 5;
+  if (!supabaseAdmin) return 5;
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data: sub } = await supabase
+  const { data: sub } = await supabaseAdmin
     .from("user_subscriptions")
     .select("plan_id")
     .eq("user_id", userId)
@@ -1148,7 +1149,7 @@ async function getUserMaxSlides(userId: string): Promise<number> {
 
   if (!sub?.plan_id) return 5;
 
-  const { data: plan } = await supabase
+  const { data: plan } = await supabaseAdmin
     .from("subscription_plans")
     .select("max_slides")
     .eq("id", sub.plan_id)
@@ -1164,12 +1165,9 @@ async function getUserAiSettings(userId: string): Promise<{
   teaching_style?: string;
   additional_context?: string;
 } | null> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) return null;
+  if (!supabaseAdmin) return null;
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from("user_ai_settings")
     .select("who_am_i, what_i_lecture, teaching_style, additional_context")
     .eq("user_id", userId)
@@ -1186,55 +1184,26 @@ async function consumeCredits(
   amount: number,
   description: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseAdmin) {
     console.error("Missing Supabase configuration for credits");
     return { success: false, error: "Server configuration error" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data, error: rpcError } = await supabaseAdmin.rpc("atomic_consume_credits", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_description: description,
+  });
 
-  // Get current balance
-  const { data: credits, error: fetchError } = await supabase
-    .from("user_credits")
-    .select("ai_tokens_balance, ai_tokens_consumed")
-    .eq("user_id", userId)
-    .single();
-
-  if (fetchError) {
-    console.error("Error fetching user credits:", fetchError);
-    return { success: false, error: "Could not fetch credits" };
+  if (rpcError) {
+    console.error("atomic_consume_credits RPC error:", rpcError);
+    return { success: false, error: rpcError.message || "Could not update credits" };
   }
 
-  if (!credits || credits.ai_tokens_balance < amount) {
+  const newBalance = typeof data === "number" ? data : Number(data);
+  if (newBalance === -1 || Number.isNaN(newBalance)) {
     return { success: false, error: "Insufficient credits" };
   }
-
-  // Deduct credits
-  const { error: updateError } = await supabase
-    .from("user_credits")
-    .update({
-      ai_tokens_balance: credits.ai_tokens_balance - amount,
-      ai_tokens_consumed: (credits.ai_tokens_consumed || 0) + amount,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
-
-  if (updateError) {
-    console.error("Error updating credits:", updateError);
-    return { success: false, error: "Could not update credits" };
-  }
-
-  // Log transaction
-  await supabase.from("credit_transactions").insert({
-    user_id: userId,
-    credit_type: "ai_tokens",
-    transaction_type: "consume",
-    amount: -amount,
-    description,
-  });
 
   console.log(`💳 Consumed ${amount} credits from user ${userId}: ${description}`);
   return { success: true };
@@ -1527,6 +1496,13 @@ serve(async (req) => {
     }
     console.log(`🔐 User: ${user.id}`);
 
+    if (!supabaseAdmin) {
+      return new Response(JSON.stringify({ error: "Server configuration error" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Parse body
     const body = await req.json();
     const {
@@ -1570,11 +1546,8 @@ serve(async (req) => {
       : [];
 
     // Early check BEFORE AI call: do not waste tokens if user has no credits
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (supabaseUrl && supabaseServiceKey) {
-      const checkSupabase = createClient(supabaseUrl, supabaseServiceKey);
-      const { data: credits } = await checkSupabase
+    {
+      const { data: credits } = await supabaseAdmin
         .from("user_credits")
         .select("ai_tokens_balance")
         .eq("user_id", user.id)
@@ -1710,11 +1683,7 @@ serve(async (req) => {
         creditsConsumed = Math.max(1, affectedSlideIndices.size);
 
         // Check if user has enough credits BEFORE executing
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const checkSupabase = createClient(supabaseUrl!, supabaseServiceKey!);
-        
-        const { data: credits } = await checkSupabase
+        const { data: credits } = await supabaseAdmin
           .from("user_credits")
           .select("ai_tokens_balance")
           .eq("user_id", user.id)

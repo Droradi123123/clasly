@@ -17,14 +17,11 @@ import {
 } from "@/lib/lectureService";
 import {
   createLectureSyncChannel,
-  createReactionsChannel,
-  createGameChannel,
   createStudentPresenceChannel,
 } from "@/lib/liveChannels";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, removeAllChannels } from "@/integrations/supabase/client";
 import {
   Slide,
-  SLIDE_TYPES,
   SentimentMeterSlideContent,
   AgreeSpectrumSlideContent,
   getResolvedActivitySettings,
@@ -103,6 +100,13 @@ const Student = () => {
   const navigate = useNavigate();
   const studentId = searchParams.get("studentId") || "";
 
+  // Cleanup ALL channels when unmounting to prevent orphan subscriptions.
+  useEffect(() => {
+    return () => {
+      removeAllChannels();
+    };
+  }, []);
+
   const [lecture, setLecture] = useState<any>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -132,6 +136,7 @@ const Student = () => {
   const [agreeValue, setAgreeValue] = useState([50]);
   const [pointsEarnedAnimation, setPointsEarnedAnimation] = useState<number | null>(null);
   const [realtimeReconnectKey, setRealtimeReconnectKey] = useState(0);
+  const realtimeReconnectAttemptsRef = useRef(0);
   const [ctaOverlay, setCtaOverlay] = useState<{ label: string; url: string } | null>(null);
   const [studentRaffleName, setStudentRaffleName] = useState<string | null>(null);
   const previousPointsRef = React.useRef<number>(0);
@@ -332,7 +337,7 @@ const Student = () => {
     console.log('[Student] Subscribing to lecture updates:', lecture.id);
     setIsDbRealtimeConnected(false);
 
-    let pollIntervalMs = 1000; // Layer 3: start 1s, exponential backoff on success up to 3s
+    let pollIntervalMs = 2500; // Layer 3: start 2.5s, backoff up to 8s when realtime is healthy
     let pollTimeoutId: NodeJS.Timeout | null = null;
     let lastUpdatedAt = lecture.updated_at;
     let lastSlideIndex = lecture.current_slide_index;
@@ -348,44 +353,47 @@ const Student = () => {
       }
     });
 
-    // Polling fallback function - more aggressive
+    // Lightweight poll: fetch only sync-relevant columns, NOT the full slides JSONB.
+    // Full slides are fetched only when updated_at changes (via refetchLectureState).
     const pollForUpdates = async () => {
       try {
         const { data, error } = await supabase
           .from('lectures')
-          .select('*')
+          .select('current_slide_index, updated_at, activity_started_at, status')
           .eq('id', lecture.id)
           .single();
 
         if (error) {
           console.error('[Student] Poll error:', error);
-          pollIntervalMs = Math.min(pollIntervalMs * 1.2, 5000); // Max 5s on error
+          pollIntervalMs = Math.min(pollIntervalMs * 1.3, 10000);
         } else if (data) {
           const nextActivityAt = data.activity_started_at ?? null;
-          // Include activity_started_at so "End question" / timer phase sync is never missed when index unchanged
           if (
             data.current_slide_index !== lastSlideIndex ||
             data.updated_at !== lastUpdatedAt ||
             nextActivityAt !== lastActivityStartedAt
           ) {
             console.log('[Student] Poll detected change - slide:', data.current_slide_index);
-            lastUpdatedAt = data.updated_at;
             lastSlideIndex = data.current_slide_index;
             lastActivityStartedAt = nextActivityAt;
-            applyLectureUpdate(data);
-            pollIntervalMs = 1000; // Reset to fast polling
+            if (data.updated_at !== lastUpdatedAt) {
+              lastUpdatedAt = data.updated_at;
+              void refetchLectureState(lecture.id, false);
+            } else {
+              applyLectureUpdate({ ...lecture, ...data });
+            }
+            pollIntervalMs = 2500;
           } else if (isRealtimeActive) {
-            // No changes and realtime works, slow down slightly
-            pollIntervalMs = Math.min(pollIntervalMs * 1.1, 3000);
+            pollIntervalMs = Math.min(pollIntervalMs * 1.15, 8000);
           }
         }
       } catch (err) {
         console.error('[Student] Poll exception:', err);
-        pollIntervalMs = Math.min(pollIntervalMs * 1.2, 5000);
+        pollIntervalMs = Math.min(pollIntervalMs * 1.3, 10000);
       }
 
       const nextDelay = !isRealtimeActive
-        ? Math.min(pollIntervalMs, 800)
+        ? Math.min(pollIntervalMs, 1500)
         : pollIntervalMs;
       pollTimeoutId = setTimeout(pollForUpdates, nextDelay);
     };
@@ -418,7 +426,7 @@ const Student = () => {
               lastActivityStartedAt = nextActivityAt;
               applyLectureUpdate(payload.new);
             }
-            pollIntervalMs = 2000; // Slow down polling when realtime works
+            pollIntervalMs = 5000;
           }
         }
       )
@@ -428,9 +436,20 @@ const Student = () => {
         setIsDbRealtimeConnected(status === 'SUBSCRIBED');
 
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.warn('[Student] Realtime channel error, relying on polling; will re-subscribe after delay');
-          pollIntervalMs = 1000; // Speed up polling if realtime fails
-          setTimeout(() => setRealtimeReconnectKey((k) => k + 1), REALTIME_RESUBSCRIBE_DELAY_MS);
+          const attempts = realtimeReconnectAttemptsRef.current;
+          if (attempts < 8) {
+            const delay = Math.min(REALTIME_RESUBSCRIBE_DELAY_MS * Math.pow(2, attempts), 30000);
+            console.warn(`[Student] Realtime error, retry #${attempts + 1} in ${delay}ms`);
+            realtimeReconnectAttemptsRef.current = attempts + 1;
+            pollIntervalMs = 1500;
+            setTimeout(() => setRealtimeReconnectKey((k) => k + 1), delay);
+          } else {
+            console.warn('[Student] Realtime max retries reached, relying on polling only');
+            pollIntervalMs = 2000;
+          }
+        }
+        if (status === 'SUBSCRIBED') {
+          realtimeReconnectAttemptsRef.current = 0;
         }
       });
 
@@ -465,6 +484,10 @@ const Student = () => {
             setShowConfetti(false);
           }, 4000);
         }
+      })
+      .on("broadcast", { event: "game_active" }, ({ payload }) => {
+        const p = payload as { active?: boolean };
+        setIsGameActive(!!p?.active);
       })
       .on('broadcast', { event: 'slide_changed' }, ({ payload }) => {
         const p = payload as {
@@ -524,23 +547,9 @@ const Student = () => {
     };
   }, [lecture?.id, refetchLectureState]);
 
-  // Subscribe to game events
-  useEffect(() => {
-    if (!lecture?.id) return;
-
-    const channel = createGameChannel(lecture.id);
-
-    channel
-      .on('broadcast', { event: 'game_state' }, ({ payload }) => {
-        const state = payload as { status: string };
-        setIsGameActive(state.status !== 'ended' && state.status !== undefined);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [lecture?.id]);
+  // Game activation is detected via the lecture-sync channel (game_active event).
+  // The actual game channel (game-${id}) is only created when StudentGameControls mounts,
+  // avoiding an eager channel allocation for every student.
 
   // Load student info
   useEffect(() => {
@@ -801,36 +810,13 @@ const Student = () => {
     handleSubmitResponse({ ranking: items }, undefined, pts.pointsForParticipation);
   };
 
-  // Ref for the persistent emoji reaction channel
-  const reactionChannelRef = React.useRef<ReturnType<typeof supabase.channel> | null>(null);
-
-  // Initialize reaction channel once
-  useEffect(() => {
-    if (!lecture?.id) return;
-
-    const channel = createReactionsChannel(lecture.id);
-    
-    channel.subscribe((status) => {
-      console.log('[Student] Reaction channel status:', status);
-    });
-    
-    reactionChannelRef.current = channel;
-
-    return () => {
-      if (reactionChannelRef.current) {
-        supabase.removeChannel(reactionChannelRef.current);
-        reactionChannelRef.current = null;
-      }
-    };
-  }, [lecture?.id]);
-
-  // Send emoji reaction via broadcast - reuses persistent channel
+  // Send emoji reaction via the existing lecture-sync broadcast channel (no separate channel needed)
   const handleSendReaction = (emoji: string) => {
     setLastReaction(emoji);
     setTimeout(() => setLastReaction(null), 1000);
-    
-    if (reactionChannelRef.current) {
-      reactionChannelRef.current.send({
+
+    if (lectureSyncChannelRef.current) {
+      lectureSyncChannelRef.current.send({
         type: 'broadcast',
         event: 'emoji_reaction',
         payload: {
@@ -839,8 +825,6 @@ const Student = () => {
           studentName: student?.name,
           timestamp: Date.now(),
         }
-      }).then(() => {
-        console.log('[Student] Emoji sent:', emoji);
       }).catch((err) => {
         console.error('[Student] Failed to send emoji:', err);
       });
@@ -1182,298 +1166,308 @@ const Student = () => {
           ) : (
           <motion.div
             key={currentSlide.id}
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             aria-busy={isSubmitting}
-            className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden rounded-none border-0 border-border/50 bg-card px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-lg md:mx-auto md:max-w-3xl md:rounded-2xl md:border md:p-6 ${isSubmitting ? "opacity-[0.92]" : ""}`}
+            className={`flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-card px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:mx-auto md:max-w-3xl md:rounded-2xl md:border md:border-border/50 md:p-6 md:shadow-lg ${isSubmitting ? "opacity-[0.92]" : ""}`}
           >
+            {/* Timer bar */}
             {participativeSlide && hasTimer && !Number.isNaN(startedAtMs) && (
-              <div className="flex items-center justify-between gap-3 mb-4 p-3 rounded-xl bg-violet-500/10 border border-violet-500/25">
-                <div className="flex items-center gap-2 text-violet-700 dark:text-violet-200">
-                  <Clock className="w-5 h-5" />
-                  <span className="text-sm font-medium">Time left</span>
+              <div className="flex items-center justify-between gap-2 mb-3 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                <div className="flex items-center gap-1.5 text-violet-700 dark:text-violet-200">
+                  <Clock className="w-4 h-4" />
+                  <span className="text-xs font-medium">Time left</span>
                 </div>
-                <span className="text-2xl font-bold tabular-nums text-violet-700 dark:text-violet-100">
+                <span className="text-lg font-bold tabular-nums text-violet-700 dark:text-violet-100">
                   {remainingSec}s
                 </span>
               </div>
             )}
-            <div className="flex items-center gap-2 text-sm text-primary font-medium mb-2">
-              <Presentation className="w-4 h-4" />
-              {SLIDE_TYPES.find(t => t.type === currentSlide.type)?.label || currentSlide.type}
-            </div>
-            <p className="text-[11px] sm:text-xs text-muted-foreground text-center sm:text-start mb-4 leading-snug px-0.5">
-              Answer on your phone — slides stay on the main screen.
-            </p>
 
-            <h2 className="text-xl font-display font-bold text-foreground mb-6">
+            {/* Question */}
+            <h2 className="text-lg sm:text-xl font-display font-bold text-foreground mb-3 leading-snug">
               {(currentSlide.content as any).question || (currentSlide.content as any).statement || (currentSlide.content as any).sentenceStart || (currentSlide.content as any).title}
             </h2>
 
-            {/* Quiz/Poll/Poll_quiz Options - 2x2 grid for 4 options */}
-            {(currentSlide.type === 'quiz' || currentSlide.type === 'poll' || currentSlide.type === 'poll_quiz') && (
-              <div className={((currentSlide.content as any).options || []).length === 4
-                ? "grid grid-cols-2 gap-4"
-                : "space-y-3"
-              }>
-                {((currentSlide.content as any).options || []).map((option: string, index: number) => (
-                  <motion.button
-                    type="button"
-                    key={index}
-                    onClick={() => (currentSlide.type === 'quiz' || currentSlide.type === 'poll_quiz') ? handleQuizAnswer(index) : handlePollAnswer(index)}
-                    disabled={hasAnswered || isSubmitting}
-                    whileHover={{ scale: hasAnswered ? 1 : 1.02 }}
-                    whileTap={{ scale: hasAnswered ? 1 : 0.98 }}
-                    className={`w-full min-h-[4.5rem] p-5 sm:p-6 rounded-xl text-left transition-all text-white font-semibold text-lg sm:text-xl shadow-lg ${
-                      selectedOption === index
-                        ? "ring-2 ring-white ring-offset-2 ring-offset-background"
-                        : hasAnswered
-                        ? "opacity-50"
-                        : ""
-                    } ${getOptionColor(index)}`}
-                  >
-                    {option}
-                  </motion.button>
-                ))}
-              </div>
-            )}
+            {/* ─── Quiz / Poll / Poll_quiz ─── */}
+            {(currentSlide.type === 'quiz' || currentSlide.type === 'poll' || currentSlide.type === 'poll_quiz') && (() => {
+              const options: string[] = (currentSlide.content as any).options || [];
+              const isGrid = options.length >= 4;
+              return (
+                <div className={isGrid ? "grid grid-cols-2 gap-2.5 flex-1 content-center" : "flex flex-col gap-2.5 flex-1 justify-center"}>
+                  {options.map((option: string, index: number) => (
+                    <motion.button
+                      type="button"
+                      key={index}
+                      onClick={() => (currentSlide.type === 'quiz' || currentSlide.type === 'poll_quiz') ? handleQuizAnswer(index) : handlePollAnswer(index)}
+                      disabled={hasAnswered || isSubmitting}
+                      whileTap={{ scale: hasAnswered ? 1 : 0.97 }}
+                      className={`w-full rounded-2xl text-left transition-all text-white font-semibold shadow-md active:shadow-inner touch-manipulation ${
+                        isGrid
+                          ? "px-3.5 py-4 text-[15px] leading-snug min-h-[3.5rem]"
+                          : "px-4 py-4 text-base sm:text-lg min-h-[3.25rem]"
+                      } ${
+                        selectedOption === index
+                          ? "ring-[3px] ring-white ring-offset-2 ring-offset-background scale-[1.02]"
+                          : hasAnswered
+                          ? "opacity-40"
+                          : ""
+                      } ${getOptionColor(index)}`}
+                    >
+                      {option}
+                    </motion.button>
+                  ))}
+                </div>
+              );
+            })()}
 
-            {/* Yes/No - Using gradient colors matching presenter */}
+            {/* ─── Yes / No ─── */}
             {currentSlide.type === 'yesno' && (
-              <div className="grid grid-cols-2 gap-4 touch-manipulation">
+              <div className="grid grid-cols-2 gap-3 flex-1 content-center touch-manipulation">
                 <motion.button
                   type="button"
                   onClick={() => handleYesNo(true)}
                   disabled={hasAnswered || isSubmitting}
-                  whileHover={{ scale: hasAnswered ? 1 : 1.05 }}
                   whileTap={{ scale: hasAnswered ? 1 : 0.95 }}
-                  className={`min-h-[5rem] p-8 sm:p-10 rounded-2xl text-center text-lg sm:text-xl font-semibold transition-all shadow-xl ${
+                  className={`flex flex-col items-center justify-center gap-2 rounded-2xl py-6 transition-all shadow-lg active:shadow-inner ${
                     hasAnswered && selectedOption === 0
-                      ? "ring-2 ring-white"
+                      ? "ring-[3px] ring-white scale-[1.02]"
                       : hasAnswered
-                      ? "opacity-50"
+                      ? "opacity-40"
                       : ""
-                  } bg-gradient-to-br from-emerald-500 to-green-500 text-white`}
+                  } bg-gradient-to-br from-emerald-500 to-green-600 text-white`}
                 >
-                  <ThumbsUp className="w-10 h-10 mx-auto mb-2" />
-                  <span className="text-xl font-bold">{(currentSlide.content as any).yesLabel || 'Yes'}</span>
+                  <ThumbsUp className="w-8 h-8" />
+                  <span className="text-lg font-bold">{(currentSlide.content as any).yesLabel || 'Yes'}</span>
                 </motion.button>
                 <motion.button
                   type="button"
                   onClick={() => handleYesNo(false)}
                   disabled={hasAnswered || isSubmitting}
-                  whileHover={{ scale: hasAnswered ? 1 : 1.05 }}
                   whileTap={{ scale: hasAnswered ? 1 : 0.95 }}
-                  className={`min-h-[5rem] p-8 sm:p-10 rounded-2xl text-center text-lg sm:text-xl font-semibold transition-all shadow-xl ${
+                  className={`flex flex-col items-center justify-center gap-2 rounded-2xl py-6 transition-all shadow-lg active:shadow-inner ${
                     hasAnswered && selectedOption === 1
-                      ? "ring-2 ring-white"
+                      ? "ring-[3px] ring-white scale-[1.02]"
                       : hasAnswered
-                      ? "opacity-50"
+                      ? "opacity-40"
                       : ""
-                  } bg-gradient-to-br from-rose-500 to-red-500 text-white`}
+                  } bg-gradient-to-br from-rose-500 to-red-600 text-white`}
                 >
-                  <ThumbsDown className="w-10 h-10 mx-auto mb-2" />
-                  <span className="text-xl font-bold">{(currentSlide.content as any).noLabel || 'No'}</span>
+                  <ThumbsDown className="w-8 h-8" />
+                  <span className="text-lg font-bold">{(currentSlide.content as any).noLabel || 'No'}</span>
                 </motion.button>
               </div>
             )}
 
-            {/* Word Cloud Input */}
+            {/* ─── Word Cloud ─── */}
             {currentSlide.type === 'wordcloud' && (
-              <div className="space-y-4">
+              <div className="flex flex-col gap-3 flex-1 justify-center">
                 <Input
                   value={wordInput}
                   onChange={(e) => setWordInput(e.target.value)}
-                  placeholder="Enter a word..."
-                  className="text-lg"
+                  placeholder="Type your word…"
+                  className="h-14 rounded-xl text-lg px-4 border-2 border-border focus-visible:border-primary"
                   disabled={hasAnswered || isSubmitting}
+                  autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !hasAnswered && !isSubmitting) void handleWordSubmit();
                   }}
                 />
                 <Button
                   variant="hero"
-                  className="w-full"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-base font-semibold"
                   onClick={() => void handleWordSubmit()}
                   disabled={!wordInput.trim() || hasAnswered || isSubmitting}
                 >
                   {hasAnswered ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Recorded
-                    </>
+                    <><Check className="w-5 h-5" /> Recorded</>
                   ) : isSubmitting ? (
-                    <span className="text-sm font-medium">Saving…</span>
+                    <Loader2 className="w-5 h-5 animate-spin" />
                   ) : (
-                    <>
-                      <Send className="w-4 h-4" />
-                      Submit
-                    </>
+                    <><Send className="w-5 h-5" /> Submit</>
                   )}
                 </Button>
               </div>
             )}
 
-            {/* Guess Number Input */}
+            {/* ─── Guess Number ─── */}
             {currentSlide.type === 'guess_number' && (
-              <div className="space-y-4">
-                <div className="text-center text-muted-foreground mb-2">
-                  Range: {(currentSlide.content as any).minRange || 1} - {(currentSlide.content as any).maxRange || 100}
+              <div className="flex flex-col gap-3 flex-1 justify-center">
+                <div className="flex items-center justify-center">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-sm font-medium text-muted-foreground">
+                    Range: {(currentSlide.content as any).minRange || 1} – {(currentSlide.content as any).maxRange || 100}
+                  </span>
                 </div>
                 <Input
                   type="number"
+                  inputMode="numeric"
                   value={numberInput}
                   onChange={(e) => setNumberInput(e.target.value)}
-                  placeholder="Enter your guess..."
-                  className="text-lg text-center"
+                  placeholder="Your guess…"
+                  className="h-16 rounded-xl text-2xl text-center font-bold border-2 border-border focus-visible:border-primary tabular-nums"
                   disabled={hasAnswered || isSubmitting}
+                  autoFocus
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !hasAnswered && !isSubmitting) handleNumberSubmit();
                   }}
                 />
                 <Button
                   variant="hero"
-                  className="w-full"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-base font-semibold"
                   onClick={handleNumberSubmit}
                   disabled={!numberInput || hasAnswered || isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   Submit Guess
                 </Button>
               </div>
             )}
 
-            {/* Scale Slider */}
+            {/* ─── Scale ─── */}
             {currentSlide.type === 'scale' && (
-              <div className="space-y-6">
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{(currentSlide.content as any).scaleOptions?.minLabel || 'Low'}</span>
-                  <span>{(currentSlide.content as any).scaleOptions?.maxLabel || 'High'}</span>
-                </div>
-                <Slider
-                  value={scaleValue}
-                  onValueChange={setScaleValue}
-                  min={1}
-                  max={(currentSlide.content as any).scaleOptions?.steps || 5}
-                  step={1}
-                  disabled={hasAnswered || isSubmitting}
-                  className="py-4"
-                />
+              <div className="flex flex-col gap-4 flex-1 justify-center">
                 <div className="text-center">
-                  <span className="text-3xl font-bold text-primary">{scaleValue[0]}</span>
+                  <span className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 text-3xl font-bold text-primary tabular-nums">
+                    {scaleValue[0]}
+                  </span>
+                </div>
+                <div className="px-1">
+                  <Slider
+                    value={scaleValue}
+                    onValueChange={setScaleValue}
+                    min={1}
+                    max={(currentSlide.content as any).scaleOptions?.steps || 5}
+                    step={1}
+                    disabled={hasAnswered || isSubmitting}
+                    className="py-3"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>{(currentSlide.content as any).scaleOptions?.minLabel || 'Low'}</span>
+                    <span>{(currentSlide.content as any).scaleOptions?.maxLabel || 'High'}</span>
+                  </div>
                 </div>
                 <Button
                   variant="hero"
-                  className="w-full"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-base font-semibold"
                   onClick={handleScaleSubmit}
                   disabled={hasAnswered || isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   Submit Rating
                 </Button>
               </div>
             )}
 
-            {/* Sentiment Meter - Emoji slider 0-100 */}
+            {/* ─── Sentiment Meter ─── */}
             {currentSlide.type === 'sentiment_meter' && (
-              <div className="space-y-6">
-                <div className="flex justify-between text-3xl">
-                  <span>{(currentSlide.content as SentimentMeterSlideContent).leftEmoji || '😡'}</span>
-                  <span>{(currentSlide.content as SentimentMeterSlideContent).rightEmoji || '😍'}</span>
+              <div className="flex flex-col gap-4 flex-1 justify-center">
+                <div className="flex items-end justify-between px-1">
+                  <span className="text-4xl">{(currentSlide.content as SentimentMeterSlideContent).leftEmoji || '😡'}</span>
+                  <span className="text-2xl font-bold text-primary tabular-nums">{sentimentValue[0]}%</span>
+                  <span className="text-4xl">{(currentSlide.content as SentimentMeterSlideContent).rightEmoji || '😍'}</span>
                 </div>
-                <Slider
-                  value={sentimentValue}
-                  onValueChange={setSentimentValue}
-                  min={0}
-                  max={100}
-                  step={1}
-                  disabled={hasAnswered || isSubmitting}
-                  className="py-4"
-                />
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{(currentSlide.content as SentimentMeterSlideContent).leftLabel || 'Not great'}</span>
-                  <span>{(currentSlide.content as SentimentMeterSlideContent).rightLabel || 'Amazing'}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-2xl font-bold text-primary">{sentimentValue[0]}%</span>
+                <div className="px-1">
+                  <Slider
+                    value={sentimentValue}
+                    onValueChange={setSentimentValue}
+                    min={0}
+                    max={100}
+                    step={1}
+                    disabled={hasAnswered || isSubmitting}
+                    className="py-3"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span>{(currentSlide.content as SentimentMeterSlideContent).leftLabel || 'Not great'}</span>
+                    <span>{(currentSlide.content as SentimentMeterSlideContent).rightLabel || 'Amazing'}</span>
+                  </div>
                 </div>
                 <Button
                   variant="hero"
-                  className="w-full"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-base font-semibold"
                   onClick={handleSentimentSubmit}
                   disabled={hasAnswered || isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   Submit
                 </Button>
               </div>
             )}
 
-            {/* Agree/Disagree Spectrum - 0-100 slider */}
+            {/* ─── Agree / Disagree Spectrum ─── */}
             {currentSlide.type === 'agree_spectrum' && (
-              <div className="space-y-6">
-                <Slider
-                  value={agreeValue}
-                  onValueChange={setAgreeValue}
-                  min={0}
-                  max={100}
-                  step={1}
-                  disabled={hasAnswered || isSubmitting}
-                  className="py-4"
-                />
-                <div className="flex justify-between text-sm text-muted-foreground">
-                  <span>{(currentSlide.content as AgreeSpectrumSlideContent).leftLabel || 'Strongly Disagree'}</span>
-                  <span>{(currentSlide.content as AgreeSpectrumSlideContent).rightLabel || 'Strongly Agree'}</span>
-                </div>
+              <div className="flex flex-col gap-4 flex-1 justify-center">
                 <div className="text-center">
-                  <span className="text-2xl font-bold text-primary">{agreeValue[0]}%</span>
+                  <span className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 text-2xl font-bold text-primary tabular-nums">
+                    {agreeValue[0]}%
+                  </span>
+                </div>
+                <div className="px-1">
+                  <Slider
+                    value={agreeValue}
+                    onValueChange={setAgreeValue}
+                    min={0}
+                    max={100}
+                    step={1}
+                    disabled={hasAnswered || isSubmitting}
+                    className="py-3"
+                  />
+                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                    <span className="max-w-[45%]">{(currentSlide.content as AgreeSpectrumSlideContent).leftLabel || 'Strongly Disagree'}</span>
+                    <span className="max-w-[45%] text-right">{(currentSlide.content as AgreeSpectrumSlideContent).rightLabel || 'Strongly Agree'}</span>
+                  </div>
                 </div>
                 <Button
                   variant="hero"
-                  className="w-full"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-base font-semibold"
                   onClick={handleAgreeSubmit}
                   disabled={hasAnswered || isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   Submit
                 </Button>
               </div>
             )}
 
-            {/* Ranking with smooth Reorder drag-and-drop */}
+            {/* ─── Ranking (drag-and-drop) ─── */}
             {currentSlide.type === 'ranking' && (
-              <div className="space-y-3">
+              <div className="flex flex-col gap-2.5 flex-1 min-h-0">
                 <Reorder.Group
                   axis="y"
                   values={rankingOrder.length > 0 ? rankingOrder : ((currentSlide.content as any).items || [])}
                   onReorder={setRankingOrder}
-                  className="space-y-2"
+                  className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0"
                 >
                   {(rankingOrder.length > 0 ? rankingOrder : ((currentSlide.content as any).items || [])).map((item: string, index: number) => (
                     <Reorder.Item
                       key={item}
                       value={item}
-                      className={`p-4 rounded-xl flex items-center gap-3 cursor-grab active:cursor-grabbing touch-manipulation text-white shadow-lg ${
-                        hasAnswered ? 'opacity-60 cursor-not-allowed' : ''
+                      className={`flex items-center gap-2.5 px-3 py-3 rounded-xl text-white shadow-md touch-manipulation ${
+                        hasAnswered ? 'opacity-50 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing'
                       } ${getOptionColor(index)}`}
                       drag={!hasAnswered ? "y" : false}
-                      whileDrag={{ scale: 1.02, boxShadow: "0 10px 30px rgba(0,0,0,0.3)" }}
+                      whileDrag={{ scale: 1.03, boxShadow: "0 8px 24px rgba(0,0,0,0.25)" }}
                     >
-                      <span className="w-8 h-8 rounded-full bg-white/20 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                      <span className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold shrink-0">
                         {index + 1}
                       </span>
-                      <span className="font-medium flex-1">{item}</span>
-                      <GripVertical className="w-5 h-5 text-white/60 flex-shrink-0" />
+                      <span className="font-medium flex-1 text-[15px] leading-snug">{item}</span>
+                      <GripVertical className="w-4 h-4 text-white/50 shrink-0" />
                     </Reorder.Item>
                   ))}
                 </Reorder.Group>
                 <Button
                   variant="hero"
-                  className="w-full mt-4"
+                  size="lg"
+                  className="w-full h-12 rounded-xl text-base font-semibold shrink-0"
                   onClick={handleRankingSubmit}
                   disabled={hasAnswered || isSubmitting}
                 >
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
                   Submit Ranking
                 </Button>
               </div>

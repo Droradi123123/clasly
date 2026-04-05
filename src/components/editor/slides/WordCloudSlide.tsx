@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Users } from "lucide-react";
+
 import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, WordCloudSlideContent } from "@/types/slides";
 import { ThemeId } from "@/types/themes";
@@ -44,7 +45,7 @@ export function WordCloudSlide({
   onUpdate,
   liveWords = [],
   totalResponses = 0,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
   hideFooter = false,
   showResults = true,
 }: WordCloudSlideProps) {
@@ -162,6 +163,23 @@ export function WordCloudSlide({
                 </div>
               )}
             </motion.div>
+
+            {/* Live response count badge */}
+            {!isEditing && hasResults && (
+              <div className="text-center mt-2">
+                <AnimatePresence mode="wait">
+                  <motion.span
+                    key={totalResponses}
+                    initial={{ scale: 1.2, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-white/70 text-sm"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span className="font-semibold tabular-nums">{totalResponses}</span> response{totalResponses === 1 ? '' : 's'}
+                  </motion.span>
+                </AnimatePresence>
+              </div>
+            )}
 
             {/* Zero-state waiting indicator - only in presentation mode with no results */}
             {!isEditing && !hasResults && (

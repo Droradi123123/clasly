@@ -35,7 +35,7 @@ export function RankingSlide({
   onUpdate, 
   liveResults,
   totalResponses = 0,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
   designStyleId = 'dynamic',
   hideFooter = false,
   showCorrectAnswer = false,
@@ -265,7 +265,7 @@ export function RankingSlide({
                 <div className="inline-flex flex-wrap items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-white/10 border border-white/20 max-w-lg mx-auto text-white/80 text-sm">
                   <Users className="w-5 h-5 shrink-0" />
                   <span>
-                    {totalResponses} response{totalResponses === 1 ? "" : "s"} — full ranking breakdown is hidden until the timer ends or the presenter shows results.
+                    <span className="text-lg font-bold tabular-nums">{totalResponses}</span> response{totalResponses === 1 ? "" : "s"} — ranking revealed when timer ends
                   </span>
                 </div>
               </motion.div>

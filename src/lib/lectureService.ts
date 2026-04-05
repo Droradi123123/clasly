@@ -16,6 +16,38 @@ export function generateLectureCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+/** Returns true if a string is a base64 data URL (which must NEVER be saved to the DB). */
+function isBase64DataUrl(v: unknown): boolean {
+  return typeof v === 'string' && v.startsWith('data:image');
+}
+
+/**
+ * Strip generation-only fields and base64 image data from slides before DB writes.
+ * Base64 images in JSONB are the root cause of the 689 MB table / Supabase crashes.
+ * Images must live in Supabase Storage; only public URLs belong in the DB.
+ */
+function sanitizeSlidesForDb(slides: Slide[]): unknown[] {
+  return slides.map((s) => {
+    const rest = { ...(s as Record<string, unknown>) };
+    delete rest.imagePrompt;
+    delete rest.pendingImage;
+
+    if (rest.design && typeof rest.design === 'object') {
+      const d = { ...(rest.design as Record<string, unknown>) };
+      if (isBase64DataUrl(d.overlayImageUrl)) delete d.overlayImageUrl;
+      if (isBase64DataUrl(d.logoUrl)) delete d.logoUrl;
+      rest.design = d;
+    }
+    if (rest.content && typeof rest.content === 'object') {
+      const c = { ...(rest.content as Record<string, unknown>) };
+      delete c.imagePrompt;
+      if (isBase64DataUrl(c.imageUrl)) delete c.imageUrl;
+      rest.content = c;
+    }
+    return rest;
+  });
+}
+
 // Create a new lecture in the database
 export async function createLecture(
   title: string,
@@ -37,22 +69,24 @@ export async function createLecture(
   const lectureCode = generateLectureCode();
   const mode = options?.lecture_mode === 'webinar' ? 'webinar' : 'education';
   
+  const sanitized = sanitizeSlidesForDb(slides);
+
   const { data, error } = await supabase
     .from('lectures')
     .insert({
       title: validatedTitle,
       lecture_code: lectureCode,
-      slides: JSON.parse(JSON.stringify(slides)) as Json,
+      slides: sanitized as unknown as Json,
       status: 'draft',
       current_slide_index: 0,
       user_id: finalUserId,
       lecture_mode: mode,
     })
-    .select()
+    .select('id, title, lecture_code, status, current_slide_index, user_id, lecture_mode, created_at, updated_at')
     .single();
 
   if (error) throw error;
-  return data;
+  return { ...data, slides: slides as unknown as Json };
 }
 
 // Get lecture by ID (with 10s timeout and retry for transient failures)
@@ -309,9 +343,9 @@ export async function getLectureByCode(code: string): Promise<Record<string, unk
   return run;
 }
 
-/** Extra retries when DB hits statement timeout / cancel (Postgres 57014) — common under load or large JSONB updates. */
-const UPDATE_LECTURE_MAX_RETRIES = 4;
-const UPDATE_LECTURE_BASE_DELAY_MS = 600;
+/** Retries on statement timeout / cancel (Postgres 57014). Kept low to avoid flooding the connection pool with large JSONB payloads. */
+const UPDATE_LECTURE_MAX_RETRIES = 2;
+const UPDATE_LECTURE_BASE_DELAY_MS = 800;
 
 /**
  * Serializes concurrent updateLecture calls for the same lecture so they don't
@@ -374,8 +408,9 @@ async function updateLectureInner(lectureId: string, updates: {
     ...updates,
     updated_at: new Date().toISOString(),
   };
+  const hasSlides = !!updates.slides;
   if (updates.slides) {
-    updateData.slides = JSON.parse(JSON.stringify(updates.slides)) as Json;
+    updateData.slides = sanitizeSlidesForDb(updates.slides) as unknown as Json;
   }
   if (updates.settings) {
     updateData.settings = JSON.parse(JSON.stringify(updates.settings)) as Json;
@@ -386,6 +421,16 @@ async function updateLectureInner(lectureId: string, updates: {
   let retriedWithoutLectureMode = false;
   for (let attempt = 0; attempt <= UPDATE_LECTURE_MAX_RETRIES; attempt++) {
     try {
+      if (hasSlides) {
+        const { error } = await supabase
+          .from('lectures')
+          .update(updateData)
+          .eq('id', lectureId);
+
+        if (error) throw error;
+        return { id: lectureId, ...updates, updated_at: updateData.updated_at } as Record<string, unknown>;
+      }
+
       const { data, error } = await supabase
         .from('lectures')
         .update(updateData)

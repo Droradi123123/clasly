@@ -23,7 +23,7 @@ export function SplitContentSlide({
   slide,
   isEditing = false,
   onUpdate,
-  themeId = "neon-cyber",
+  themeId = "academic-pro",
 }: SplitContentSlideProps) {
   const content = slide.content as SplitContentSlideContent;
   const textColor = slide.design?.textColor || "#ffffff";

@@ -247,69 +247,77 @@ const ConversationalBuilder: React.FC = () => {
         }
 
         if (planData?.slideTypes?.length) {
-          const accumulated: Slide[] = [];
-          let generatedTheme: unknown = null;
-          for (let i = 0; i < planData.slideTypes.length; i++) {
-            let progRes = await supabase.functions.invoke('generate-slides', {
+          updateLastMessage(
+            (planData.interpretation
+              ? `**What I understood:** ${planData.interpretation}\n\n**My plan:** ${planData.plan}\n\n`
+              : '') + `Generating all ${planData.slideTypes.length} slides...`,
+          );
+          let batchRes = await supabase.functions.invoke('generate-slides', {
+            body: {
+              description: prompt,
+              contentType,
+              targetAudience,
+              slideCount,
+              lectureMode,
+              phase: 'slides',
+              plan: planData.plan,
+              interpretation: planData.interpretation,
+              slideTypes: planData.slideTypes,
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (batchRes.error && getEdgeFunctionStatus(batchRes.error) === 503) {
+            await new Promise((r) => setTimeout(r, 2500));
+            batchRes = await supabase.functions.invoke('generate-slides', {
               body: {
+                description: prompt,
+                contentType,
+                targetAudience,
+                slideCount,
                 lectureMode,
-                progressiveSlide: {
-                  index: i,
-                  slideType: planData.slideTypes[i],
-                  description: prompt,
-                  plan: planData.plan,
-                  interpretation: planData.interpretation,
-                  contentType,
-                },
+                phase: 'slides',
+                plan: planData.plan,
+                interpretation: planData.interpretation,
+                slideTypes: planData.slideTypes,
               },
               headers: { Authorization: `Bearer ${session.access_token}` },
             });
-            if (progRes.error && getEdgeFunctionStatus(progRes.error) === 503) {
-              await new Promise((r) => setTimeout(r, 2500));
-              progRes = await supabase.functions.invoke('generate-slides', {
-                body: {
-                  lectureMode,
-                  progressiveSlide: {
-                    index: i,
-                    slideType: planData.slideTypes[i],
-                    description: prompt,
-                    plan: planData.plan,
-                    interpretation: planData.interpretation,
-                    contentType,
-                  },
-                },
-                headers: { Authorization: `Bearer ${session.access_token}` },
-              });
-            }
-            if (progRes.error) {
-              if (getEdgeFunctionStatus(progRes.error) === 402) setShowOutOfCreditsModal(true);
-              throw new Error(await getEdgeFunctionErrorMessage(progRes.error, `Failed to generate slide ${i + 1}.`));
-            }
-            const progPayload = progRes.data as { slide?: unknown; theme?: unknown; error?: string };
-            if (progPayload?.error) throw new Error(progPayload.error);
-            if (progPayload?.slide) {
-              const s = progPayload.slide as Record<string, unknown>;
-              accumulated.push({
+          }
+          if (batchRes.error) {
+            if (getEdgeFunctionStatus(batchRes.error) === 402) setShowOutOfCreditsModal(true);
+            throw new Error(await getEdgeFunctionErrorMessage(batchRes.error, 'Failed to generate slides.'));
+          }
+          const batchPayload = batchRes.data as {
+            slides?: unknown[];
+            theme?: unknown;
+            pendingSlideImages?: PendingSlideImage[];
+            error?: string;
+          };
+          if (batchPayload?.error) throw new Error(batchPayload.error);
+          const allSlides = ((batchPayload?.slides || []) as Record<string, unknown>[]).map(
+            (s, i) =>
+              ({
                 ...s,
                 id: (s.id as string) || `${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`,
                 order: i,
-              } as Slide);
-              if (progPayload.theme) generatedTheme = progPayload.theme;
-              setSandboxSlides(
-                ensureSlidesDesignDefaults(accumulated.map((slide, idx) => ({ ...slide, order: idx }))),
-              );
-              updateLastMessage(
-                (planData.interpretation
-                  ? `**What I understood:** ${planData.interpretation}\n\n**My plan:** ${planData.plan}\n\n`
-                  : '') + `Slide ${i + 1} of ${planData.slideTypes!.length} ready...`,
-              );
-            }
+              }) as Slide,
+          );
+          for (let i = 0; i < allSlides.length; i++) {
+            const revealed = allSlides.slice(0, i + 1);
+            setSandboxSlides(ensureSlidesDesignDefaults(revealed));
+            updateLastMessage(
+              (planData.interpretation
+                ? `**What I understood:** ${planData.interpretation}\n\n**My plan:** ${planData.plan}\n\n`
+                : '') + `Slide ${i + 1} of ${allSlides.length} ready...`,
+            );
+            if (i < allSlides.length - 1) await new Promise((r) => setTimeout(r, 350));
           }
           resData = {
-            slides: accumulated,
-            theme: generatedTheme,
+            slides: allSlides,
+            theme: batchPayload?.theme,
             plan: planData.plan,
             interpretation: planData.interpretation,
+            pendingSlideImages: batchPayload?.pendingSlideImages,
           };
         } else {
           let invokeResult = await supabase.functions.invoke('generate-slides', {
@@ -321,12 +329,6 @@ const ConversationalBuilder: React.FC = () => {
               slideCount,
               maxImages: 6,
               lectureMode,
-              ...(planData &&
-                planData.slideTypes?.length && {
-                  plan: planData.plan,
-                  interpretation: planData.interpretation,
-                  slideTypes: planData.slideTypes,
-                }),
             },
             headers: { Authorization: `Bearer ${session.access_token}` },
           });
@@ -341,12 +343,6 @@ const ConversationalBuilder: React.FC = () => {
                 slideCount,
                 maxImages: 6,
                 lectureMode,
-                ...(planData &&
-                  planData.slideTypes?.length && {
-                    plan: planData.plan,
-                    interpretation: planData.interpretation,
-                    slideTypes: planData.slideTypes,
-                  }),
               },
               headers: { Authorization: `Bearer ${session.access_token}` },
             });

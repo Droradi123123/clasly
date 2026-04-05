@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Lock, Loader2, ImageIcon, X } from "lucide-react";
+import { Lock, Loader2, ImageIcon, X, Palette, FileText, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   type WebinarRegistrationConfig,
@@ -14,7 +14,9 @@ import { WebinarCtaLivePreview } from "@/components/editor/WebinarCtaLivePreview
 import { uploadWebinarRegistrationLogo } from "@/lib/webinarRegistrationLogoUpload";
 import { cn } from "@/lib/utils";
 
-const STEPS = 2;
+const STEPS = 3;
+const STEP_LABELS = ["Branding", "Registration", "Live CTA"];
+const STEP_ICONS = [Palette, FileText, Link2];
 
 function isValidHttpUrl(s: string): boolean {
   const t = s.trim();
@@ -67,16 +69,13 @@ export function WebinarSettingsWizard({
       primaryColor: primaryNext,
     };
     if (patch.logoUrl === null) {
-      /* omit logoUrl */
+      /* remove logo */
     } else if (patch.logoUrl !== undefined && patch.logoUrl.trim()) {
       branding.logoUrl = patch.logoUrl.trim();
     } else if (webinarRegConfig.branding?.logoUrl?.trim()) {
       branding.logoUrl = webinarRegConfig.branding.logoUrl.trim();
     }
-    onWebinarRegChange({
-      ...webinarRegConfig,
-      branding,
-    });
+    onWebinarRegChange({ ...webinarRegConfig, branding });
   };
 
   const handleLogoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,8 +92,7 @@ export function WebinarSettingsWizard({
       setBranding({ logoUrl: url });
       toast.success("Logo uploaded");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      toast.error(msg);
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setLogoUploading(false);
       if (logoInputRef.current) logoInputRef.current.value = "";
@@ -102,134 +100,166 @@ export function WebinarSettingsWizard({
   };
 
   const urlInvalid = urlTouched && webinarCtaUrl.trim().length > 0 && !isValidHttpUrl(webinarCtaUrl);
-
   const goNext = () => setStep((s) => Math.min(STEPS - 1, s + 1));
   const goBack = () => setStep((s) => Math.max(0, s - 1));
-  const skip = () => goNext();
+  const hasLogo = !!webinarRegConfig.branding?.logoUrl?.trim();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        {Array.from({ length: STEPS }, (_, i) => (
-          <div key={i} className="flex flex-1 items-center gap-2 min-w-0">
-            <div
-              className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-                i === step ? "bg-primary text-primary-foreground" : i < step ? "bg-primary/25 text-primary" : "bg-muted text-muted-foreground",
-              )}
-            >
-              {i + 1}
-            </div>
-            {i < STEPS - 1 ? <div className={cn("h-0.5 flex-1 rounded-full", i < step ? "bg-primary/40" : "bg-border")} /> : null}
-          </div>
-        ))}
-      </div>
-      <p className="text-xs text-muted-foreground text-center">
-        Step {step + 1} of {STEPS}
-      </p>
-
-      {step === 0 && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_minmax(260px,320px)] lg:items-start">
-          <div className="space-y-5 min-w-0">
-            <div className="rounded-xl border border-border/50 bg-muted/15 px-4 py-3">
-              <h3 className="text-base font-semibold text-foreground">Registration</h3>
-              <p className="text-sm text-muted-foreground mt-1">
-                Choose what to ask, then match colors and logo to your brand — preview updates live.
-              </p>
-            </div>
-            <section className="space-y-3">
-              <WebinarRegistrationFormBuilder value={webinarRegConfig} onChange={onWebinarRegChange} variant="wizard" />
-            </section>
-            <section className="space-y-3 rounded-xl border border-border/60 bg-muted/20 p-4">
-              <h3 className="text-sm font-semibold text-foreground">Look &amp; logo</h3>
-              <div className="space-y-2">
-                <Label className="text-xs flex items-center gap-1.5">
-                  Primary color
-                  {!isPro && <Lock className="w-3 h-3 text-amber-500" aria-hidden />}
-                </Label>
-                {isPro ? (
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <Input
-                      type="color"
-                      value={primary}
-                      onChange={(e) => setBranding({ primaryColor: e.target.value })}
-                      className="h-10 w-14 p-1 border border-input cursor-pointer shrink-0"
-                    />
-                    <Input
-                      type="text"
-                      value={primary}
-                      onChange={(e) => {
-                        const v = e.target.value.trim();
-                        if (/^#[0-9A-Fa-f]{6}$/.test(v)) setBranding({ primaryColor: v });
-                      }}
-                      className="font-mono text-sm max-w-[140px]"
-                      placeholder="#7c3aed"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <div
-                      className="h-10 w-14 rounded-md border border-border shrink-0"
-                      style={{ backgroundColor: primary }}
-                      title="Registration accent"
-                    />
-                    <span className="text-xs font-mono text-muted-foreground">{primary}</span>
-                    <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onPremiumColorBlocked}>
-                      <Lock className="w-3.5 h-3.5" />
-                      Unlock custom color
-                    </Button>
-                  </div>
+    <div className="space-y-5">
+      {/* Step indicator */}
+      <div className="flex items-center gap-1.5">
+        {Array.from({ length: STEPS }, (_, i) => {
+          const Icon = STEP_ICONS[i];
+          return (
+            <div key={i} className="flex flex-1 items-center gap-1.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setStep(i)}
+                className={cn(
+                  "flex items-center gap-1.5 shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                  i === step
+                    ? "bg-primary text-primary-foreground"
+                    : i < step
+                    ? "bg-primary/15 text-primary hover:bg-primary/25"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80",
                 )}
-              </div>
-              <div className="space-y-2 pt-2">
-                <Label className="text-xs flex items-center gap-1.5">
-                  Logo (optional)
-                  {!isPro && <Lock className="w-3 h-3 text-amber-500" aria-hidden />}
-                </Label>
-                <input
-                  ref={logoInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => void handleLogoFile(e)}
-                />
-                {isPro ? (
-                  <div className="flex flex-wrap items-center gap-2">
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">{STEP_LABELS[i]}</span>
+                <span className="sm:hidden">{i + 1}</span>
+              </button>
+              {i < STEPS - 1 && (
+                <div className={cn("h-0.5 flex-1 rounded-full", i < step ? "bg-primary/30" : "bg-border")} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Step 1: Branding ── */}
+      {step === 0 && (
+        <div className="space-y-5">
+          <div className="rounded-xl border border-border/50 bg-muted/15 px-4 py-3">
+            <h3 className="text-base font-semibold text-foreground">Branding</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              Set your logo and accent color — they appear on the registration form and during the session.
+            </p>
+          </div>
+
+          <div className="grid gap-6 sm:grid-cols-2">
+            {/* Logo */}
+            <section className="space-y-3 rounded-xl border border-border/60 bg-card p-4">
+              <Label className="text-sm font-semibold flex items-center gap-1.5">
+                Logo
+                {!isPro && <Lock className="w-3 h-3 text-amber-500" />}
+              </Label>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => void handleLogoFile(e)}
+              />
+              {hasLogo && (
+                <div className="flex items-center justify-center rounded-lg border border-border bg-muted/30 p-3">
+                  <img
+                    src={webinarRegConfig.branding!.logoUrl!}
+                    alt="Logo preview"
+                    className="max-h-16 max-w-full object-contain"
+                  />
+                </div>
+              )}
+              {isPro ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={logoUploading}
+                    onClick={() => logoInputRef.current?.click()}
+                  >
+                    {logoUploading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <ImageIcon className="w-4 h-4 mr-1.5" />
+                    )}
+                    {hasLogo ? "Replace" : "Upload logo"}
+                  </Button>
+                  {hasLogo && (
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      disabled={logoUploading}
-                      onClick={() => logoInputRef.current?.click()}
+                      className="text-destructive"
+                      onClick={() => setBranding({ logoUrl: null })}
                     >
-                      {logoUploading ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <ImageIcon className="w-4 h-4 mr-1.5" />
-                      )}
-                      Upload logo
+                      <X className="w-4 h-4 mr-1" /> Remove
                     </Button>
-                    {webinarRegConfig.branding?.logoUrl?.trim() ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive"
-                        onClick={() => setBranding({ logoUrl: null })}
-                      >
-                        <X className="w-4 h-4 mr-1" />
-                        Remove
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onPremiumLogoBlocked}>
-                    <Lock className="w-3.5 h-3.5" />
-                    Logo upload (Pro)
-                  </Button>
-                )}
-              </div>
+                  )}
+                </div>
+              ) : (
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onPremiumLogoBlocked}>
+                  <Lock className="w-3.5 h-3.5" /> Logo upload (Pro)
+                </Button>
+              )}
             </section>
+
+            {/* Color */}
+            <section className="space-y-3 rounded-xl border border-border/60 bg-card p-4">
+              <Label className="text-sm font-semibold flex items-center gap-1.5">
+                Accent color
+                {!isPro && <Lock className="w-3 h-3 text-amber-500" />}
+              </Label>
+              {isPro ? (
+                <div className="flex flex-wrap gap-3 items-center">
+                  <Input
+                    type="color"
+                    value={primary}
+                    onChange={(e) => setBranding({ primaryColor: e.target.value })}
+                    className="h-12 w-16 p-1 border border-input cursor-pointer shrink-0 rounded-lg"
+                  />
+                  <Input
+                    type="text"
+                    value={primary}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      if (/^#[0-9A-Fa-f]{6}$/.test(v)) setBranding({ primaryColor: v });
+                    }}
+                    className="font-mono text-sm max-w-[130px]"
+                    placeholder="#7c3aed"
+                  />
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 items-center">
+                  <div
+                    className="h-12 w-16 rounded-lg border border-border shrink-0"
+                    style={{ backgroundColor: primary }}
+                  />
+                  <span className="text-xs font-mono text-muted-foreground">{primary}</span>
+                  <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onPremiumColorBlocked}>
+                    <Lock className="w-3.5 h-3.5" /> Unlock color
+                  </Button>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Used for buttons, links, and highlights.
+              </p>
+            </section>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2: Registration ── */}
+      {step === 1 && (
+        <div className="grid gap-6 lg:grid-cols-[1fr_minmax(260px,320px)] lg:items-start">
+          <div className="space-y-4 min-w-0">
+            <div className="rounded-xl border border-border/50 bg-muted/15 px-4 py-3">
+              <h3 className="text-base font-semibold text-foreground">Registration form</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Choose which fields attendees fill before joining. Collected data appears in your session analytics.
+              </p>
+            </div>
+            <WebinarRegistrationFormBuilder value={webinarRegConfig} onChange={onWebinarRegChange} variant="wizard" />
           </div>
           <div className="space-y-2 lg:sticky lg:top-0">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center lg:text-left">Preview</p>
@@ -238,13 +268,14 @@ export function WebinarSettingsWizard({
         </div>
       )}
 
-      {step === 1 && (
+      {/* ── Step 3: Live CTA ── */}
+      {step === 2 && (
         <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
           <div className="space-y-4">
             <div className="rounded-xl border border-border/50 bg-muted/15 px-4 py-3">
               <h3 className="text-base font-semibold text-foreground">Live CTA button</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                Text and link attendees see on their phones when you tap <strong className="text-foreground">CTA</strong> in Present mode.
+                During your live session, tap <strong className="text-foreground">CTA</strong> in Present mode to pop a button on every attendee's phone.
               </p>
             </div>
             <div className="space-y-2">
@@ -285,18 +316,14 @@ export function WebinarSettingsWizard({
         </div>
       )}
 
+      {/* Navigation */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border/50">
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={goBack} disabled={step === 0}>
-            Back
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={step === STEPS - 1}>
-            Skip
-          </Button>
-        </div>
+        <Button type="button" variant="outline" size="sm" onClick={goBack} disabled={step === 0}>
+          Back
+        </Button>
         {step < STEPS - 1 ? (
           <Button type="button" onClick={goNext}>
-            Next
+            Next: {STEP_LABELS[step + 1]}
           </Button>
         ) : (
           <span className="text-xs text-muted-foreground">Use Done to close — save from the editor header.</span>

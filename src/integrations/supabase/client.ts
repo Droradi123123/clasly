@@ -28,8 +28,22 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
   },
   realtime: {
     params: {
-      eventsPerSecond: 32,
+      eventsPerSecond: 10,
     },
-    heartbeatIntervalMs: 15000,
+    heartbeatIntervalMs: 25000,
+    reconnectAfterMs: (tries: number) =>
+      [500, 1000, 2000, 4000, 8000, 15000][Math.min(tries, 5)],
   },
 });
+
+/**
+ * Remove all Supabase realtime channels.
+ * Useful before navigating away from a live view to prevent orphaned channels
+ * from consuming server-side Realtime slots.
+ */
+export function removeAllChannels(): void {
+  const channels = supabase.getChannels();
+  for (const ch of channels) {
+    supabase.removeChannel(ch);
+  }
+}

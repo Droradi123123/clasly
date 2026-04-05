@@ -34,7 +34,7 @@ export function YesNoSlide({
   showResults = false,
   liveResults,
   totalResponses = 0,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
   designStyleId = 'dynamic',
   hideFooter = false,
   showCorrectAnswer = false,
@@ -143,7 +143,7 @@ export function YesNoSlide({
                 )}
                 <motion.div
                   className="flex flex-col items-center cursor-default"
-                  animate={revealStats && hasResults ? (yesPercentage >= noPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
+                  animate={revealStats && hasResults ? (yesPercentage >= noPercentage ? { scale: 1.1 } : { scale: 0.85, opacity: 0.7 }) : { scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                 >
                   <div className={`p-4 md:p-6 rounded-full transition-all ${
@@ -151,10 +151,13 @@ export function YesNoSlide({
                   }`}>
                     <ThumbsUp className="w-14 h-14 md:w-20 md:h-20 text-white" />
                   </div>
-                  {(content.yesLabel || isEditing) && (
-                    <span className="text-white/90 text-sm mt-1 font-medium">{content.yesLabel || 'Yes'}</span>
+                  <span className="text-white/90 text-sm mt-1 font-medium">{content.yesLabel || 'Yes'}</span>
+                  {!isEditing && revealStats && hasResults && (
+                    <div className="flex flex-col items-center mt-1">
+                      <span className="text-white text-2xl font-bold">{yesPercentage}%</span>
+                      {showCounts && <span className="text-white/70 text-sm">{results.yes} vote{results.yes === 1 ? '' : 's'}</span>}
+                    </div>
                   )}
-                  {!isEditing && revealStats && hasResults && <span className="text-white/80 text-lg font-bold">{yesPercentage}%</span>}
                 </motion.div>
               </motion.div>
               <motion.div
@@ -173,7 +176,7 @@ export function YesNoSlide({
                 )}
                 <motion.div
                   className="flex flex-col items-center cursor-default"
-                  animate={revealStats && hasResults ? (noPercentage > yesPercentage ? { scale: 1.25 } : { scale: 0.7, opacity: 0.5 }) : { scale: 1, opacity: 1 }}
+                  animate={revealStats && hasResults ? (noPercentage > yesPercentage ? { scale: 1.1 } : { scale: 0.85, opacity: 0.7 }) : { scale: 1, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 200, damping: 20 }}
                 >
                   <div className={`p-4 md:p-6 rounded-full transition-all ${
@@ -181,10 +184,13 @@ export function YesNoSlide({
                   }`}>
                     <ThumbsDown className="w-14 h-14 md:w-20 md:h-20 text-white" />
                   </div>
-                  {(content.noLabel || isEditing) && (
-                    <span className="text-white/90 text-sm mt-1 font-medium">{content.noLabel || 'No'}</span>
+                  <span className="text-white/90 text-sm mt-1 font-medium">{content.noLabel || 'No'}</span>
+                  {!isEditing && revealStats && hasResults && (
+                    <div className="flex flex-col items-center mt-1">
+                      <span className="text-white text-2xl font-bold">{noPercentage}%</span>
+                      {showCounts && <span className="text-white/70 text-sm">{results.no} vote{results.no === 1 ? '' : 's'}</span>}
+                    </div>
                   )}
-                  {!isEditing && revealStats && hasResults && <span className="text-white/80 text-lg font-bold">{noPercentage}%</span>}
                 </motion.div>
               </motion.div>
               {!isEditing && !hasResults && (

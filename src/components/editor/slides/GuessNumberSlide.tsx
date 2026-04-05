@@ -30,7 +30,7 @@ export function GuessNumberSlide({
   totalResponses = 0,
   showAnswer = false,
   showResults = true,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
   designStyleId = 'dynamic',
   hideFooter = false,
 }: GuessNumberSlideProps) {
@@ -350,11 +350,19 @@ export function GuessNumberSlide({
                   animate={{ opacity: 1, y: 0 }}
                   className="mt-4 md:mt-6 text-center px-2"
                 >
-                  <div className="inline-flex flex-wrap items-center justify-center gap-2 px-4 py-2 rounded-xl bg-white/10 border border-white/20 max-w-lg mx-auto text-white/80 text-sm">
-                    <Users className="w-4 h-4 shrink-0" />
-                    <span>
-                      {totalResponses} guess{totalResponses === 1 ? "" : "es"} — stats stay hidden until the timer ends or the presenter shows results.
-                    </span>
+                  <div className="inline-flex flex-col items-center gap-2 max-w-lg mx-auto">
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={totalResponses}
+                        initial={{ scale: 1.3, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="px-5 py-2.5 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/25 text-center"
+                      >
+                        <span className="text-2xl md:text-3xl font-bold text-white tabular-nums">{totalResponses}</span>
+                        <span className="block text-xs text-white/60 mt-0.5">guess{totalResponses === 1 ? "" : "es"} received</span>
+                      </motion.div>
+                    </AnimatePresence>
+                    <span className="text-white/50 text-xs">Full stats after time ends</span>
                   </div>
                 </motion.div>
               )}

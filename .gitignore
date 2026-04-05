@@ -25,3 +25,9 @@ dist-ssr
 .vercel
 .env*.local
 .env
+
+# Cursor / local tooling
+.cursor/
+
+# Supabase CLI local cache
+supabase/.temp/

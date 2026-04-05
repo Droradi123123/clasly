@@ -6,6 +6,7 @@ import Header from "@/components/layout/Header";
 import { DocumentHead } from "@/components/seo/DocumentHead";
 import { StructuredData } from "@/components/seo/StructuredData";
 import HeroSection from "@/components/landing/HeroSection";
+import WebinarConversionHero from "@/components/landing/WebinarConversionHero";
 import AIGenerationPreview from "@/components/landing/AIGenerationPreview";
 import InteractiveSyncDemo from "@/components/landing/InteractiveSyncDemo";
 import AIFeaturesSection from "@/components/landing/AIFeaturesSection";
@@ -73,6 +74,8 @@ const WebinarLanding = () => {
           />
         )}
       </AnimatePresence>
+
+      <WebinarConversionHero />
 
       <div data-section="interactive-demo" className="hidden lg:block">
         <InteractiveSyncDemo variant="webinar" />

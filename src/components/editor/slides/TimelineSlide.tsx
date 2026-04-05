@@ -21,7 +21,7 @@ export function TimelineSlide({
   slide,
   isEditing = false,
   onUpdate,
-  themeId = "neon-cyber",
+  themeId = "academic-pro",
 }: TimelineSlideProps) {
   const rawContent = (slide.content ?? {}) as Partial<TimelineSlideContent> & {
     events?: Array<

@@ -21,7 +21,7 @@ export function BulletPointsSlide({
   slide,
   isEditing = false,
   onUpdate,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
 }: BulletPointsSlideProps) {
   const content = slide.content as BulletPointsSlideContent;
   const theme = getTheme(themeId);

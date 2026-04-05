@@ -7,6 +7,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+// Module-scoped singletons — reused across requests to avoid connection pool exhaustion
+const _sbUrl = Deno.env.get("SUPABASE_URL") ?? "";
+const _sbAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const _sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const supabaseAnon = _sbUrl && _sbAnonKey ? createClient(_sbUrl, _sbAnonKey) : null;
+const supabaseAdmin = _sbUrl && _sbServiceKey ? createClient(_sbUrl, _sbServiceKey) : null;
+
 async function verifyAuth(req: Request): Promise<{ user: any; error: string | null }> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "Missing authorization header" };
@@ -14,16 +21,12 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { user: null, error: "Missing token" };
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) return { user: null, error: "Server configuration error" };
-
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  if (!supabaseAnon) return { user: null, error: "Server configuration error" };
 
   const {
     data: { user },
     error,
-  } = await supabase.auth.getUser(token);
+  } = await supabaseAnon.auth.getUser(token);
   if (error || !user) {
     const msg = error?.message || "Invalid or expired authentication token";
     return { user: null, error: msg };
@@ -34,12 +37,8 @@ async function verifyAuth(req: Request): Promise<{ user: any; error: string | nu
 const INITIAL_FREE_CREDITS = 15;
 
 async function ensureUserCredits(userId: string): Promise<{ ok: boolean; error?: string }> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return { ok: false, error: "Server configuration error" };
-  }
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  if (!supabaseAdmin) return { ok: false, error: "Server configuration error" };
+  const supabase = supabaseAdmin;
   const { data: existing } = await supabase
     .from("user_credits")
     .select("user_id")
@@ -99,13 +98,10 @@ interface UserContext {
 }
 
 async function getUserContextBatch(userId: string): Promise<UserContext> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseAdmin) {
     return { planName: "Free", isPro: false, maxSlides: 5, creditsBalance: 0, aiSettings: null };
   }
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase = supabaseAdmin;
 
   const [subResult, creditsResult, aiSettingsResult] = await Promise.all([
     supabase.from("user_subscriptions").select("plan_id").eq("user_id", userId).maybeSingle(),
@@ -158,12 +154,8 @@ async function checkCreditsBalance(
   userId: string,
   amount: number
 ): Promise<{ allowed: boolean; error?: string }> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !supabaseServiceKey) {
-    return { allowed: false, error: "Server configuration error" };
-  }
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  if (!supabaseAdmin) return { allowed: false, error: "Server configuration error" };
+  const supabase = supabaseAdmin;
   const { data: credits, error: fetchError } = await supabase
     .from("user_credits")
     .select("ai_tokens_balance")
@@ -184,52 +176,26 @@ async function consumeCredits(
   amount: number,
   description: string
 ): Promise<{ success: boolean; error?: string }> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseAdmin) {
     console.error("Missing Supabase configuration for credits");
     return { success: false, error: "Server configuration error" };
   }
 
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const { data, error: rpcError } = await supabaseAdmin.rpc("atomic_consume_credits", {
+    p_user_id: userId,
+    p_amount: amount,
+    p_description: description,
+  });
 
-  const { data: credits, error: fetchError } = await supabase
-    .from("user_credits")
-    .select("ai_tokens_balance, ai_tokens_consumed, presentations_created, slides_created")
-    .eq("user_id", userId)
-    .single();
-
-  if (fetchError) {
-    console.error("Error fetching user credits:", fetchError);
-    return { success: false, error: "Could not fetch credits" };
+  if (rpcError) {
+    console.error("atomic_consume_credits RPC error:", rpcError);
+    return { success: false, error: rpcError.message || "Could not update credits" };
   }
 
-  if (!credits || credits.ai_tokens_balance < amount) {
+  const newBalance = typeof data === "number" ? data : Number(data);
+  if (newBalance === -1 || Number.isNaN(newBalance)) {
     return { success: false, error: "Insufficient credits" };
   }
-
-  const { error: updateError } = await supabase
-    .from("user_credits")
-    .update({
-      ai_tokens_balance: credits.ai_tokens_balance - amount,
-      ai_tokens_consumed: (credits.ai_tokens_consumed || 0) + amount,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("user_id", userId);
-
-  if (updateError) {
-    console.error("Error updating credits:", updateError);
-    return { success: false, error: "Could not update credits" };
-  }
-
-  await supabase.from("credit_transactions").insert({
-    user_id: userId,
-    credit_type: "ai_tokens",
-    transaction_type: "consume",
-    amount: -amount,
-    description,
-  });
 
   console.log(`💳 Consumed ${amount} credits from user ${userId}: ${description}`);
   return { success: true };
@@ -240,12 +206,8 @@ async function updateUsageStats(
   slidesCreated: number,
   presentationCreated: boolean
 ): Promise<void> {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !supabaseServiceKey) return;
-
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  if (!supabaseAdmin) return;
+  const supabase = supabaseAdmin;
 
   const { data: credits } = await supabase
     .from("user_credits")
@@ -510,7 +472,15 @@ function enhanceImagePrompt(originalPrompt: string, slideType: string): string {
   return `${noTextRequirement}\n\nSubject: ${originalPrompt}\n\nStyle: ${style}\n\n${quality}`;
 }
 
+const IMAGE_CACHE_MAX = 50;
 const imageCache = new Map<string, string>();
+function imageCacheSet(key: string, value: string) {
+  if (imageCache.size >= IMAGE_CACHE_MAX) {
+    const oldest = imageCache.keys().next().value;
+    if (oldest) imageCache.delete(oldest);
+  }
+  imageCache.set(key, value);
+}
 
 function getImageCacheKey(prompt: string): string {
   return `${prompt.substring(0, 100).replace(/\s+/g, "_")}_${prompt.length}`;
@@ -823,8 +793,8 @@ function sanitizeSlideStringField(
   }
   if (k === "subtitle") {
     return isHe
-      ? `מה חשוב לדעת, מה הסיכונים, ואיך ליישם בפועל`
-      : `What matters, what to watch for, and how to apply it`;
+      ? `כל מה שצריך לדעת על ${shortSub}`
+      : `Everything you need to know about ${shortSub}`;
   }
   if (k.includes("imageprompt")) {
     return `Cinematic abstract visual evoking the essence of ${shortSub}, soft gradients, professional, no text or letters`;
@@ -900,8 +870,8 @@ function fixEchoMetaInSlide(slide: RawSlide, rawUserInput: string, subject: stri
     const sub = String(c.subtitle || "").trim();
     if (!sub || sub.length < 12 || looksLikeUserInstructionEcho(sub, rawUserInput)) {
       c.subtitle = isHe
-        ? `מה חשוב לדעת, מה הסיכונים, ואיך ליישם בפועל`
-        : `What matters, what to watch for, and how to apply it`;
+        ? `כל מה שצריך לדעת על ${shortSub}`
+        : `Everything you need to know about ${shortSub}`;
     }
   }
 }
@@ -1893,13 +1863,27 @@ function getTypeSchemaForTypes(types: string[]): string {
 const SLIDE_TYPE_SCHEMA = `## REQUIRED FIELDS PER TYPE\n` + Object.values(TYPE_SCHEMA_MAP).join("\n");
 
 const CONTENT_QUALITY_FRAMEWORK = `
+## STEP 0 — TOPIC ANALYSIS (MANDATORY — COMPLETE BEFORE ANY SLIDE)
+Before generating ANY slide, reason about the topic:
+1. DOMAIN: What field is this? (religion, science, history, business, health, culture, technology, etc.)
+2. CONTEXT: What specific context, event, or tradition is this topic associated with? (e.g., "ארבעת המינים" → the Four Species of Sukkot, Jewish tradition; "supply chain" → logistics & operations management)
+3. KEY FACTS: Identify 5 specific facts, terms, or concepts that a domain expert would know about this topic.
+4. MISCONCEPTIONS: 2-3 common mistakes or misunderstandings people have about this topic.
+5. INTERESTING ANGLES: 2-3 surprising, counterintuitive, or thought-provoking aspects.
+Put this analysis in the "interpretation" field. ALL slide content MUST draw from this analysis.
+
 ## QUALITY RULES (MANDATORY)
-1. SPECIFICITY: Every slide needs ≥1 of: a real number/stat, a named entity, a concrete example, a precise definition, or a counterintuitive fact.
-2. OPTIONS TEACH: Quiz distractors = common misconceptions. Poll options = distinct real perspectives. Each ≥15 chars.
-3. QUESTIONS PROVOKE: Not "what do you think?" but "what's the #1 reason people fail at X?" — specific, personal, emotional.
-4. EXPERT VOICE: Use "you", lead with the interesting fact, short sentences for impact. No hedging.
-5. FORBIDDEN: "Option A", "Point 1", "Important detail", "Introduction to X", generic filler.
+1. DOMAIN-SPECIFIC: Every question, option, and fact MUST use real terminology and concepts from the topic's actual domain.
+   BAD (generic): "מהי הטעות הנפוצה ביותר שאנשים עושים כשהם ניגשים לארבעת המינים?"
+   GOOD (domain-specific): "איזה מארבעת המינים חייב להיות ללא שום פגם כדי להיות כשר?"
+2. OPTIONS FROM THE DOMAIN: Quiz distractors and poll options must be real alternatives from the subject matter, not generic filler.
+   BAD: "ניסיון", "הכנה", "מוטיבציה", "תכנון"
+   GOOD: "אתרוג", "לולב", "הדס", "ערבה"
+3. NEVER USE THESE GENERIC PATTERNS: "What's the biggest mistake people make with...", "Can you succeed in X without experience?", "Rate by importance — what's most critical to success in...", "What do you think about...", "What part of X do you want to explore next?"
+4. EXPERT TEST: Would a domain expert say "this question shows the author actually knows the subject"? If not, rewrite with real domain content.
+5. SPECIFICITY: Every slide needs ≥1 of: a real number/stat, a named entity, a concrete example, a precise definition, or a counterintuitive fact FROM the topic domain.
 6. ANTI-ECHO: Never paste the user's request into any slide field. All text must be NEW teaching content.
+7. EXPERT VOICE: Lead with the interesting fact, short sentences for impact. No hedging or generic intros.
 `;
 
 function buildInstructionalDesignPrompt(description: string, audience: string, slideCount: number): string {
@@ -1957,7 +1941,7 @@ ${SLIDE_TYPE_SCHEMA}
 ## OUTPUT FORMAT (CRITICAL)
 Return a single JSON object (no markdown, no code blocks):
 {
-  "interpretation": "1-2 sentences: what the audience should walk away knowing",
+  "interpretation": "Your TOPIC ANALYSIS from Step 0: domain, context, key facts, misconceptions, interesting angles (4-8 sentences showing deep understanding of the subject)",
   "plan": "Brief plan: the narrative arc across slides (2-4 sentences)",
   "slides": [
     {"type":"...","content":{...},"imagePrompt":"..." optional},
@@ -2004,7 +1988,7 @@ Difficulty: ${difficulty}. ${difficultyNote}
 ${userContext ? `\n## INSTRUCTOR CONTEXT (personalize content to match their voice)\n${userContext}\n` : ""}
 
 ## YOUR TASK
-1. DEEP REASONING: What does the user actually want to teach? What should the audience FEEL and KNOW after this presentation?
+1. DEEP REASONING (Step 0): First, identify the topic's domain, context, key facts, and misconceptions. Put this in "interpretation".
 2. CHOOSE SLIDE TYPES DYNAMICALLY: Match the topic. Technical topics need more content slides. Soft topics need more interactive slides.
 3. ${band}
 
@@ -2021,7 +2005,7 @@ ${SLIDE_TYPE_SCHEMA}
 ## OUTPUT FORMAT (CRITICAL)
 Return a single JSON object:
 {
-  "interpretation": "What the audience should walk away knowing (1-2 sentences)",
+  "interpretation": "Your TOPIC ANALYSIS from Step 0: domain, context, 5 key facts, misconceptions, surprising angles (4-8 sentences of deep domain knowledge)",
   "plan": "The narrative arc (2-4 sentences)",
   "slides": [
     { "type": "title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "..." },
@@ -2088,7 +2072,7 @@ ${SLIDE_TYPE_SCHEMA}
 
 ## OUTPUT FORMAT
 {
-  "interpretation": "1-2 sentences: what the audience should walk away understanding",
+  "interpretation": "Your TOPIC ANALYSIS from Step 0: domain, context, 5 key facts, misconceptions, surprising angles (4-8 sentences of deep domain knowledge)",
   "plan": "Brief plan (2-4 sentences)",
   "slides": [
     { "type": "title", "content": { "title": "...", "subtitle": "..." }, "imagePrompt": "..." },
@@ -2120,6 +2104,7 @@ function buildInteractiveOnlyPlanPrompt(
     : "";
   return `
 You are a world-class Instructional Designer planning an INTERACTIVE-ONLY presentation.
+${CONTENT_QUALITY_FRAMEWORK}
 
 Slide 1 MUST be "title". All other slides MUST be from:
 poll, quiz, poll_quiz, yesno, wordcloud, scale, ranking, guess_number, sentiment_meter, agree_spectrum
@@ -2128,6 +2113,7 @@ ${band}
 Return slideTypes array within that band (at most ${effectiveSlideCount}).
 
 ## PLANNING RULES
+- TOPIC ANALYSIS (Step 0): First identify the domain, context, key facts, and misconceptions. Each interactive slide must test or explore a SPECIFIC domain concept.
 - Maximize VARIETY: never repeat the same type consecutively
 - Each slide explores a DIFFERENT aspect of the topic
 - Build an arc: icebreaker → knowledge test → deep reflection → action-oriented close
@@ -2139,7 +2125,7 @@ Difficulty: ${difficulty}
 
 ## OUTPUT (JSON only)
 {
-  "interpretation": "1-2 sentences: what you understood and the learning goals",
+  "interpretation": "Your TOPIC ANALYSIS: domain, context, 5 key facts, misconceptions, surprising angles (4-8 sentences of deep domain knowledge)",
   "plan": "Brief plan: what each interactive slide will explore and why (2-4 sentences)",
   "teachableSubject": "short noun phrase for the topic (≤80 chars), never the full user message",
   "slideTypes": ["title", "poll", "quiz", ...]
@@ -2251,6 +2237,7 @@ function buildProPlanOnlyPrompt(
 
   return `
 You are a world-class Instructional Designer. Analyze the request and create a strategic plan.
+${CONTENT_QUALITY_FRAMEWORK}
 
 ## USER REQUEST
 "${description}"
@@ -2258,7 +2245,7 @@ Target Audience: ${audience}
 ${userContext ? `\n## INSTRUCTOR CONTEXT\n${userContext}\n` : ""}
 
 ## YOUR TASK
-1. What should the audience KNOW and FEEL after this presentation?
+1. TOPIC ANALYSIS (Step 0): Identify the domain, context, 5 key facts, misconceptions, and interesting angles. Put this in "interpretation".
 2. What's the narrative arc? (Hook → Build knowledge → Challenge assumptions → Call to action)
 3. ${band} Return one entry in slideTypes per slide (at most ${effectiveSlideCount}).
 4. Choose slide types that serve the CONTENT, not the other way around.
@@ -2274,7 +2261,7 @@ Types: title, split_content, content, timeline, bullet_points, bar_chart, quiz, 
 
 ## OUTPUT FORMAT (JSON only, no markdown)
 {
-  "interpretation": "What the audience should walk away with (1-2 sentences)",
+  "interpretation": "Your TOPIC ANALYSIS: domain, context, 5 key facts, misconceptions, surprising angles (4-8 sentences of deep domain knowledge)",
   "plan": "The narrative arc: what each section covers and why (2-4 sentences)",
   "teachableSubject": "short noun phrase for the topic (≤80 chars), never the full user message",
   "slideTypes": ["title", "split_content", "quiz", ...]
@@ -2286,20 +2273,25 @@ function buildProSlidesFromPlanPrompt(
   description: string,
   interpretation: string,
   plan: string,
-  slideTypes: string[]
+  slideTypes: string[],
+  rawUserInput?: string,
 ): string {
   const slidesSpec = slideTypes.map((t, i) => `${i + 1}: ${t}`).join(", ");
+  const subject = extractPresentationSubject(rawUserInput || description);
+  const subjectBlock = topicContractBlock(rawUserInput || description, subject);
 
   const relevantSchema = getTypeSchemaForTypes(slideTypes);
   return `Expert presentation creator. Generate ${slideTypes.length} slides.
 ${CONTENT_QUALITY_FRAMEWORK}
-REQUEST: "${description}"
-Do NOT paste this into any slide. All text = NEW teaching content.
-INTERPRETATION: ${interpretation}
-PLAN: ${plan}
-SLIDES: ${slidesSpec}
+${subjectBlock}
+TOPIC ANALYSIS (use this to inform ALL slide content):
+${interpretation}
+
+NARRATIVE PLAN: ${plan}
+SLIDES TO GENERATE: ${slidesSpec}
 ${relevantSchema}
-CHECKLIST: quiz/poll 4 options ≥15 chars? content has a fact/number? title subtitle promises value? imagePrompt for title/split_content/poll/wordcloud ≥50 chars, no text in image? Language matches request?
+CRITICAL: Every question, option, and fact must use REAL terminology and concepts from the topic's domain (as identified in the topic analysis). Never use generic patterns like "What's the biggest mistake..." or "Can you succeed without experience..."
+CHECKLIST: quiz/poll 4 options ≥15 chars with domain-specific terms? content has a real fact/number from the domain? title subtitle promises value? imagePrompt for title/split_content/poll/wordcloud ≥50 chars, no text in image? Language matches request?
 OUTPUT: JSON array of ${slideTypes.length} slides: [{"type":"...","content":{...},"imagePrompt":"..."},...]
 `;
 }
@@ -2358,7 +2350,7 @@ async function callAI(
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const generationConfig: Record<string, unknown> = {
-    temperature: options?.temperature ?? 0.55,
+    temperature: options?.temperature ?? 0.72,
     maxOutputTokens: options?.maxOutputTokens ?? 8192,
     responseMimeType: "application/json",
   };
@@ -2388,6 +2380,47 @@ async function callAI(
 
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("").trim() || "";
+}
+
+/**
+ * Upload a base64 image to Supabase Storage and return the public URL.
+ * This keeps binary data OUT of the database (the root cause of the 689 MB table).
+ */
+async function uploadImageToStorage(base64Data: string, mimeType: string): Promise<string | null> {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error("Missing Supabase config for Storage upload");
+    return null;
+  }
+  try {
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const ext = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : "png";
+    const filename = `generated/${Date.now()}-${Math.random().toString(36).substring(2, 10)}.${ext}`;
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/slide-images/${filename}`;
+    const uploadResponse = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${supabaseServiceKey}`,
+        "Content-Type": mimeType,
+        "x-upsert": "true",
+      },
+      body: bytes,
+    });
+    if (!uploadResponse.ok) {
+      const errText = await uploadResponse.text();
+      console.error("Storage upload failed:", uploadResponse.status, errText);
+      return null;
+    }
+    return `${supabaseUrl}/storage/v1/object/public/slide-images/${filename}`;
+  } catch (error) {
+    console.error("Storage upload error:", error);
+    return null;
+  }
 }
 
 async function generateImage(apiKey: string, prompt: string, slideType: string): Promise<string | null> {
@@ -2424,10 +2457,14 @@ async function generateImage(apiKey: string, prompt: string, slideType: string):
 
     if (inlineData?.data) {
       const mimeType = inlineData.mimeType || "image/png";
-      const dataUrl = `data:${mimeType};base64,${inlineData.data}`;
-      console.log("✅ Image generated successfully");
-      imageCache.set(cacheKey, dataUrl);
-      return dataUrl;
+      const publicUrl = await uploadImageToStorage(inlineData.data, mimeType);
+      if (publicUrl) {
+        console.log("✅ Image uploaded to Storage:", publicUrl.substring(0, 80));
+        imageCacheSet(cacheKey, publicUrl);
+        return publicUrl;
+      }
+      console.warn("Storage upload failed, skipping image");
+      return null;
     }
 
     console.warn("No image data returned from Gemini");
@@ -2868,6 +2905,105 @@ serve(async (req) => {
       );
     }
 
+    if (phase === "slides") {
+      if (
+        !providedPlan ||
+        !providedInterpretation ||
+        !Array.isArray(providedSlideTypes) ||
+        providedSlideTypes.length === 0
+      ) {
+        throw new Error("phase=slides requires plan, interpretation, and slideTypes from the plan phase");
+      }
+      const slideTypes =
+        contentType === "interactive"
+          ? enforceInteractiveOnlySlideTypes(providedSlideTypes, effectiveSlideCount)
+          : providedSlideTypes.slice(0, effectiveSlideCount);
+      const creditsNeeded = slideTypes.length;
+      const balCheck = await checkCreditsBalance(user.id, creditsNeeded);
+      if (!balCheck.allowed) {
+        return new Response(
+          JSON.stringify({ error: balCheck.error || "Insufficient credits" }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      const selectedTheme = selectThemeForTopic(contentSubject);
+      const slidesFromPlanPrompt =
+        subjectBlock +
+        "\n\n" +
+        buildProSlidesFromPlanPrompt(
+          description,
+          providedInterpretation,
+          providedPlan,
+          slideTypes,
+          description,
+        ) + fixedLectureModeContext(resolvedLectureMode);
+      const rawContent = await callAI(
+        GEMINI_API_KEY,
+        slidesFromPlanPrompt,
+        `Generate all ${slideTypes.length} slides about "${contentSubject}". Every question and fact must use REAL domain-specific terminology.`,
+        { maxOutputTokens: 16384 },
+      );
+      let rawSlides = normalizeToSlidesArray(parseModelJson(rawContent));
+      if (!rawSlides || rawSlides.length === 0) {
+        throw new Error("Failed to parse slides from AI response");
+      }
+      rawSlides = rawSlides.slice(0, slideTypes.length);
+      for (let i = 0; i < rawSlides.length; i++) {
+        rawSlides[i] = validateAndFixSlide(rawSlides[i], i, contentSubject, description);
+      }
+      sanitizeSlideDeckForPromptEcho(rawSlides as RawSlide[], description, contentSubject);
+      if (rawSlides.length > 0 && String(rawSlides[0].type) === "title") {
+        fixEchoMetaInSlide(rawSlides[0] as RawSlide, description, contentSubject);
+      }
+      const thinList = rawSlides
+        .map((s, i) => ({ slide: s, index: i }))
+        .filter(({ slide }) => slideContentIsThin(slide, contentSubject, description));
+      if (thinList.length > 0) {
+        try {
+          const repaired = await batchRepairThinSlides(GEMINI_API_KEY, thinList, contentSubject, resolvedLectureMode, description);
+          for (const { index, slide } of repaired) {
+            rawSlides[index] = validateAndFixSlide(slide, index, contentSubject, description);
+          }
+        } catch (e) {
+          console.warn("[generate-slides] Batch repair failed in phase=slides:", e);
+        }
+      }
+      await dedupeInteractiveQuestions(GEMINI_API_KEY, rawSlides as RawSlide[], contentSubject, resolvedLectureMode, description);
+      const reDetectLang = hebrewRegex.test(
+        rawSlides.map((s: any) => JSON.stringify(s.content || "")).join(" "),
+      ) ? "hebrew" : "english";
+      const mappedSlides = rawSlides.map((s: any, i: number) => {
+        let imgUrl: string | undefined;
+        return mapSlideToFrontendFormat(s as RawSlide, i, selectedTheme, reDetectLang, imgUrl, contentSubject);
+      });
+      const pendingImages: Array<{ slideIndex: number; prompt: string }> = [];
+      for (let i = 0; i < rawSlides.length; i++) {
+        const s = rawSlides[i] as RawSlide;
+        if (s.imagePrompt && ["title", "split_content", "poll", "wordcloud"].includes(String(s.type))) {
+          pendingImages.push({ slideIndex: i, prompt: s.imagePrompt });
+        }
+      }
+      const creditResult = await consumeCredits(user.id, rawSlides.length, `Batch slides (${rawSlides.length})`);
+      if (!creditResult.success) {
+        return new Response(
+          JSON.stringify({ error: creditResult.error || "Failed to deduct credits" }),
+          { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          phase: "slides",
+          slides: mappedSlides,
+          theme: selectedTheme,
+          detectedLanguage: reDetectLang,
+          creditsConsumed: rawSlides.length,
+          pendingSlideImages: pendingImages.length > 0 ? pendingImages : undefined,
+          lectureTitle: String(rawSlides[0]?.content?.title || contentSubject || "Presentation"),
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const useProBatchFromClient =
       isPro &&
       providedPlan &&
@@ -2906,6 +3042,7 @@ serve(async (req) => {
           providedInterpretation,
           providedPlan,
           slideTypes,
+          description,
         ) + fixedLectureModeContext(resolvedLectureMode);
       rawContent = await callAI(
         GEMINI_API_KEY,

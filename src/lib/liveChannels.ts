@@ -1,10 +1,12 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
-/** Central channel names for live lecture realtime (broadcast + presence). */
+/** Central channel names for live lecture realtime (broadcast + presence).
+ *  Reactions now share the lecture-sync channel to cut total channel count. */
 export const liveChannelNames = {
   lectureSync: (lectureId: string) => `lecture-sync-${lectureId}`,
-  reactions: (lectureId: string) => `reactions-${lectureId}`,
+  /** @deprecated reactions are now sent via lectureSync as event `emoji_reaction`. Kept for reference only. */
+  reactions: (lectureId: string) => `lecture-sync-${lectureId}`,
   game: (lectureId: string) => `game-${lectureId}`,
   /** Supabase Presence: who is online now (students track; presenter subscribes only). */
   lecturePresence: (lectureId: string) => `lecture-presence-${lectureId}`,
@@ -24,8 +26,13 @@ export function createLectureSyncChannel(lectureId: string): RealtimeChannel {
   });
 }
 
+/**
+ * @deprecated Reactions now piggyback on the lecture-sync channel.
+ * Callers should subscribe to `emoji_reaction` on the sync channel instead.
+ * This helper returns the SAME channel name as createLectureSyncChannel.
+ */
 export function createReactionsChannel(lectureId: string): RealtimeChannel {
-  return supabase.channel(liveChannelNames.reactions(lectureId), {
+  return supabase.channel(liveChannelNames.lectureSync(lectureId), {
     config: { broadcast: { self: false } },
   });
 }

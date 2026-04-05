@@ -9,18 +9,21 @@ const corsHeaders = {
 
 const INITIAL_FREE_CREDITS = 15;
 
+const _sbUrl = Deno.env.get("SUPABASE_URL") ?? "";
+const _sbAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+const _sbServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const supabaseAnon = _sbUrl && _sbAnonKey ? createClient(_sbUrl, _sbAnonKey) : null;
+const supabaseAdmin = _sbUrl && _sbServiceKey ? createClient(_sbUrl, _sbServiceKey) : null;
+
 async function verifyAuth(req: Request): Promise<{ user: { id: string } | null; error: string | null }> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) return { user: null, error: "Missing authorization header" };
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!token) return { user: null, error: "Missing token" };
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (!supabaseUrl || !supabaseAnonKey) return { user: null, error: "Server configuration error" };
+  if (!supabaseAnon) return { user: null, error: "Server configuration error" };
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { data: { user }, error } = await supabase.auth.getUser(token);
+  const { data: { user }, error } = await supabaseAnon.auth.getUser(token);
   if (error || !user) return { user: null, error: error?.message || "Invalid token" };
   return { user: { id: user.id }, error: null };
 }
@@ -39,17 +42,14 @@ serve(async (req) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!supabaseUrl || !supabaseServiceKey) {
+    if (!supabaseAdmin) {
       return new Response(
         JSON.stringify({ error: "Server configuration error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-    const { data: existing } = await supabase
+    const { data: existing } = await supabaseAdmin
       .from("user_credits")
       .select("user_id")
       .eq("user_id", user.id)
@@ -62,7 +62,7 @@ serve(async (req) => {
       );
     }
 
-    const { error: insertError } = await supabase.from("user_credits").insert({
+    const { error: insertError } = await supabaseAdmin.from("user_credits").insert({
       user_id: user.id,
       ai_tokens_balance: INITIAL_FREE_CREDITS,
     });

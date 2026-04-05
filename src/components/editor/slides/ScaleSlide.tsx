@@ -34,7 +34,7 @@ export function ScaleSlide({
   onUpdate,
   liveResults,
   totalResponses = 0,
-  themeId = 'neon-cyber',
+  themeId = 'academic-pro',
   designStyleId = 'dynamic',
   hideFooter = false,
   forceShowStats = false,

@@ -59,12 +59,11 @@ import {
   subscribeStudents,
   subscribeResponses,
 } from "@/lib/lectureService";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase, removeAllChannels } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import {
   createLectureSyncChannel,
-  createReactionsChannel,
   createPresenterPresenceChannel,
   countPresenceOnline,
   presenceNamesList,
@@ -97,6 +96,14 @@ const Present = () => {
   const { lectureId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Cleanup ALL channels when unmounting the present view to prevent orphan subscriptions.
+  useEffect(() => {
+    return () => {
+      removeAllChannels();
+    };
+  }, []);
+
   const [lecture, setLecture] = useState<any>(null);
   const [slides, setSlides] = useState<Slide[]>([]);
   const [currentSlideIndex, setCurrentSlideIndex] = useState(0);
@@ -128,11 +135,19 @@ const Present = () => {
   const [raffleWheelNames, setRaffleWheelNames] = useState<string[] | null>(null);
   /** Bumps to tear down and recreate postgres_changes subscriptions after Realtime errors. */
   const [presentPgReconnectKey, setPresentPgReconnectKey] = useState(0);
+  const pgReconnectAttemptsRef = useRef(0);
 
   const schedulePresentPgReconnect = useCallback(() => {
+    const attempts = pgReconnectAttemptsRef.current;
+    if (attempts >= 8) {
+      console.warn('[Present] Realtime max retries reached, relying on polling only');
+      return;
+    }
+    const delay = Math.min(PRESENT_PG_REALTIME_RESUBSCRIBE_DELAY_MS * Math.pow(2, attempts), 30000);
+    pgReconnectAttemptsRef.current = attempts + 1;
     window.setTimeout(() => {
       setPresentPgReconnectKey((k) => k + 1);
-    }, PRESENT_PG_REALTIME_RESUBSCRIBE_DELAY_MS);
+    }, delay);
   }, []);
 
   // Layer 1 – Broadcast (fastest): channel lecture-sync-${lectureId} for instant slide sync to students
@@ -166,13 +181,24 @@ const Present = () => {
           }
         }
       })
-      // Instant Q&A delivery: student sends a broadcast hint after inserting into DB.
       .on('broadcast', { event: 'question_new' }, () => {
         try {
           reloadQuestionsRef.current();
         } catch (e) {
           console.warn('[Present] question_new reload:', e);
         }
+      })
+      .on('broadcast', { event: 'emoji_reaction' }, ({ payload }) => {
+        const { emoji } = payload as { emoji: string };
+        const id = Date.now() + Math.random();
+        const x = 10 + Math.random() * 80;
+        setFloatingReactions(prev => {
+          const next = [...prev, { id, emoji, x }];
+          return next.length > 20 ? next.slice(-20) : next;
+        });
+        setTimeout(() => {
+          setFloatingReactions(prev => prev.filter(r => r.id !== id));
+        }, 3000);
       })
       .subscribe((status) => {
       console.log('[Present] Slide sync channel status:', status);
@@ -524,7 +550,41 @@ const Present = () => {
     };
   }, [lectureId, loading, presentPgReconnectKey, schedulePresentPgReconnect]);
 
-  // Load and subscribe to responses for current slide
+  // Stable response subscription: one channel for ALL responses in this lecture (avoids channel churn per slide).
+  useEffect(() => {
+    if (!lectureId) return;
+
+    const channel = supabase
+      .channel(`responses-${lectureId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "responses",
+          filter: `lecture_id=eq.${lectureId}`,
+        },
+        (payload) => {
+          const newRow = payload.new as Record<string, unknown> | undefined;
+          const rowSlideIndex = newRow && typeof newRow.slide_index === "number" ? newRow.slide_index : null;
+          if (rowSlideIndex === currentSlideIndexRef.current && newRow) {
+            setResponses((prev) => [...prev, newRow]);
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.warn("[Present] responses postgres realtime:", status, err?.message);
+          schedulePresentPgReconnect();
+        }
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [lectureId, presentPgReconnectKey, schedulePresentPgReconnect]);
+
+  // Fetch responses on slide change (no channel churn — the subscription above is stable)
   useEffect(() => {
     if (!lectureId || !currentSlide) return;
 
@@ -538,31 +598,10 @@ const Present = () => {
     };
 
     loadResponses();
-
-    const { channel, dispose } = subscribeResponses(
-      lectureId,
-      currentSlideIndex,
-      (newResponses) => {
-        setResponses(newResponses as any[]);
-      },
-      {
-        onChannelStatus: (status) => {
-          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-            console.warn("[Present] responses postgres realtime:", status);
-            schedulePresentPgReconnect();
-          }
-        },
-      }
-    );
-
-    return () => {
-      dispose();
-      supabase.removeChannel(channel);
-    };
-  }, [lectureId, currentSlideIndex, currentSlide, presentPgReconnectKey, schedulePresentPgReconnect]);
+  }, [lectureId, currentSlideIndex, currentSlide]);
 
   // Polling backup for responses when realtime may lag (only during live presentation on interactive/quiz slides)
-  const RESPONSE_POLL_INTERVAL_MS = 1200;
+  const RESPONSE_POLL_INTERVAL_MS = 3000;
   useEffect(() => {
     if (!lectureId || !currentSlide || !isLive) return;
     const slideInfo = SLIDE_TYPES.find(t => t.type === currentSlide.type);
@@ -606,29 +645,7 @@ const Present = () => {
     };
   }, [lectureId, loading]);
 
-  // Subscribe to emoji reactions via broadcast
-  useEffect(() => {
-    if (!lectureId) return;
-
-    const channel = createReactionsChannel(lectureId);
-
-    channel
-      .on('broadcast', { event: 'emoji_reaction' }, ({ payload }) => {
-        const { emoji } = payload as { emoji: string };
-        const id = Date.now() + Math.random();
-        const x = 10 + Math.random() * 80; // Random x position 10-90%
-        setFloatingReactions(prev => [...prev, { id, emoji, x }]);
-        // Remove after animation
-        setTimeout(() => {
-          setFloatingReactions(prev => prev.filter(r => r.id !== id));
-        }, 3000);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [lectureId]);
+  // Reactions now handled on the lecture-sync channel above (emoji_reaction event).
 
   // Load and subscribe to questions
   useEffect(() => {
@@ -846,7 +863,10 @@ const Present = () => {
       : `${getJoinPageOrigin()}/join`;
   const joinUrlDisplay = joinUrl.replace(/^https?:\/\//i, "").split("?")[0] || "join";
 
-  const aggregatedResults = buildLiveResultsPayload(currentSlide, responses);
+  const aggregatedResults = useMemo(
+    () => buildLiveResultsPayload(currentSlide, responses),
+    [currentSlide, responses],
+  );
 
   if (loading) {
     return (
@@ -1012,7 +1032,14 @@ const Present = () => {
             variant="ghost"
             size="sm"
             className="text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10"
-            onClick={() => setShowGame(true)}
+            onClick={() => {
+              setShowGame(true);
+              slideSyncChannelRef.current?.send({
+                type: "broadcast",
+                event: "game_active",
+                payload: { active: true },
+              });
+            }}
             title="Start Fruit Catch game"
           >
             <Gamepad2 className="w-4 h-4" />
@@ -1116,8 +1143,8 @@ const Present = () => {
                       hideFooter={true}
                       showCorrectAnswer={showCorrectAnswerEffective}
                       forceShowStats={true}
-                      themeId={((currentSlide?.design as { themeId?: string } | undefined)?.themeId ?? (lecture?.settings as Record<string, unknown> | undefined)?.themeId ?? (slides[0]?.design as { themeId?: string } | undefined)?.themeId) as ThemeId | undefined ?? "neon-cyber"}
-                      designStyleId={((currentSlide?.design as { designStyleId?: string } | undefined)?.designStyleId ?? (lecture?.settings as Record<string, unknown> | undefined)?.designStyleId ?? (slides[0]?.design as { designStyleId?: string } | undefined)?.designStyleId) as DesignStyleId | undefined ?? "dynamic"}
+                      themeId={(currentSlide?.design?.themeId as ThemeId) ?? "academic-pro"}
+                      designStyleId={(currentSlide?.design?.designStyleId as DesignStyleId) ?? "dynamic"}
                     />
                   </SlideLayoutProvider>
                 </BuilderPreviewProvider>
@@ -1393,10 +1420,18 @@ const Present = () => {
           <FruitCatchGame
             lectureId={lectureId}
             students={students}
-            onClose={() => setShowGame(false)}
+            onClose={() => {
+              setShowGame(false);
+              slideSyncChannelRef.current?.send({
+                type: "broadcast",
+                event: "game_active",
+                payload: { active: false },
+              });
+            }}
           />
         )}
       </AnimatePresence>
+
     </div>
   );
 };
