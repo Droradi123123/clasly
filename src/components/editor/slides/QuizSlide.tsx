@@ -57,23 +57,28 @@ export function QuizSlide({
   const animations = getAnimationVariants(designStyle);
   const spacing = getSpacingClasses(designStyle);
   const shadowClass = getShadowClasses(designStyle);
+  /** Presenter / fullscreen: slightly larger option copy for legibility */
+  const presenterOptionText = forceShowStats && !isEditing;
   
   const [showCelebration, setShowCelebration] = useState(false);
-  const [prevShowResults, setPrevShowResults] = useState(showResults);
+  const prevShowCorrectRef = useRef(showCorrectAnswer);
 
   // Use live results if provided, otherwise use zeros
   const results = liveResults || content.options.map(() => 0);
   const hasResults = totalResponses > 0;
-  const revealStats = isEditing || showResults;
+  /** Per-option counts/percentages: only after correct answer is allowed to be shown (see Present showCorrectAnswer), or while editing. */
+  const revealStats = isEditing || (showResults && showCorrectAnswer);
 
-  // Trigger celebration when showResults becomes true (only for dynamic style)
-  if (showResults && !prevShowResults && hasResults && styleConfig.celebrationOnResults) {
-    setShowCelebration(true);
-    setPrevShowResults(true);
-    setTimeout(() => setShowCelebration(false), 3000);
-  } else if (!showResults && prevShowResults) {
-    setPrevShowResults(false);
-  }
+  // Celebration when the correct answer is revealed (results phase), not when live voting starts
+  useEffect(() => {
+    const prev = prevShowCorrectRef.current;
+    prevShowCorrectRef.current = showCorrectAnswer;
+    if (showCorrectAnswer && !prev && hasResults && styleConfig.celebrationOnResults) {
+      setShowCelebration(true);
+      const t = window.setTimeout(() => setShowCelebration(false), 3000);
+      return () => window.clearTimeout(t);
+    }
+  }, [showCorrectAnswer, hasResults, styleConfig.celebrationOnResults]);
 
   // Animation entrance config based on style
   const getEntranceAnimation = (index: number) => {
@@ -141,26 +146,27 @@ export function QuizSlide({
       {styleConfig.celebrationOnResults && <SuccessBurst isActive={showCelebration} message="Correct!" variant="correct" />}
 
       <SlideWrapper slide={slide} themeId={themeId}>
-        <div className="flex flex-col h-full min-h-0 overflow-hidden">
-          {/* Header - flex-shrink-0 to prevent shrinking */}
+        <div className="flex flex-col h-full min-h-0 overflow-hidden gap-3 md:gap-5">
+          {/* Header: tighter vertical padding + gap below so title does not crowd the option grid */}
           <QuestionHeader
             question={content.question}
             onEdit={handleQuestionChange}
             editable={isEditing}
             subtitle={isEditing ? "Quiz: Select the correct answer" : undefined}
             textColor={textColor}
+            className="py-2 md:py-3 shrink-0"
           />
 
-          {/* Content area - scrollable if needed */}
-          <div className={`flex-1 flex items-center justify-center px-3 md:px-6 pb-4 min-h-0 overflow-y-auto`}>
-            <div className="w-full max-w-3xl max-h-full">
+          {/* Content area — stretch so the grid uses space below the question */}
+          <div className="flex-1 flex flex-col justify-center items-stretch px-3 md:px-6 pb-4 pt-0 min-h-0 overflow-y-auto">
+            <div className="w-full max-w-4xl max-h-full mx-auto flex flex-col min-h-0">
               {/* Clean bar results view - when resultVisualization is clean_bars */}
               {!isEditing && showResults && slide.design?.resultVisualization === 'clean_bars' ? (
                 <CleanBarResults
                   options={content.options}
                   results={results}
                   totalResponses={totalResponses}
-                  correctIndex={content.correctAnswer}
+                  correctIndex={showCorrectAnswer ? content.correctAnswer : undefined}
                   textColor={textColor}
                 />
               ) : isListWithIcons ? (
@@ -172,7 +178,7 @@ export function QuizSlide({
                   const count = results[index] || 0;
                   const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
                   const isCorrect = index === content.correctAnswer;
-                  const isHighlighted = showResults && isCorrect;
+                  const isHighlighted = showCorrectAnswer && isCorrect;
                   const IconComponent = getOptionIcon(option);
                   return (
                     <motion.div
@@ -194,13 +200,13 @@ export function QuizSlide({
                           <AutoResizeTextarea
                             value={option}
                             onChange={(e) => handleOptionChange(index, e.target.value)}
-                            className={`flex-1 bg-transparent ${optionTextColorClass} font-semibold outline-none resize-none text-base`}
+                            className={`flex-1 bg-transparent ${optionTextColorClass} font-semibold outline-none resize-none ${presenterOptionText ? 'text-base md:text-lg' : 'text-base'}`}
                             placeholder={`Option ${index + 1}`}
                             minRows={1}
                             maxRows={2}
                           />
                         ) : (
-                          <span className={`${optionTextColorClass} font-semibold text-left break-words`}>
+                          <span className={`${optionTextColorClass} font-semibold text-left break-words ${presenterOptionText ? 'text-base md:text-lg' : ''}`}>
                             <FormattedText>{String(option || "")}</FormattedText>
                           </span>
                         )}
@@ -208,7 +214,7 @@ export function QuizSlide({
                           <span className="text-white/80 text-sm font-medium flex-shrink-0">{percentage}%</span>
                         )}
                       </div>
-                      {(isHighlighted || (showCorrectAnswer && isCorrect)) && (
+                      {showCorrectAnswer && isCorrect && (
                         <Check className="w-6 h-6 text-white flex-shrink-0" />
                       )}
                       {isEditing && (
@@ -278,12 +284,12 @@ export function QuizSlide({
               {/* Options - 4 options always 2x2 grid (2 up, 2 down); otherwise stack/minimal, row/compact, or grid/dynamic */}
               <div className={`
                 ${content.options.length === 4
-                  ? `grid grid-cols-2 grid-rows-2 ${spacing.gap} h-full min-h-[180px]`
+                  ? `grid grid-cols-2 grid-rows-2 gap-3 md:gap-4 ${presenterOptionText ? 'min-h-[220px] md:min-h-[260px]' : 'min-h-[180px]'} h-full`
                   : isMinimal 
                     ? 'flex flex-col space-y-2 max-w-md mx-auto' 
                     : isCompact
                       ? `flex flex-row flex-wrap justify-center ${spacing.gap}`
-                      : `grid ${spacing.gap} h-full min-h-[180px] ${
+                      : `grid gap-3 md:gap-4 ${presenterOptionText ? 'min-h-[200px] md:min-h-[240px]' : 'min-h-[180px]'} h-full ${
                           content.options.length <= 2 ? 'grid-cols-1 max-w-md mx-auto' : 
                           'grid-cols-3 grid-rows-2'
                         }`
@@ -296,7 +302,7 @@ export function QuizSlide({
                   const count = results[index] || 0;
                   const percentage = totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
                   const isCorrect = index === content.correctAnswer;
-                  const isHighlighted = showResults && isCorrect;
+                  const isHighlighted = showCorrectAnswer && isCorrect;
                   
                   // Get border radius based on theme
                   const getBorderRadius = () => {
@@ -348,9 +354,13 @@ export function QuizSlide({
                               value={option}
                               onChange={(e) => handleOptionChange(index, e.target.value)}
                               className={`flex-1 bg-transparent ${optionTextColorClass} font-semibold outline-none text-center resize-none leading-snug ${
-                                styleConfig.optionTextSize === 'large'
-                                  ? 'text-base md:text-lg'
-                                  : 'text-sm md:text-base'
+                                presenterOptionText
+                                  ? styleConfig.optionTextSize === 'large'
+                                    ? 'text-lg md:text-xl'
+                                    : 'text-base md:text-lg'
+                                  : styleConfig.optionTextSize === 'large'
+                                    ? 'text-base md:text-lg'
+                                    : 'text-sm md:text-base'
                               }`}
                               placeholder={`Option ${index + 1}`}
                               minRows={1}
@@ -358,7 +368,13 @@ export function QuizSlide({
                             />
                           ) : (
                             <span className={`flex-1 min-w-0 ${optionTextColorClass} font-semibold text-center break-words ${
-                              styleConfig.optionTextSize === 'large' ? 'text-base md:text-lg' : 'text-sm md:text-base'
+                              presenterOptionText
+                                ? styleConfig.optionTextSize === 'large'
+                                  ? 'text-lg md:text-xl'
+                                  : 'text-base md:text-lg'
+                                : styleConfig.optionTextSize === 'large'
+                                  ? 'text-base md:text-lg'
+                                  : 'text-sm md:text-base'
                             }`}>
                               <FormattedText>{String(option || "")}</FormattedText>
                             </span>
@@ -394,8 +410,8 @@ export function QuizSlide({
                           />
                         )}
 
-                        {/* Correct answer check mark - show when revealed or in builder/editor preview */}
-                        {(isHighlighted || (showCorrectAnswer && isCorrect)) && (
+                        {/* Correct answer check — only after results phase / reveal (not during voting) */}
+                        {showCorrectAnswer && isCorrect && (
                           <motion.div
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}

@@ -33,6 +33,7 @@ import { ImportPresentationDialog } from "@/components/editor/ImportPresentation
 import { AddSlidePickerDialog } from "@/components/editor/AddSlidePickerDialog";
 import { SortableSlideItem } from "@/components/editor/SortableSlideItem";
 import { AnimateButton } from "@/components/editor/AnimateButton";
+import { EditorProductTour } from "@/components/editor/EditorProductTour";
 import { ThemeId } from "@/types/themes";
 import { DesignStyleId } from "@/types/designStyles";
 import {
@@ -230,6 +231,8 @@ const Editor = () => {
   const [selectedDesignStyleId, setSelectedDesignStyleId] = useState<DesignStyleId>('dynamic');
   const [simulationData, setSimulationData] = useState<any>(null);
   const [isAIPanelOpen, setIsAIPanelOpen] = useState(false);
+  /** Increment to replay the editor product tour from the header */
+  const [editorTourReplay, setEditorTourReplay] = useState(0);
   const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
   const [isInitialGenerating, setIsInitialGenerating] = useState(false);
   const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
@@ -504,6 +507,7 @@ const Editor = () => {
                 plan: planData.plan,
                 interpretation: planData.interpretation,
                 contentType: 'interactive',
+                totalSlides: planData.slideTypes.length,
               },
             },
             headers: { Authorization: `Bearer ${session.access_token}` },
@@ -520,6 +524,7 @@ const Editor = () => {
                   plan: planData.plan,
                   interpretation: planData.interpretation,
                   contentType: 'interactive',
+                  totalSlides: planData.slideTypes.length,
                 },
               },
               headers: { Authorization: `Bearer ${session.access_token}` },
@@ -1332,6 +1337,13 @@ const Editor = () => {
 
   return (
     <div className="h-screen bg-background flex flex-col overflow-hidden">
+      <EditorProductTour
+        lectureMode={lectureMode}
+        isReady={!isLoading && !!currentSlide && displaySlides.length > 0}
+        slidesGenerationLocked={slidesGenerationLocked}
+        setIsAIPanelOpen={setIsAIPanelOpen}
+        replayMainSignal={editorTourReplay}
+      />
       {/* Compact Editor Header - No global nav */}
       <div className="flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">
         <div className={`flex items-center justify-between ${isConstrainedViewport ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
@@ -1369,6 +1381,22 @@ const Editor = () => {
             {hasChanges && (
               <span className="text-xs text-muted-foreground hidden sm:inline">Unsaved</span>
             )}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1 text-muted-foreground hover:text-foreground"
+              disabled={slidesGenerationLocked}
+              onClick={() => setEditorTourReplay((n) => n + 1)}
+              title={
+                slidesGenerationLocked
+                  ? "המתן לסיום יצירת השקופיות"
+                  : "סיור קצר בעורך"
+              }
+            >
+              <HelpCircle className="w-4 h-4 shrink-0" aria-hidden />
+              <span className="hidden sm:inline">סיור</span>
+            </Button>
             <Button 
               variant="outline" 
               size="sm"
@@ -1390,6 +1418,7 @@ const Editor = () => {
               className="h-8"
               disabled={slidesGenerationLocked}
               title={slidesGenerationLocked ? "Wait until slide generation finishes" : undefined}
+              data-tour="editor-present"
             >
               <Play className="w-4 h-4" />
               <span className="hidden sm:inline ml-1">Present</span>
@@ -1407,7 +1436,19 @@ const Editor = () => {
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 shrink-0"
-              onClick={() => setShowWebinarSettingsDialog(true)}
+              data-tour="editor-webinar-settings"
+              onClick={() => {
+                if (!isPro) {
+                  showUpgradeModal({
+                    feature: "webinar settings",
+                    title: "View plans and upgrade",
+                    description:
+                      "Webinar branding, registration, and CTA settings are on paid plans. Upgrade to unlock full webinar tools.",
+                  });
+                  return;
+                }
+                setShowWebinarSettingsDialog(true);
+              }}
               title='Branding, registration form, and live CTA settings'
             >
               <Video className="w-4 h-4 shrink-0" />
@@ -1423,12 +1464,14 @@ const Editor = () => {
               variant="outline"
               size="sm"
               className="h-8 gap-1.5 shrink-0"
+              data-tour="editor-presentation-settings"
               onClick={() => {
                 if (!isPro) {
                   showUpgradeModal({
                     feature: "presentation settings",
-                    title: "Presentation settings",
-                    description: "Custom logo and accent color are available on the Pro plan. Upgrade to brand your presentations.",
+                    title: "View plans and upgrade",
+                    description:
+                      "Custom logo and accent color for slides are on paid plans. Upgrade to brand your presentations.",
                   });
                   return;
                 }
@@ -1447,7 +1490,6 @@ const Editor = () => {
         >
       <EditorTopToolbar
         className="border-b-0"
-        productMode={lectureMode}
         slide={currentSlide}
         compact={isConstrainedViewport}
         onUpdateDesign={updateSlideDesign}
@@ -1464,11 +1506,6 @@ const Editor = () => {
           description: "This theme is only available on the Pro plan. Upgrade to unlock all premium themes.",
         })}
         isPro={!!isPro}
-        onPremiumLogoBlocked={() => showUpgradeModal({
-          feature: "logo",
-          title: "Logo upload",
-          description: "Logo upload is available on the Pro plan. Upgrade to add your logo to slides.",
-        })}
         onPremiumColorBlocked={() => showUpgradeModal({
           feature: "custom color",
           title: "Custom color picker",
@@ -1617,6 +1654,7 @@ const Editor = () => {
                 type="button"
                 role="radio"
                 aria-checked={!isAIPanelOpen}
+                data-tour="editor-tab-slides"
                 title="Slide list and add slide"
                 onClick={() => setIsAIPanelOpen(false)}
                 className={`flex flex-1 flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 px-1.5 sm:px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[44px] border ${
@@ -1632,6 +1670,7 @@ const Editor = () => {
                 type="button"
                 role="radio"
                 aria-checked={isAIPanelOpen}
+                data-tour="editor-tab-ai"
                 title="AI Assistant"
                 onClick={() => setIsAIPanelOpen(true)}
                 className={`flex flex-1 flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 py-2 px-1.5 sm:px-2 rounded-lg text-xs sm:text-sm font-semibold transition-all min-h-[44px] border ${
@@ -1665,6 +1704,7 @@ const Editor = () => {
                 {/* Add Slide CTA - first item, prominent */}
                 <button
                   type="button"
+                  data-tour="editor-add-slide"
                   onClick={() => setShowAddSlidePicker(true)}
                   disabled={slidesGenerationLocked}
                   className="w-full flex items-center justify-center gap-2 p-4 mb-2 min-h-[44px] rounded-xl border-2 border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 hover:border-primary/60 text-primary text-sm font-semibold transition-all disabled:opacity-50 disabled:pointer-events-none"
@@ -1745,38 +1785,16 @@ const Editor = () => {
                       <span className="absolute -top-1 left-3 z-10 text-[10px] font-medium px-2 py-0.5 rounded-full bg-primary text-primary-foreground">
                         {index + 1} / {displaySlides.length}
                       </span>
-                      {slideSize?.scale !== undefined && slideSize.scale < 1 ? (
-                        <div
-                          style={{
-                            width: 960,
-                            height: 540,
-                            transform: `scale(${slideSize.scale})`,
-                            transformOrigin: 'top left',
-                          }}
-                          className="absolute top-0 left-0"
-                        >
-                          <SlideFrame>
-                            <SlideLayoutProvider slide={slide}>
-                              <SlideRenderer
-                                key={slide.id}
-                                slide={slide}
-                                isEditing={
-                                  index === currentSlideIndex && !simulationData && !slidesGenerationLocked
-                                    ? isEditing
-                                    : false
-                                }
-                                showResults={index === currentSlideIndex ? (showResults || !!simulationData) : false}
-                                onUpdateContent={updateSlideContent}
-                                liveResults={index === currentSlideIndex ? simulationData : undefined}
-                                totalResponses={index === currentSlideIndex ? (simulationData?.total ?? 0) : 0}
-                                themeId={(slide?.design as { themeId?: string } | undefined)?.themeId as ThemeId | undefined ?? selectedThemeId}
-                                designStyleId={(slide?.design as { designStyleId?: string } | undefined)?.designStyleId as DesignStyleId | undefined ?? selectedDesignStyleId}
-                                hideFooter={false}
-                              />
-                            </SlideLayoutProvider>
-                          </SlideFrame>
-                        </div>
-                      ) : (
+                      {/* Fixed 960×540 logical canvas + uniform scale — avoids reflow from switching stretch vs transform when preview size updates. */}
+                      <div
+                        style={{
+                          width: 960,
+                          height: 540,
+                          transform: `scale(${slideSize?.scale ?? 1})`,
+                          transformOrigin: 'top left',
+                        }}
+                        className="absolute top-0 left-0"
+                      >
                         <SlideFrame>
                           <SlideLayoutProvider slide={slide}>
                             <SlideRenderer
@@ -1788,6 +1806,9 @@ const Editor = () => {
                                   : false
                               }
                               showResults={index === currentSlideIndex ? (showResults || !!simulationData) : false}
+                              showCorrectAnswer={
+                                index === currentSlideIndex ? (showResults || !!simulationData) : false
+                              }
                               onUpdateContent={updateSlideContent}
                               liveResults={index === currentSlideIndex ? simulationData : undefined}
                               totalResponses={index === currentSlideIndex ? (simulationData?.total ?? 0) : 0}
@@ -1797,7 +1818,7 @@ const Editor = () => {
                             />
                           </SlideLayoutProvider>
                         </SlideFrame>
-                      )}
+                      </div>
                     </div>
                   </div>
                 ))}

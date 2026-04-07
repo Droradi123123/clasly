@@ -2324,6 +2324,43 @@ Quality: include ≥1 specific fact/number/named entity. Quiz/poll: 4 options �
 Output: JSON {"type":"${slideType}","content":{...}${includeImage ? `,"imagePrompt":"..."` : ""}}`;
 }
 
+/**
+ * Pro "progressive" pipeline generates one slide per API call (streaming UX).
+ * Historically this used only `buildSingleSlidePrompt` — **without** CONTENT_QUALITY_FRAMEWORK —
+ * while Free used a single batch call with `buildProSlidesFromPlanPrompt` (full framework).
+ * That mismatch caused paid decks to feel generic and "stuck" to the user prompt.
+ * This combines the same quality rules + plan/interpretation as the batch path.
+ */
+function buildProgressiveSlideSystemPromptParts(
+  effectiveSlideType: string,
+  ctxPrompt: string,
+  includeImage: boolean,
+  plan: string | undefined,
+  interpretation: string | undefined,
+  slideIndex: number,
+  totalSlides: number | undefined,
+): string {
+  const n = slideIndex + 1;
+  const slideOf =
+    totalSlides != null && totalSlides > 0 ? `**${n} of ${totalSlides}**` : `#${n}`;
+  const planBlock = (plan && plan.trim()) || "";
+  const interpBlock = (interpretation && interpretation.trim()) || "";
+
+  const slideContext = `## SLIDE IN CONTEXT (this slide only)
+- You are writing slide ${slideOf}. The slide **type** sets the format; the **words** must come from domain expertise below — never generic quiz/poll phrasing.
+- **Narrative plan:** ${planBlock || "(infer from user topic)"}
+- **Topic analysis (every option and fact must reflect this depth):** ${interpBlock || "(infer domain expertise from topic)"}
+`;
+
+  return (
+    CONTENT_QUALITY_FRAMEWORK +
+    "\n\n" +
+    slideContext +
+    "\n" +
+    buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage)
+  );
+}
+
 function selectThemeForTopic(topic: string): GeneratedTheme {
   const t = topic.toLowerCase();
   if (/tech|ai|cyber|digital|future|robot/.test(t)) return CINEMATIC_THEMES.find((th) => th.id === "neon-cyber")!;
@@ -2338,6 +2375,16 @@ type CallAiOptions = {
   responseSchema?: Record<string, unknown>;
   maxOutputTokens?: number;
   temperature?: number;
+};
+
+/**
+ * Pro progressive (one slide per request): align with batch quality — a touch more
+ * creative variance than default 0.72, and headroom for long Hebrew quiz/poll options.
+ * Batch / plan phases keep callAI defaults unless they pass explicit options.
+ */
+const PROGRESSIVE_SINGLE_SLIDE_AI: CallAiOptions = {
+  temperature: 0.78,
+  maxOutputTokens: 12288,
 };
 
 async function callAI(
@@ -2519,13 +2566,21 @@ async function generateRawSlideForDeck(
   const sysPrompt =
     subjectBlock +
     "\n\n" +
-    buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage) +
+    buildProgressiveSlideSystemPromptParts(
+      effectiveSlideType,
+      ctxPrompt,
+      includeImage,
+      plan,
+      interpretation,
+      index,
+      undefined,
+    ) +
     fixedLectureModeContext(resolvedLectureMode);
   const rawContent = await callAI(
     apiKey,
     sysPrompt,
-    `Generate a ${effectiveSlideType} slide about "${contentSubject}". Make it SPECIFIC and ENGAGING.`,
-    { responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
+    `Generate a ${effectiveSlideType} slide about "${contentSubject}". Follow CONTENT QUALITY: real domain terminology, no generic templates.`,
+    { ...PROGRESSIVE_SINGLE_SLIDE_AI, responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
   );
   let rawSlide = parseModelJson(rawContent);
   if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];
@@ -2737,16 +2792,32 @@ serve(async (req) => {
         ? `Presentation about: "${slideSubject}". Plan: ${plan}. Slide ${(index || 0) + 1}. Context: ${interpretation}`
         : `Topic: "${slideSubject}".`;
       const includeImage = ["title", "split_content", "poll", "wordcloud"].includes(effectiveSlideType);
+      const totalSlides =
+        typeof progressiveSlide.totalSlides === "number" && progressiveSlide.totalSlides > 0
+          ? progressiveSlide.totalSlides
+          : undefined;
       const sysPrompt =
         subjectBlock +
         "\n\n" +
-        buildSingleSlidePrompt(effectiveSlideType, ctxPrompt, "professional", includeImage) +
+        buildProgressiveSlideSystemPromptParts(
+          effectiveSlideType,
+          ctxPrompt,
+          includeImage,
+          typeof plan === "string" ? plan : undefined,
+          typeof interpretation === "string" ? interpretation : undefined,
+          index || 0,
+          totalSlides,
+        ) +
         fixedLectureModeContext(resolvedLectureMode);
+      const userSlideHint =
+        totalSlides != null
+          ? `Generate slide ${(index || 0) + 1} of ${totalSlides} (${effectiveSlideType}) for "${slideSubject}". Follow CONTENT QUALITY + SLIDE IN CONTEXT: real domain terminology, no generic templates.`
+          : `Generate a ${effectiveSlideType} slide about "${slideSubject}". Follow CONTENT QUALITY: real domain terminology, no generic templates.`;
       const rawContent = await callAI(
         GEMINI_API_KEY,
         sysPrompt,
-        `Generate a ${effectiveSlideType} slide about "${slideSubject}". Make it SPECIFIC and ENGAGING.`,
-        { responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
+        userSlideHint,
+        { ...PROGRESSIVE_SINGLE_SLIDE_AI, responseSchema: GEMINI_SINGLE_SLIDE_SCHEMA },
       );
       let rawSlide = parseModelJson(rawContent);
       if (Array.isArray(rawSlide) && rawSlide.length > 0) rawSlide = rawSlide[0];

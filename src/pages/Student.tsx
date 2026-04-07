@@ -852,7 +852,7 @@ const Student = () => {
       }).catch(() => {});
       toast.success("Question sent", {
         description: "The presenter can see it in their queue.",
-        duration: 4000,
+        duration: 2200,
       });
       setQuestionText("");
       setShowQuestionForm(false);
@@ -1495,15 +1495,6 @@ const Student = () => {
               </p>
             </div>
 
-            {lecture.status === "active" && currentSlide ? (
-              <div className="rounded-2xl border border-border/60 bg-card/80 backdrop-blur p-6 text-center shadow-lg">
-                <Sparkles className="w-10 h-10 text-primary mx-auto mb-3 opacity-90" />
-                <p className="font-semibold text-foreground">Follow the main screen</p>
-                <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
-                  Your phone is the remote. Slides and visuals stay on the presenter display — you’ll get prompts here when it’s time to interact.
-                </p>
-              </div>
-            ) : null}
           </motion.div>
         )}
       </main>
@@ -1538,22 +1529,22 @@ const Student = () => {
         </Button>
       </div>
 
-      {/* Question Form Modal */}
+      {/* Question form: bottom sheet, lifted above safe area (not centered) — stays visible above home indicator / keyboard */}
       <AnimatePresence>
         {showQuestionForm && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-background/80 backdrop-blur-sm flex items-end z-50"
+            className="fixed inset-0 z-50 flex items-end justify-center bg-background/80 px-4 pt-10 backdrop-blur-sm"
             onClick={() => setShowQuestionForm(false)}
           >
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25 }}
-              className="w-full bg-card rounded-t-2xl p-6"
+              transition={{ type: "spring", damping: 30, stiffness: 340 }}
+              className="w-full max-w-lg rounded-t-2xl border border-border/60 bg-card p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-xl max-h-[min(78vh,30rem)] overflow-y-auto mb-[max(3.5rem,env(safe-area-inset-bottom))]"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">

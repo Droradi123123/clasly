@@ -66,11 +66,16 @@ export function getActivityPhaseState(
   /** Timed activities: show live aggregates during voting; correct answers stay gated via `showCorrectAnswer`. */
   const showLiveResults =
     !participative || !hasTimer || inVotingPhase || inResultsPhase;
+  /**
+   * Reveal correct answer (quiz / poll_quiz / yesno / …) only in **results phase** — when the timer
+   * has ended (or skip-to-results). Never use `!hasTimer` here: quizzes with duration 0 would leak
+   * the correct answer during "voting"; timed quizzes must wait for `inResultsPhase`.
+   * Non-quiz slides: always `true` (prop ignored or used for non–correct-answer UI).
+   */
   const showCorrectAnswer =
     !slide ||
-    !isQuizSlide(slide.type) ||
     !participative ||
-    !hasTimer ||
+    !isQuizSlide(slide.type) ||
     inResultsPhase;
 
   return {

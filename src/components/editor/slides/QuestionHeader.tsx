@@ -10,6 +10,8 @@ interface QuestionHeaderProps {
   editable?: boolean;
   subtitle?: string;
   textColor?: string;
+  /** Extra classes on the outer wrapper (e.g. tighter padding on quiz slides) */
+  className?: string;
 }
 
 export function QuestionHeader({
@@ -18,6 +20,7 @@ export function QuestionHeader({
   editable = false,
   subtitle,
   textColor = "#ffffff",
+  className,
 }: QuestionHeaderProps) {
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -34,7 +37,7 @@ export function QuestionHeader({
     <motion.div
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="px-4 md:px-8 py-3 md:py-4 relative flex-shrink-0"
+      className={`px-4 md:px-8 py-3 md:py-4 relative flex-shrink-0 ${className ?? ""}`}
       style={{ textAlign: alignVar }}
     >
       {/* Question: when editable and not focused show FormattedText (bold visible); click to edit */}

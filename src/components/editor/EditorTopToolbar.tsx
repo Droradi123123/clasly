@@ -89,7 +89,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface EditorTopToolbarProps {
@@ -98,23 +97,18 @@ interface EditorTopToolbarProps {
   selectedThemeId: ThemeId;
   onSelectTheme: (themeId: ThemeId) => void;
   onPremiumThemeBlocked?: () => void;
-  /** When logo scope is 'all', propagate to all slides */
+  /** Propagate design updates to all slides (e.g. theme) */
   onUpdateDesignForAllSlides?: (updates: Partial<SlideDesign>) => void;
-  /** Pro-only: logo upload. When false and user tries logo, call this. */
+  /** Pro: full controls. Free: premium color/theme gates. Slide logo lives in Presentation / Webinar settings. */
   isPro?: boolean;
-  onPremiumLogoBlocked?: () => void;
-  /** Pro-only: custom color picker. When false and user tries custom color, call this. */
   onPremiumColorBlocked?: () => void;
   /** Import presentation (PPT/PDF) - opens Import dialog */
   onImportClick?: () => void;
-  /** Optional controls shown at the start of the toolbar (e.g. webinar settings). */
-  leadingSlot?: React.ReactNode;
-  /** Educator vs Webinar — visible product chip */
-  productMode?: "education" | "webinar";
   /** When true, use compact padding (constrained viewport) */
   compact?: boolean;
   /** Participative slides: timer length and scoring */
   onUpdateActivitySettings?: (settings: Partial<ActivitySettings>) => void;
+  className?: string;
 }
 
 const FONT_OPTIONS: { value: FontFamily; label: string }[] = [
@@ -140,30 +134,23 @@ export function EditorTopToolbar({
   onPremiumThemeBlocked,
   onUpdateDesignForAllSlides,
   isPro = false,
-  onPremiumLogoBlocked,
   onPremiumColorBlocked,
   onImportClick,
   className,
   compact = false,
   onUpdateActivitySettings,
-  productMode = "education",
 }: EditorTopToolbarProps) {
   const design = slide.design || {};
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [pendingThemeId, setPendingThemeId] = useState<ThemeId | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [showLogoPicker, setShowLogoPicker] = useState(false);
   const [customBgColor, setCustomBgColor] = useState(design.backgroundColor || "#6366f1");
   const [imageUrlInput, setImageUrlInput] = useState(design.overlayImageUrl || "");
-  const [logoUrlInput, setLogoUrlInput] = useState(design.logoUrl || "");
 
   useEffect(() => {
     setImageUrlInput(design.overlayImageUrl || "");
   }, [design.overlayImageUrl]);
-  useEffect(() => {
-    setLogoUrlInput(design.logoUrl || "");
-  }, [design.logoUrl]);
 
   const updateDesign = (updates: Partial<SlideDesign>) => {
     onUpdateDesign({ ...design, ...updates });
@@ -206,17 +193,6 @@ export function EditorTopToolbar({
       )}
     >
       <div className={`flex items-center gap-1 overflow-x-auto ${compact ? 'px-3 py-1.5' : 'px-4 py-2'}`}>
-        <Badge
-          variant="outline"
-          className={cn(
-            "shrink-0 mr-1 text-[10px] uppercase tracking-wide font-semibold",
-            productMode === "webinar"
-              ? "border-teal-500/50 text-teal-800 dark:text-teal-200"
-              : "border-violet-500/45 text-violet-900 dark:text-violet-100",
-          )}
-        >
-          {productMode === "webinar" ? "Webinar deck" : "Educator deck"}
-        </Badge>
         {/* Text & layout — single compact control */}
         <div className="flex items-center pr-3 border-r border-border/50 shrink-0">
           <Popover>
@@ -559,7 +535,12 @@ export function EditorTopToolbar({
           {/* Background Picker */}
           <Popover open={showBgPicker} onOpenChange={setShowBgPicker}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 gap-1.5 text-xs">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                data-tour="editor-toolbar-bg"
+              >
                 <div
                   className="w-4 h-4 rounded border border-border/50"
                   style={{
@@ -816,32 +797,6 @@ export function EditorTopToolbar({
             setShowImagePicker={setShowImagePicker}
             variant="image"
           />
-
-          {/* Logo Picker – Pro only */}
-          {isPro ? (
-            <ImageAndPositionPopover
-              design={design}
-              imageUrlInput={logoUrlInput}
-              setImageUrlInput={setLogoUrlInput}
-              onUpdateDesign={updateDesign}
-              onUpdateDesignForAllSlides={onUpdateDesignForAllSlides}
-              showImagePicker={showLogoPicker}
-              setShowImagePicker={setShowLogoPicker}
-              variant="logo"
-            />
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 gap-1.5 text-xs opacity-70"
-              onClick={() => onPremiumLogoBlocked?.()}
-              title="Logo upload is a Pro feature"
-            >
-              <ImageIcon className="w-4 h-4" />
-              Logo
-              <Lock className="w-3 h-3" />
-            </Button>
-          )}
 
           {/* Import - document-level action */}
           {onImportClick && (
