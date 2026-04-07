@@ -33,8 +33,8 @@ function TourBody({
   children: ReactNode;
 }) {
   return (
-    <div className="text-right space-y-2" dir="rtl">
-      <div className="flex items-start gap-3 flex-row-reverse">
+    <div className="text-left space-y-2" dir="ltr">
+      <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/25">
           <Icon className="h-5 w-5" aria-hidden />
         </div>
@@ -54,9 +54,9 @@ function buildMainSteps(): Step[] {
       placement: "right",
       disableBeacon: true,
       content: (
-        <TourBody icon={Sparkles} title="העוזר החכם (AI)">
-          כאן נפתח צ’אט עם AI — אפשר לבקש תיקונים, ניסוח מחדש, רעיונות לשקופית, ותמונות (לפי סוג
-          השקופית). מומלץ להתחיל מכאן כשהמצגת כבר קיימת.
+        <TourBody icon={Sparkles} title="AI Assistant">
+          Open the AI chat to rewrite content, improve structure, generate ideas, and create visuals
+          based on the current slide type. This is the best place to iterate quickly once your deck exists.
         </TourBody>
       ),
     },
@@ -65,9 +65,9 @@ function buildMainSteps(): Step[] {
       placement: "right",
       disableBeacon: true,
       content: (
-        <TourBody icon={LayoutGrid} title="רשימת השקופיות">
-          בטאב Slides רואים את כל השקופיות בסדר. אפשר לגרור לסידור מחדש ולבחור שקופית לעריכה במרכז
-          המסך.
+        <TourBody icon={LayoutGrid} title="Slides Panel">
+          The Slides tab shows your full deck in order. Drag to reorder and click any slide to edit it in
+          the main canvas.
         </TourBody>
       ),
     },
@@ -76,9 +76,9 @@ function buildMainSteps(): Step[] {
       placement: "right",
       disableBeacon: true,
       content: (
-        <TourBody icon={Plus} title="הוספת שקופית ידנית">
-          Add slide פותח בוחר סוג שקופית — טקסט, תמונה, שאלות קהל ועוד. שימושי כשצריך שקופית אחת
-          ספציפית בלי לבקש מ-AI את כל המצגת מחדש.
+        <TourBody icon={Plus} title="Add Slide Manually">
+          Add Slide lets you pick a specific slide type (content, image, quiz, poll, and more) without
+          regenerating the whole presentation.
         </TourBody>
       ),
     },
@@ -87,9 +87,9 @@ function buildMainSteps(): Step[] {
       placement: "bottom",
       disableBeacon: true,
       content: (
-        <TourBody icon={Palette} title="סרגל עיצוב לשקופית">
-          כאן משנים רקע, ערכת נושא, טקסט ועוד — ההתאמות חלות על השקופית הנבחרת (ולפעמים על כל
-          המצגת, לפי מה שבוחרים בתפריטים).
+        <TourBody icon={Palette} title="Slide Styling Toolbar">
+          Customize background, theme, typography, and visual style. Changes apply to the selected slide,
+          and some actions can be applied globally from the same controls.
         </TourBody>
       ),
     },
@@ -98,9 +98,9 @@ function buildMainSteps(): Step[] {
       placement: "bottom",
       disableBeacon: true,
       content: (
-        <TourBody icon={Play} title="שידור והצגה">
-          Present עובר למצב הצגה מלאה — שיתוף QR לקהל, תשובות בזמן אמת בשאלות, וכל מה שצריך בשיעור
-          או באירוע חי.
+        <TourBody icon={Play} title="Present Mode">
+          Switch to full presentation mode with QR join, live audience participation, and presenter controls
+          for classroom or webinar delivery.
         </TourBody>
       ),
     },
@@ -114,9 +114,9 @@ function buildSettingsStepWebinar(): Step[] {
       placement: "bottom",
       disableBeacon: true,
       content: (
-        <TourBody icon={Video} title="הגדרות וובינר">
-          כאן מגדירים מיתוג (לוגו), טופס הרשמה, וכפתור CTA לשידור — כדי שהמותג וההמרות יופיעו
-          נכון גם בזמן השידור וגם אצל המשתתפים.
+        <TourBody icon={Video} title="Webinar Settings">
+          Configure branding, registration experience, and your live CTA so your webinar looks consistent
+          and conversion-ready across presenter and attendee screens.
         </TourBody>
       ),
     },
@@ -130,9 +130,9 @@ function buildSettingsStepEducation(): Step[] {
       placement: "bottom",
       disableBeacon: true,
       content: (
-        <TourBody icon={Settings2} title="הגדרות מצגת">
-          כאן מעלים לוגו ומגדירים צבע הדגשה למצגת — כך המיתוג שלכם נשאר עקבי בכל השקופיות ובמסך
-          ההצגה.
+        <TourBody icon={Settings2} title="Presentation Settings">
+          Upload a logo and set your accent color so branding stays consistent across every slide and in
+          present mode.
         </TourBody>
       ),
     },
@@ -268,7 +268,7 @@ export function EditorProductTour({
       boxShadow: "0 25px 50px -12px rgb(0 0 0 / 0.35)",
     },
     tooltipContainer: {
-      textAlign: "right" as const,
+      textAlign: "left" as const,
     },
     buttonNext: {
       borderRadius: 10,
@@ -287,11 +287,11 @@ export function EditorProductTour({
   };
 
   const locale = {
-    back: "חזרה",
-    close: "סגור",
-    last: "סיום",
-    next: "הבא",
-    skip: "דלג",
+    back: "Back",
+    close: "Close",
+    last: "Done",
+    next: "Next",
+    skip: "Skip",
   };
 
   const canRun = isReady && !slidesGenerationLocked;

@@ -709,15 +709,15 @@ export function EditorTopToolbar({
           {(() => {
             type IconComp = React.ComponentType<{ className?: string }>;
             const variantConfig: Record<string, { key: keyof SlideDesign; variant2: string; label1: string; label2: string; icon1: IconComp; icon2: IconComp }> = {
-              quiz: { key: 'quizVariant', variant2: 'listWithIcons', label1: 'כרטיסים', label2: 'רשימה עם אייקונים', icon1: LayoutGrid, icon2: List },
-              poll: { key: 'pollVariant', variant2: 'rankedBars', label1: 'פסים', label2: 'פסים מדורגים', icon1: Rows3, icon2: TrendingUp },
-              poll_quiz: { key: 'pollVariant', variant2: 'rankedBars', label1: 'פסים', label2: 'פסים מדורגים', icon1: Rows3, icon2: TrendingUp },
-              yesno: { key: 'yesNoVariant', variant2: 'thumbsDynamic', label1: 'כפתורים', label2: 'אגודלים', icon1: Circle, icon2: ThumbsUp },
-              scale: { key: 'scaleVariant', variant2: 'stepsClick', label1: 'מטר', label2: 'צעדים', icon1: Sliders, icon2: ListOrdered },
-              ranking: { key: 'rankingVariant', variant2: 'podium', label1: 'רשימה', label2: 'פודיום', icon1: List, icon2: LayoutList },
-              guess_number: { key: 'guessNumberVariant', variant2: 'thermometer', label1: 'קלט', label2: 'תרמומטר', icon1: Hash, icon2: Thermometer },
-              sentiment_meter: { key: 'sentimentMeterVariant', variant2: 'emojiRow', label1: 'סליידר', label2: 'שורת אימוג\'י', icon1: Sliders, icon2: Heart },
-              agree_spectrum: { key: 'agreeSpectrumVariant', variant2: 'steps', label1: 'ספקטרום', label2: 'צעדים', icon1: ArrowLeftRight, icon2: ListOrdered },
+              quiz: { key: 'quizVariant', variant2: 'listWithIcons', label1: 'Cards', label2: 'Icon list', icon1: LayoutGrid, icon2: List },
+              poll: { key: 'pollVariant', variant2: 'rankedBars', label1: 'Bars', label2: 'Ranked bars', icon1: Rows3, icon2: TrendingUp },
+              poll_quiz: { key: 'pollVariant', variant2: 'rankedBars', label1: 'Bars', label2: 'Ranked bars', icon1: Rows3, icon2: TrendingUp },
+              yesno: { key: 'yesNoVariant', variant2: 'thumbsDynamic', label1: 'Buttons', label2: 'Thumbs', icon1: Circle, icon2: ThumbsUp },
+              scale: { key: 'scaleVariant', variant2: 'stepsClick', label1: 'Meter', label2: 'Steps', icon1: Sliders, icon2: ListOrdered },
+              ranking: { key: 'rankingVariant', variant2: 'podium', label1: 'List', label2: 'Podium', icon1: List, icon2: LayoutList },
+              guess_number: { key: 'guessNumberVariant', variant2: 'thermometer', label1: 'Input', label2: 'Thermometer', icon1: Hash, icon2: Thermometer },
+              sentiment_meter: { key: 'sentimentMeterVariant', variant2: 'emojiRow', label1: 'Slider', label2: 'Emoji row', icon1: Sliders, icon2: Heart },
+              agree_spectrum: { key: 'agreeSpectrumVariant', variant2: 'steps', label1: 'Spectrum', label2: 'Steps', icon1: ArrowLeftRight, icon2: ListOrdered },
             };
             const cfg = variantConfig[slide.type];
             if (!cfg) return null;
@@ -766,7 +766,7 @@ export function EditorTopToolbar({
                     size="sm"
                     className="h-8 w-8 p-0"
                     onClick={() => updateDesign({ wordCloudStyleId: 'organic' })}
-                    title="אורגני - מילים מפוזרות"
+                    title="Organic — scattered words"
                   >
                     <Cloud className="w-4 h-4" />
                   </Button>
@@ -775,14 +775,14 @@ export function EditorTopToolbar({
                     size="sm"
                     className="h-8 w-8 p-0"
                     onClick={() => updateDesign({ wordCloudStyleId: 'compact' })}
-                    title="קומפקטי - מילים כתגיות"
+                    title="Compact — tag-style words"
                   >
                     <Tags className="w-4 h-4" />
                   </Button>
                 </div>
               </TooltipTrigger>
               <TooltipContent>
-                <p>עיצוב ענן מילים: אורגני / קומפקטי</p>
+                <p>Word cloud style: Organic / Compact</p>
               </TooltipContent>
             </Tooltip>
           )}
@@ -890,8 +890,12 @@ function ImageAndPositionPopover({
       apply(displayUrl);
       setImageUrlInput(displayUrl);
       toast.success("Image uploaded");
-    } catch (err: any) {
-      toast.error(err?.message || "Upload failed");
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "message" in err && typeof (err as any).message === "string"
+          ? (err as any).message
+          : "Upload failed";
+      toast.error(msg);
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -995,7 +999,11 @@ function ImageAndPositionPopover({
                         className="h-8 text-xs"
                         onClick={() => {
                           const u = { logoPosition: v };
-                          design.logoScope === "all" && onUpdateDesignForAllSlides ? onUpdateDesignForAllSlides(u) : onUpdateDesign(u);
+                          if (design.logoScope === "all" && onUpdateDesignForAllSlides) {
+                            onUpdateDesignForAllSlides(u);
+                          } else {
+                            onUpdateDesign(u);
+                          }
                         }}
                       >
                         {v.replace("-", " ")}
@@ -1019,7 +1027,11 @@ function ImageAndPositionPopover({
                         className="h-7 text-xs"
                         onClick={() => {
                           const u = { logoUrl: design.logoUrl, logoPosition: design.logoPosition ?? "top-right", logoScope: "all" as LogoScope };
-                          onUpdateDesignForAllSlides ? onUpdateDesignForAllSlides(u) : onUpdateDesign(u);
+                          if (onUpdateDesignForAllSlides) {
+                            onUpdateDesignForAllSlides(u);
+                          } else {
+                            onUpdateDesign(u);
+                          }
                         }}
                       >
                         All slides

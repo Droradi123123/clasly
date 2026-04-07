@@ -22,7 +22,7 @@ export async function getEdgeFunctionErrorMessage(
       if (bodyMessage) return bodyMessage;
       if (res.status === 402) return "AI credits exhausted. Please add credits to continue.";
       if (res.status === 429) return "Too many requests. Please wait a moment and try again.";
-      if (res.status === 503) return "Service temporarily unavailable. Please try again in a moment.";
+      if (res.status === 503) return "The AI service is temporarily busy. Please wait 20-30 seconds and try again.";
       return `Error ${res.status}: ${body ? JSON.stringify(body).slice(0, 100) : res.statusText}`;
     } catch {
       if (res.status === 401) return "Session invalid or expired. Please sign out and sign in again, then try again.";

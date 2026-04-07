@@ -127,6 +127,23 @@ function arePlaceholderOrEmptySlides(slides: Slide[]): boolean {
   return !!isPlaceholder;
 }
 
+const RETRYABLE_EDGE_STATUSES = new Set([429, 503, 504]);
+const TRANSIENT_AI_ERROR_RE =
+  /(timeout|timed out|temporar|unavailable|overload|busy|network|503|504|429)/i;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableEdgeError(error: unknown): boolean {
+  const status = getEdgeFunctionStatus(error);
+  return status != null && RETRYABLE_EDGE_STATUSES.has(status);
+}
+
+function getFriendlyAiTransientMessage(action: string): string {
+  return `The AI service is temporarily busy and couldn't ${action}. Please wait 20-30 seconds and try again.`;
+}
+
 const AI_PROGRESS_MESSAGES = [
   "Analyzing your topic…",
   "Planning slide flow…",
@@ -433,33 +450,51 @@ const Editor = () => {
       const { data: { session }, error: sessionError } = await supabase.auth.refreshSession();
       if (sessionError || !session) throw new Error("Please sign in to generate presentations");
 
+      const invokeGenerateSlides = async (
+        body: Record<string, unknown>,
+        options?: { timeoutMs?: number; maxAttempts?: number }
+      ) => {
+        const timeoutMs = options?.timeoutMs ?? 150_000;
+        const maxAttempts = options?.maxAttempts ?? 3;
+
+        let lastResult: Awaited<ReturnType<typeof supabase.functions.invoke>> | null = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const result = await withTimeout(
+              supabase.functions.invoke('generate-slides', {
+                body,
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              }),
+              timeoutMs,
+              getFriendlyAiTransientMessage("complete your request")
+            );
+            lastResult = result;
+            if (!result.error) return result;
+            if (!isRetryableEdgeError(result.error) || attempt === maxAttempts) return result;
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "";
+            if (!TRANSIENT_AI_ERROR_RE.test(message) || attempt === maxAttempts) {
+              throw err;
+            }
+          }
+
+          await sleep(Math.min(2000 * attempt, 5000));
+        }
+
+        return lastResult ?? { data: null, error: new Error(getFriendlyAiTransientMessage("complete your request")) };
+      };
+
       let planData: { interpretation?: string; plan?: string; slideTypes?: string[] } | null = null;
       if (isPro) {
-        let planRes = await supabase.functions.invoke('generate-slides', {
-          body: {
-            description: prompt,
-            contentType: 'interactive',
-            targetAudience: audience,
-            slideCount,
-            phase: 'plan',
-            lectureMode,
-          },
-          headers: { Authorization: `Bearer ${session.access_token}` },
+        const planRes = await invokeGenerateSlides({
+          description: prompt,
+          contentType: 'interactive',
+          targetAudience: audience,
+          slideCount,
+          phase: 'plan',
+          lectureMode,
         });
-        if (planRes.error && getEdgeFunctionStatus(planRes.error) === 503) {
-          await new Promise((r) => setTimeout(r, 2500));
-          planRes = await supabase.functions.invoke('generate-slides', {
-            body: {
-              description: prompt,
-              contentType: 'interactive',
-              targetAudience: audience,
-              slideCount,
-              phase: 'plan',
-              lectureMode,
-            },
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-        }
         if (planRes.error) {
           if (getEdgeFunctionStatus(planRes.error) === 402) setShowOutOfCreditsModal(true);
           throw new Error(await getEdgeFunctionErrorMessage(planRes.error, 'Failed to plan presentation.'));
@@ -497,39 +532,18 @@ const Editor = () => {
         const accumulated: Slide[] = [];
         let generatedTheme: unknown = null;
         for (let i = 0; i < planData.slideTypes.length; i++) {
-          let progRes = await supabase.functions.invoke('generate-slides', {
-            body: {
-              lectureMode,
-              progressiveSlide: {
-                index: i,
-                slideType: planData.slideTypes[i],
-                description: prompt,
-                plan: planData.plan,
-                interpretation: planData.interpretation,
-                contentType: 'interactive',
-                totalSlides: planData.slideTypes.length,
-              },
+          const progRes = await invokeGenerateSlides({
+            lectureMode,
+            progressiveSlide: {
+              index: i,
+              slideType: planData.slideTypes[i],
+              description: prompt,
+              plan: planData.plan,
+              interpretation: planData.interpretation,
+              contentType: 'interactive',
+              totalSlides: planData.slideTypes.length,
             },
-            headers: { Authorization: `Bearer ${session.access_token}` },
           });
-          if (progRes.error && getEdgeFunctionStatus(progRes.error) === 503) {
-            await new Promise((r) => setTimeout(r, 2500));
-            progRes = await supabase.functions.invoke('generate-slides', {
-              body: {
-                lectureMode,
-                progressiveSlide: {
-                  index: i,
-                  slideType: planData.slideTypes[i],
-                  description: prompt,
-                  plan: planData.plan,
-                  interpretation: planData.interpretation,
-                  contentType: 'interactive',
-                  totalSlides: planData.slideTypes.length,
-                },
-              },
-              headers: { Authorization: `Bearer ${session.access_token}` },
-            });
-          }
           if (progRes.error) {
             if (getEdgeFunctionStatus(progRes.error) === 402) setShowOutOfCreditsModal(true);
             throw new Error(await getEdgeFunctionErrorMessage(progRes.error, `Failed to generate slide ${i + 1}.`));
@@ -560,43 +574,20 @@ const Editor = () => {
         processedSlides = accumulated;
         resData = { slides: accumulated, theme: generatedTheme, plan: planData.plan, interpretation: planData.interpretation };
       } else {
-        let invokeResult = await supabase.functions.invoke('generate-slides', {
-          body: {
-            description: prompt,
-            contentType: 'interactive',
-            targetAudience: audience,
-            difficulty: 'intermediate',
-            slideCount,
-            maxImages: isPro ? 6 : 3,
-            lectureMode,
-            ...(planData && planData.slideTypes?.length && {
-              plan: planData.plan,
-              interpretation: planData.interpretation,
-              slideTypes: planData.slideTypes,
-            }),
-          },
-          headers: { Authorization: `Bearer ${session.access_token}` },
+        const invokeResult = await invokeGenerateSlides({
+          description: prompt,
+          contentType: 'interactive',
+          targetAudience: audience,
+          difficulty: 'intermediate',
+          slideCount,
+          maxImages: isPro ? 6 : 3,
+          lectureMode,
+          ...(planData && planData.slideTypes?.length && {
+            plan: planData.plan,
+            interpretation: planData.interpretation,
+            slideTypes: planData.slideTypes,
+          }),
         });
-        if (invokeResult.error && getEdgeFunctionStatus(invokeResult.error) === 503) {
-          await new Promise((r) => setTimeout(r, 2500));
-          invokeResult = await supabase.functions.invoke('generate-slides', {
-            body: {
-              description: prompt,
-              contentType: 'interactive',
-              targetAudience: audience,
-              difficulty: 'intermediate',
-              slideCount,
-              maxImages: isPro ? 6 : 3,
-              lectureMode,
-              ...(planData && planData.slideTypes?.length && {
-                plan: planData.plan,
-                interpretation: planData.interpretation,
-                slideTypes: planData.slideTypes,
-              }),
-            },
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-        }
         const { data, error: fnError } = invokeResult;
         if (fnError) {
           if (getEdgeFunctionStatus(fnError) === 402) setShowOutOfCreditsModal(true);
@@ -702,16 +693,20 @@ const Editor = () => {
       updateLastMessage(successMsg);
     } catch (error) {
       setSandboxSlides([]);
-      const errorMessage = error instanceof Error
+      const rawErrorMessage = error instanceof Error
         ? (error.name === 'AbortError' ? 'Request timed out. Please try again.' : error.message)
         : 'Please try again.';
+      const isTransientAiError = TRANSIENT_AI_ERROR_RE.test(rawErrorMessage);
+      const errorMessage = isTransientAiError
+        ? getFriendlyAiTransientMessage("generate your presentation")
+        : rawErrorMessage;
       const isLimitError = /credits?|limit|מגבלה|קרדיטים|שדרג|slide limit/i.test(errorMessage);
       updateLastMessage(
         isLimitError
           ? errorMessage
           : `Sorry, I couldn't generate the presentation. ${errorMessage}`
       );
-      toast.error(isLimitError ? errorMessage : 'Failed to generate presentation');
+      toast.error(isLimitError ? errorMessage : (isTransientAiError ? errorMessage : 'Failed to generate presentation'));
     } finally {
       setIsInitialGenerating(false);
       setIsGenerating(false);
@@ -808,11 +803,30 @@ const Editor = () => {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
 
-      let result = await withTimeout(invokeFn(), 90_000, 'Request timed out. Please try again.');
-      if (result.error && getEdgeFunctionStatus(result.error) === 503) {
-        await new Promise((r) => setTimeout(r, 2500));
-        result = await withTimeout(invokeFn(), 90_000, 'Request timed out. Please try again.');
-      }
+      const invokeWithRetry = async () => {
+        const maxAttempts = 3;
+        let lastResult: Awaited<ReturnType<typeof invokeFn>> | null = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const result = await withTimeout(
+              invokeFn(),
+              110_000,
+              getFriendlyAiTransientMessage("process your request")
+            );
+            lastResult = result;
+            if (!result.error) return result;
+            if (!isRetryableEdgeError(result.error) || attempt === maxAttempts) return result;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "";
+            if (!TRANSIENT_AI_ERROR_RE.test(msg) || attempt === maxAttempts) throw err;
+          }
+          await sleep(Math.min(1800 * attempt, 5000));
+        }
+        return lastResult ?? { data: null, error: new Error(getFriendlyAiTransientMessage("process your request")) };
+      };
+
+      const result = await invokeWithRetry();
 
       const { data, error: fnError } = result;
 
@@ -836,7 +850,10 @@ const Editor = () => {
       }
       updateLastMessage(resData?.message || 'Done! Check the updated slides.');
     } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Please try again.';
+      const rawErrMsg = error instanceof Error ? error.message : 'Please try again.';
+      const errMsg = TRANSIENT_AI_ERROR_RE.test(rawErrMsg)
+        ? getFriendlyAiTransientMessage("process your request")
+        : rawErrMsg;
       const isLimitError = /credits?|limit|מגבלה|קרדיטים|שדרג/i.test(errMsg);
       updateLastMessage(
         isLimitError
@@ -1153,12 +1170,14 @@ const Editor = () => {
         return;
       }
       const reservedW = 0;
-      const pad = isConstrainedViewport ? 8 : 16;
+      // Editing should feel comfortable: keep the canvas slightly smaller than fullscreen.
+      const pad = isConstrainedViewport ? 12 : 28;
       const maxW = Math.max(200, cw - reservedW - pad);
       const maxH = Math.max(112, ch - pad);
       const LOGICAL_W = 960;
       const LOGICAL_H = 540;
-      const maxScale = 1.6;
+      // Smaller in Editor; Present is full-size elsewhere.
+      const maxScale = 1.22;
       const scaleFactor = Math.min(maxScale, maxW / LOGICAL_W, maxH / LOGICAL_H);
       const w = Math.round(LOGICAL_W * scaleFactor);
       const h = Math.round(LOGICAL_H * scaleFactor);
@@ -1390,12 +1409,12 @@ const Editor = () => {
               onClick={() => setEditorTourReplay((n) => n + 1)}
               title={
                 slidesGenerationLocked
-                  ? "המתן לסיום יצירת השקופיות"
-                  : "סיור קצר בעורך"
+                  ? "Wait until slide generation finishes"
+                  : "Quick editor tour"
               }
             >
               <HelpCircle className="w-4 h-4 shrink-0" aria-hidden />
-              <span className="hidden sm:inline">סיור</span>
+              <span className="hidden sm:inline">Tour</span>
             </Button>
             <Button 
               variant="outline" 
@@ -1438,15 +1457,6 @@ const Editor = () => {
               className="h-8 gap-1.5 shrink-0"
               data-tour="editor-webinar-settings"
               onClick={() => {
-                if (!isPro) {
-                  showUpgradeModal({
-                    feature: "webinar settings",
-                    title: "View plans and upgrade",
-                    description:
-                      "Webinar branding, registration, and CTA settings are on paid plans. Upgrade to unlock full webinar tools.",
-                  });
-                  return;
-                }
                 setShowWebinarSettingsDialog(true);
               }}
               title='Branding, registration form, and live CTA settings'
@@ -1466,15 +1476,6 @@ const Editor = () => {
               className="h-8 gap-1.5 shrink-0"
               data-tour="editor-presentation-settings"
               onClick={() => {
-                if (!isPro) {
-                  showUpgradeModal({
-                    feature: "presentation settings",
-                    title: "View plans and upgrade",
-                    description:
-                      "Custom logo and accent color for slides are on paid plans. Upgrade to brand your presentations.",
-                  });
-                  return;
-                }
                 setShowPresentationSettingsDialog(true);
               }}
               title='Custom logo and accent color for your presentation'
@@ -1573,6 +1574,14 @@ const Editor = () => {
                 feature: "custom color",
                 title: "Custom color picker",
                 description: "Choosing a custom registration accent is available on the Pro plan. Upgrade to unlock full color control.",
+              })
+            }
+            onPremiumWebinarSettingsBlocked={() =>
+              showUpgradeModal({
+                feature: "webinar settings",
+                title: "Webinar settings",
+                description:
+                  "Webinar registration and live CTA settings are available on the Pro plan. Upgrade to unlock editing.",
               })
             }
           />

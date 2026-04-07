@@ -1194,7 +1194,7 @@ const Student = () => {
               const options: string[] = (currentSlide.content as any).options || [];
               const isGrid = options.length >= 4;
               return (
-                <div className={isGrid ? "grid grid-cols-2 gap-2.5 flex-1 content-center" : "flex flex-col gap-2.5 flex-1 justify-center"}>
+                <div className={isGrid ? "grid grid-cols-2 gap-2.5 flex-1" : "flex flex-col gap-2.5 flex-1"}>
                   {options.map((option: string, index: number) => (
                     <motion.button
                       type="button"
@@ -1440,7 +1440,7 @@ const Student = () => {
                   axis="y"
                   values={rankingOrder.length > 0 ? rankingOrder : ((currentSlide.content as any).items || [])}
                   onReorder={setRankingOrder}
-                  className="flex flex-col gap-2 flex-1 overflow-y-auto min-h-0"
+                  className="flex flex-col gap-2 flex-1 min-h-0"
                 >
                   {(rankingOrder.length > 0 ? rankingOrder : ((currentSlide.content as any).items || [])).map((item: string, index: number) => (
                     <Reorder.Item

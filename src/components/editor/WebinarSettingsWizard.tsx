@@ -39,6 +39,8 @@ type Props = {
   isPro: boolean;
   onPremiumLogoBlocked: () => void;
   onPremiumColorBlocked: () => void;
+  /** Called when a non-Pro user tries to edit a locked webinar setting (registration/CTA). */
+  onPremiumWebinarSettingsBlocked: () => void;
 };
 
 export function WebinarSettingsWizard({
@@ -51,6 +53,7 @@ export function WebinarSettingsWizard({
   isPro,
   onPremiumLogoBlocked,
   onPremiumColorBlocked,
+  onPremiumWebinarSettingsBlocked,
 }: Props) {
   const [step, setStep] = useState(0);
   const [urlTouched, setUrlTouched] = useState(false);
@@ -259,7 +262,23 @@ export function WebinarSettingsWizard({
                 Choose which fields attendees fill before joining. Collected data appears in your session analytics.
               </p>
             </div>
-            <WebinarRegistrationFormBuilder value={webinarRegConfig} onChange={onWebinarRegChange} variant="wizard" />
+            <div
+              className={!isPro ? "relative" : undefined}
+              onClickCapture={() => {
+                if (!isPro) onPremiumWebinarSettingsBlocked();
+              }}
+            >
+              <div className={!isPro ? "pointer-events-none opacity-75 select-none" : undefined}>
+                <WebinarRegistrationFormBuilder
+                  value={webinarRegConfig}
+                  onChange={onWebinarRegChange}
+                  variant="wizard"
+                />
+              </div>
+              {!isPro && (
+                <div className="absolute inset-0 rounded-xl ring-1 ring-amber-400/30 bg-gradient-to-br from-amber-500/5 via-transparent to-transparent pointer-events-none" />
+              )}
+            </div>
           </div>
           <div className="space-y-2 lg:sticky lg:top-0">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide text-center lg:text-left">Preview</p>
@@ -284,7 +303,16 @@ export function WebinarSettingsWizard({
                 id="wiz-cta-label"
                 placeholder='e.g. "Get the playbook"'
                 value={webinarCtaLabel}
-                onChange={(e) => onWebinarCtaLabelChange(e.target.value)}
+                onChange={(e) => {
+                  if (!isPro) {
+                    onPremiumWebinarSettingsBlocked();
+                    return;
+                  }
+                  onWebinarCtaLabelChange(e.target.value);
+                }}
+                onFocus={() => {
+                  if (!isPro) onPremiumWebinarSettingsBlocked();
+                }}
               />
             </div>
             <div className="space-y-2">
@@ -296,10 +324,17 @@ export function WebinarSettingsWizard({
                 placeholder="https://…"
                 value={webinarCtaUrl}
                 onChange={(e) => {
+                  if (!isPro) {
+                    onPremiumWebinarSettingsBlocked();
+                    return;
+                  }
                   onWebinarCtaUrlChange(e.target.value);
                   setUrlTouched(true);
                 }}
                 onBlur={() => setUrlTouched(true)}
+                onFocus={() => {
+                  if (!isPro) onPremiumWebinarSettingsBlocked();
+                }}
                 className={urlInvalid ? "border-destructive focus-visible:ring-destructive" : ""}
               />
               {urlInvalid ? (

@@ -969,9 +969,9 @@ const Present = () => {
           {currentSlide && (isInteractiveSlide(currentSlide.type) || isQuizSlide(currentSlide.type)) && (
             <div
               className="flex items-center gap-1 text-primary-foreground/85 text-xs sm:text-sm shrink min-w-0"
-              title="סה״כ תשובות"
+              title="Total responses"
             >
-              <span className="hidden sm:inline">סה״כ תשובות:</span>
+              <span className="hidden sm:inline">Total responses:</span>
               <span className="font-bold tabular-nums">{responses.length}</span>
             </div>
           )}
@@ -1093,7 +1093,7 @@ const Present = () => {
       </div>
 
       {/* Main Content - flex-1 min-h-0 so it shrinks and fits viewport */}
-      <div data-present-main-content className="flex-1 min-h-0 flex items-center justify-center p-1 md:p-2 relative">
+      <div data-present-main-content className="flex-1 min-h-0 flex items-center justify-center p-0.5 md:p-1 relative">
         {/* Left Navigation Arrow - Always visible */}
         <Button
           variant="ghost"
@@ -1113,7 +1113,7 @@ const Present = () => {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ duration: 0.3 }}
-            className="relative w-full max-w-full h-full max-h-full min-h-0 min-w-0 flex items-center justify-center mx-2 md:mx-4 lg:mx-6"
+            className="relative w-full max-w-full h-full max-h-full min-h-0 min-w-0 flex items-center justify-center mx-0.5 md:mx-2 lg:mx-3"
           >
             {participative &&
               hasTimer &&
