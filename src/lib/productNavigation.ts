@@ -27,6 +27,7 @@ export function isAppSurfacePath(pathname: string): boolean {
 export function isWebinarChromeContext(pathname: string, searchParams: URLSearchParams): boolean {
   if (pathname === "/webinar") return true;
   if (pathname.startsWith("/webinar/")) return true;
+  if (pathname === "/pricing" && searchParams.get("product") === "webinar") return true;
   if (pathname.startsWith("/editor") && searchParams.get("track") === "webinar") return true;
   if (pathname.startsWith("/present") && searchParams.get("track") === "webinar") return true;
   return false;
@@ -40,6 +41,7 @@ export function isWebinarSurfaceActive(
     pathname.startsWith("/webinar/dashboard") ||
     pathname.startsWith("/webinar/editor") ||
     pathname.startsWith("/webinar/present") ||
+    (pathname === "/pricing" && searchParams.get("product") === "webinar") ||
     (pathname.startsWith("/editor") && searchParams.get("track") === "webinar") ||
     (pathname.startsWith("/present") && searchParams.get("track") === "webinar") ||
     (/^\/lecture\/[^/]+\/analytics$/.test(pathname) && searchParams.get("track") === "webinar")
@@ -52,6 +54,7 @@ export function isEducatorSurfaceActive(
 ): boolean {
   return (
     pathname === "/dashboard" ||
+    (pathname === "/pricing" && searchParams.get("product") !== "webinar") ||
     (pathname.startsWith("/editor") && searchParams.get("track") !== "webinar") ||
     (pathname.startsWith("/present") && searchParams.get("track") !== "webinar") ||
     (/^\/lecture\/[^/]+\/analytics$/.test(pathname) && searchParams.get("track") !== "webinar")
@@ -72,6 +75,7 @@ export function getProductSurfaceInfo(
     pathname.startsWith("/webinar/dashboard") ||
     pathname.startsWith("/webinar/editor") ||
     pathname.startsWith("/webinar/present") ||
+    (pathname === "/pricing" && searchParams.get("product") === "webinar") ||
     (pathname.startsWith("/editor") && searchParams.get("track") === "webinar") ||
     (pathname.startsWith("/present") && searchParams.get("track") === "webinar") ||
     (/^\/lecture\/[^/]+\/analytics$/.test(pathname) && searchParams.get("track") === "webinar");
@@ -87,6 +91,9 @@ export function getProductSurfaceInfo(
         subtitle: "Interactive lectures & classes",
       };
 
+  if (pathname === "/pricing") {
+    return { ...base, subtitle: "Pricing" };
+  }
   if (pathname === "/dashboard" || pathname.startsWith("/webinar/dashboard")) {
     return {
       ...base,

@@ -1,6 +1,6 @@
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare, Gift, Copy, Check } from "lucide-react";
+import { Presentation, LayoutDashboard, LogOut, Sparkles, Coins, Crown, Zap, AlertCircle, MessageSquare, Gift, Copy } from "lucide-react";
 import { useState } from "react";
 import {
   Popover,
@@ -69,12 +69,14 @@ const Header = () => {
     aiTokensRemaining,
     isLoading: isSubLoading,
     plan,
-    canAccessWebinarDashboard,
-    canAccessEducatorDashboard,
+    planProduct,
   } = useSubscriptionContext();
 
-  const hasBothProducts =
-    !!user && !isSubLoading && canAccessWebinarDashboard && canAccessEducatorDashboard;
+  /** Logged-in users see one product only (their plan) — no Educator/Webinar switcher. */
+  const subscriberChromeWebinar = !!user && !isSubLoading && planProduct === "webinar";
+  const routeWebinarChrome = isWebinarChromeContext(path, searchParams);
+  const isWebinarProductContext =
+    user && !isSubLoading ? subscriberChromeWebinar : routeWebinarChrome;
 
   const isWebinarSurfaceActive = isWebinarAppActive(path, searchParams);
   const isEducatorSurfaceActive = isEducatorAppActive(path, searchParams);
@@ -125,12 +127,22 @@ const Header = () => {
                 variant="outline"
                 className={cn(
                   "hidden sm:inline-flex text-[10px] uppercase tracking-wide font-semibold shrink-0",
-                  isWebinarSurfaceActive
-                    ? "border-teal-500/50 text-teal-700 dark:text-teal-300"
-                    : "border-violet-500/40 text-violet-800 dark:text-violet-200",
+                  user && !isSubLoading
+                    ? subscriberChromeWebinar
+                      ? "border-teal-500/50 text-teal-700 dark:text-teal-300"
+                      : "border-violet-500/40 text-violet-800 dark:text-violet-200"
+                    : isWebinarSurfaceActive
+                      ? "border-teal-500/50 text-teal-700 dark:text-teal-300"
+                      : "border-violet-500/40 text-violet-800 dark:text-violet-200",
                 )}
               >
-                {isWebinarSurfaceActive ? "Webinar" : "Educator"}
+                {user && !isSubLoading
+                  ? subscriberChromeWebinar
+                    ? "Webinar"
+                    : "Educator"
+                  : isWebinarSurfaceActive
+                    ? "Webinar"
+                    : "Educator"}
               </Badge>
             )}
           </Link>
@@ -314,46 +326,12 @@ const Header = () => {
                         </Link>
                       </DropdownMenuItem>
                     )}
-                    {hasBothProducts ? (
-                      <>
-                        <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Switch product
-                        </div>
-                        <DropdownMenuItem asChild>
-                          <Link
-                            to="/dashboard"
-                            className={cn(
-                              "cursor-pointer flex items-center gap-2 w-full",
-                              isEducatorSurfaceActive && "bg-accent",
-                            )}
-                          >
-                            <LayoutDashboard className="w-4 h-4 shrink-0" />
-                            <span className="flex-1">Clasly for Educator</span>
-                            {isEducatorSurfaceActive && <Check className="w-4 h-4 shrink-0" />}
-                          </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link
-                            to="/webinar/dashboard"
-                            className={cn(
-                              "cursor-pointer flex items-center gap-2 w-full",
-                              isWebinarSurfaceActive && "bg-accent",
-                            )}
-                          >
-                            <LayoutDashboard className="w-4 h-4 shrink-0" />
-                            <span className="flex-1">Clasly for Webinar</span>
-                            {isWebinarSurfaceActive && <Check className="w-4 h-4 shrink-0" />}
-                          </Link>
-                        </DropdownMenuItem>
-                      </>
-                    ) : (
-                      <DropdownMenuItem asChild>
-                        <Link to={dashboardPath} className="cursor-pointer">
-                          <LayoutDashboard className="w-4 h-4 mr-2" />
-                          {dashboardLabelFull}
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
+                    <DropdownMenuItem asChild>
+                      <Link to={dashboardPath} className="cursor-pointer">
+                        <LayoutDashboard className="w-4 h-4 mr-2" />
+                        {dashboardLabelFull}
+                      </Link>
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={signOut} className="cursor-pointer text-destructive focus:text-destructive">
                       <LogOut className="w-4 h-4 mr-2" />
@@ -362,55 +340,13 @@ const Header = () => {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                {hasBothProducts ? (
-                  <>
-                    <div
-                      className={cn(
-                        "hidden sm:inline-flex items-center rounded-lg border p-0.5 gap-0.5 shrink-0",
-                        isWebinarSurfaceActive
-                          ? "border-teal-500/35 bg-teal-500/[0.06]"
-                          : "border-violet-500/30 bg-violet-500/[0.06]",
-                      )}
-                      role="group"
-                      aria-label="Switch between Educator and Webinar"
-                    >
-                      <Button
-                        variant={isEducatorSurfaceActive ? "default" : "ghost"}
-                        size="sm"
-                        className="h-8 px-3 rounded-md"
-                        asChild
-                      >
-                        <Link to="/dashboard" title="Educator dashboard — lectures & classes">
-                          Educator
-                        </Link>
-                      </Button>
-                      <Button
-                        variant={isWebinarSurfaceActive ? "default" : "ghost"}
-                        size="sm"
-                        className="h-8 px-3 rounded-md"
-                        asChild
-                      >
-                        <Link to="/webinar/dashboard" title="Webinar dashboard — live decks & leads">
-                          Webinar
-                        </Link>
-                      </Button>
-                    </div>
-                    <Button variant="hero" size="sm" asChild className="sm:hidden">
-                      <Link to={dashboardPath} title={dashboardLabelFull}>
-                        <LayoutDashboard className="w-4 h-4 mr-1" />
-                        <span className="max-w-[5.5rem] truncate">{dashboardLabelShort}</span>
-                      </Link>
-                    </Button>
-                  </>
-                ) : (
-                  <Button variant="hero" size="sm" asChild>
-                    <Link to={dashboardPath} title={dashboardLabelFull}>
-                      <LayoutDashboard className="w-4 h-4 sm:mr-1" />
-                      <span className="hidden sm:inline max-w-[11rem] truncate">{dashboardLabelFull}</span>
-                      <span className="sm:hidden">{dashboardLabelShort}</span>
-                    </Link>
-                  </Button>
-                )}
+                <Button variant="hero" size="sm" asChild>
+                  <Link to={dashboardPath} title={dashboardLabelFull}>
+                    <LayoutDashboard className="w-4 h-4 sm:mr-1" />
+                    <span className="hidden sm:inline max-w-[11rem] truncate">{dashboardLabelFull}</span>
+                    <span className="sm:hidden">{dashboardLabelShort}</span>
+                  </Link>
+                </Button>
               </>
             ) : (
               <Button variant="hero" size="sm" onClick={() => setShowAuthModal(true)}>
@@ -421,7 +357,21 @@ const Header = () => {
           </div>
         </div>
 
-        {showAppSurfacesChrome && !hideProductContextBar && <ProductContextBar />}
+        {showAppSurfacesChrome && !hideProductContextBar && (
+          <ProductContextBar
+            product={
+              user &&
+              !isSubLoading &&
+              (path === "/dashboard" ||
+                path.startsWith("/webinar/dashboard") ||
+                /^\/lecture\/[^/]+\/analytics$/.test(path))
+                ? planProduct === "webinar"
+                  ? "webinar"
+                  : "education"
+                : undefined
+            }
+          />
+        )}
       </header>
 
       <AuthModal

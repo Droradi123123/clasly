@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import Header from "@/components/layout/Header";
 import { DocumentHead } from "@/components/seo/DocumentHead";
-import { Check, Sparkles, Users, Zap, Loader2 } from "lucide-react";
+import { Check, Sparkles, Users, Zap, Loader2, Timer } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
@@ -16,11 +16,14 @@ import { normalizePlanNameForFeatures } from "@/types/subscription";
 import type { PlanProduct } from "@/types/subscription";
 import { CONTACT_EMAIL } from "@/lib/constants";
 
+/** Display-only “launch” discount (checkout still uses list prices in Stripe). */
+const DISPLAY_LAUNCH_OFFER_PCT = 20;
+
 function resolveProductLine(pathname: string, searchParams: URLSearchParams): PlanProduct {
   if (pathname.startsWith("/webinar/pricing")) return "webinar";
   const p = searchParams.get("product");
   if (p === "education" || p === "webinar") return p;
-  return "webinar";
+  return "education";
 }
 
 const Pricing = () => {
@@ -39,14 +42,13 @@ const Pricing = () => {
     [location.pathname, searchParams],
   );
 
-  // Canonical URL: /pricing?product=webinar|education ; redirect legacy /webinar/pricing
   useEffect(() => {
     if (location.pathname === "/webinar/pricing") {
       navigate({ pathname: "/pricing", search: "?product=webinar" }, { replace: true });
       return;
     }
     if (location.pathname === "/pricing" && !searchParams.get("product")) {
-      setSearchParams({ product: "webinar" }, { replace: true });
+      setSearchParams({ product: "education" }, { replace: true });
     }
   }, [location.pathname, navigate, searchParams, setSearchParams]);
 
@@ -194,13 +196,34 @@ const Pricing = () => {
     ];
   };
 
-  const getPrice = (plan: SubscriptionPlan) => {
-    if (plan.price_monthly_usd === 0) return "Free";
-    const price =
-      billingInterval === "year"
-        ? (plan.price_yearly_usd / 12).toFixed(0)
-        : plan.price_monthly_usd.toFixed(0);
-    return `$${price}`;
+  /** List (catalog) effective $/mo for display; free → null. */
+  const getListMonthlyUsd = (plan: SubscriptionPlan): number | null => {
+    if (plan.price_monthly_usd === 0) return null;
+    return billingInterval === "year"
+      ? plan.price_yearly_usd / 12
+      : plan.price_monthly_usd;
+  };
+
+  /** Marketing-only discounted $/mo (checkout unchanged). */
+  const getDisplayMonthlyUsd = (plan: SubscriptionPlan): number | null => {
+    const list = getListMonthlyUsd(plan);
+    if (list == null) return null;
+    return Math.round(list * (1 - DISPLAY_LAUNCH_OFFER_PCT / 100) * 100) / 100;
+  };
+
+  const getPriceBlock = (plan: SubscriptionPlan) => {
+    if (plan.price_monthly_usd === 0) {
+      return { main: "Free", listLabel: null as string | null, suffix: "" as string };
+    }
+    const list = getListMonthlyUsd(plan)!;
+    const shown = getDisplayMonthlyUsd(plan)!;
+    const listRounded = Math.round(list * 100) / 100;
+    const same = Math.abs(listRounded - shown) < 0.01;
+    return {
+      main: `$${shown % 1 === 0 ? shown.toFixed(0) : shown.toFixed(2)}`,
+      listLabel: same ? null : `$${listRounded % 1 === 0 ? listRounded.toFixed(0) : listRounded.toFixed(2)}`,
+      suffix: "/month",
+    };
   };
 
   const getYearlySavings = (plan: SubscriptionPlan) => {
@@ -221,50 +244,68 @@ const Pricing = () => {
 
   const pageTitle = "Pricing – Clasly";
   const pageDescription =
-    "Clasly pricing for Educator and Webinar: interactive slides, AI credits per tier, polls and quizzes—and on Webinar, lead capture, live CTA to phones, and webinar analytics.";
+    "Clasly plans for educators and webinar hosts: AI slides, interactive polls and quizzes, fair monthly pricing.";
 
   return (
     <div className="min-h-screen bg-gradient-hero">
       <DocumentHead title={pageTitle} description={pageDescription} path="/pricing" />
       <Header />
 
-      <main className="pt-32 pb-20 px-4">
+      <main className="pt-28 pb-16 px-4">
         <div className="container mx-auto max-w-5xl">
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center mb-10"
+            className="text-center mb-8"
           >
-            <h1 className="text-4xl md:text-5xl font-display font-bold text-foreground mb-4">
-              Simple, transparent pricing
+            <h1 className="text-3xl md:text-4xl font-display font-bold text-foreground mb-2">
+              Pricing
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-6">
-              <strong className="text-foreground">Educator</strong> is built for teaching and training: AI
-              decks, interactive slide types, import, and classroom-focused analytics.{" "}
-              <strong className="text-foreground">Webinar</strong> adds lead capture before join, a live CTA
-              broadcast to attendees&apos; phones, and webinar-focused analytics—on top of the same slide
-              limits and AI credits per tier. One paid subscription at a time per account.
+            <p className="text-muted-foreground text-sm md:text-base max-w-md mx-auto mb-6">
+              Choose a product line, then a plan. One subscription per account.
             </p>
 
-            <div className="flex flex-col items-center gap-4 mb-8">
+            <div
+              className="mx-auto mb-5 max-w-lg rounded-2xl border-2 border-amber-500/50 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 px-4 py-3 shadow-md"
+              role="note"
+            >
+              <div className="flex flex-wrap items-center justify-center gap-2 text-sm font-semibold text-amber-950 dark:text-amber-100">
+                <Timer className="h-4 w-4 shrink-0" aria-hidden />
+                <span>48-hour welcome: {DISPLAY_LAUNCH_OFFER_PCT}% off shown below</span>
+              </div>
+              <p className="mt-1 text-center text-[11px] text-muted-foreground leading-snug">
+                Launch-offer display only — checkout uses standard list prices unless a code applies.
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center gap-4 mb-6">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Product line
+              </p>
               <Tabs
                 value={productLine}
                 onValueChange={setProductTab}
-                className="w-full max-w-md"
+                className="w-full max-w-lg"
               >
-                <TabsList className="grid w-full grid-cols-2 h-11">
-                  <TabsTrigger value="webinar" className="text-sm sm:text-base">
-                    Clasly for Webinar
-                  </TabsTrigger>
-                  <TabsTrigger value="education" className="text-sm sm:text-base">
+                <TabsList className="grid h-14 w-full grid-cols-2 gap-1 rounded-xl border-2 border-primary/25 bg-muted/70 p-1.5 shadow-lg">
+                  <TabsTrigger
+                    value="education"
+                    className="rounded-lg text-sm font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md sm:text-base"
+                  >
                     Clasly for Educator
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="webinar"
+                    className="rounded-lg text-sm font-semibold data-[state=active]:bg-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md sm:text-base"
+                  >
+                    Clasly for Webinar
                   </TabsTrigger>
                 </TabsList>
               </Tabs>
-              <p className="text-sm text-muted-foreground max-w-xl text-center leading-relaxed">
+              <p className="text-xs text-muted-foreground max-w-md">
                 {productLine === "webinar"
-                  ? "Registration form before the room, leads in your dashboard, and a one-tap CTA you send during the session—plus the same AI-built interactive decks and slide limits as Educator, listed in the cards below."
-                  : "AI-built presentations, polls, quizzes, word clouds, and analytics tuned for class and training. Switch to the Webinar tab for lead capture, live CTA, and webinar analytics."}
+                  ? "Lead capture, live CTA to phones, webinar analytics — same slide & AI limits per tier."
+                  : "Classrooms & training: AI decks, live polls & quizzes, analytics."}
               </p>
             </div>
 
@@ -305,6 +346,7 @@ const Pricing = () => {
               const isCurrent = plan.id === currentPlanId;
               const features = getPlanFeatures(plan);
               const savings = billingInterval === "year" ? getYearlySavings(plan) : null;
+              const priceBlock = getPriceBlock(plan);
 
               return (
                 <motion.div
@@ -350,22 +392,43 @@ const Pricing = () => {
                       </div>
                       <CardTitle className="font-display">{plan.name}</CardTitle>
                       <div className="mt-4">
-                        <span className="text-4xl font-display font-bold text-foreground">
-                          {getPrice(plan)}
-                        </span>
+                        {priceBlock.listLabel ? (
+                          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+                            <span className="text-xl text-muted-foreground line-through decoration-destructive/60">
+                              {priceBlock.listLabel}
+                            </span>
+                            <span className="text-4xl font-display font-bold text-foreground">
+                              {priceBlock.main}
+                            </span>
+                            {priceBlock.suffix && (
+                              <span className="text-muted-foreground">{priceBlock.suffix}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <span className="text-4xl font-display font-bold text-foreground">
+                              {priceBlock.main}
+                            </span>
+                            {priceBlock.suffix && (
+                              <span className="text-muted-foreground">{priceBlock.suffix}</span>
+                            )}
+                          </>
+                        )}
                         {plan.price_monthly_usd > 0 && (
-                          <span className="text-muted-foreground">/month</span>
+                          <div className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                            {DISPLAY_LAUNCH_OFFER_PCT}% welcome display
+                          </div>
                         )}
                         {savings && billingInterval === "year" && (
                           <div className="text-sm text-success mt-1">
-                            Save {savings}% with yearly billing
+                            Save {savings}% vs paying monthly all year
                           </div>
                         )}
                       </div>
                     </CardHeader>
 
                     <CardContent className="flex-1 flex flex-col">
-                      <ul className="space-y-3 flex-1 mb-6">
+                      <ul className="space-y-2 flex-1 mb-6">
                         {features.map((feature) => (
                           <li key={feature} className="flex items-start gap-2">
                             <Check className="w-4 h-4 text-success mt-0.5 shrink-0" />
@@ -400,45 +463,15 @@ const Pricing = () => {
           </div>
 
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 12 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="mt-16 max-w-2xl mx-auto text-left space-y-4"
+            className="mt-12 text-center text-sm text-muted-foreground"
           >
-            <h2 className="text-xl font-display font-bold text-foreground text-center">
-              Product lines & billing
-            </h2>
-            <ul className="text-sm text-muted-foreground space-y-2 list-disc pl-5">
-              <li>
-                <strong className="text-foreground">One subscription at a time.</strong> Your account has one
-                active plan. A paid Webinar plan unlocks the webinar dashboard; a paid Educator plan unlocks
-                the educator dashboard. Education Free can open both dashboards for trying either product.
-              </li>
-              <li>
-                <strong className="text-foreground">What Webinar adds on top of Educator.</strong> Lead
-                capture (email and custom fields), live CTA to attendees&apos; phones, and webinar/lead
-                analytics—same slide caps and monthly AI credits as the matching Educator tier. List prices
-                differ by product line; compare the numbers above when you switch tabs.
-              </li>
-            </ul>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="mt-12 text-center"
-          >
-            <h2 className="text-2xl font-display font-bold text-foreground mb-4">Questions?</h2>
-            <p className="text-muted-foreground mb-6">
-              We&apos;re here to help. Contact us at{" "}
-              <a
-                href={`mailto:${CONTACT_EMAIL}`}
-                className="text-primary hover:underline"
-              >
-                {CONTACT_EMAIL}
-              </a>
-            </p>
+            Questions?{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-primary font-medium hover:underline">
+              {CONTACT_EMAIL}
+            </a>
           </motion.div>
         </div>
       </main>
