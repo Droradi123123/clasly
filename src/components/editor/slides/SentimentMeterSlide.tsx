@@ -4,6 +4,10 @@ import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, SentimentMeterSlideContent } from "@/types/slides";
 import { ThemeId } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
+import {
+  ShowcaseShell,
+  ShowcaseLabeledBar,
+} from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 interface SentimentMeterSlideProps {
   slide: Slide;
@@ -61,6 +65,7 @@ export function SentimentMeterSlide({
   const agg = revealStats && hasResults;
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.sentimentMeterVariant === "showcase";
   const isEmojiRow = slide.design?.sentimentMeterVariant === 'emojiRow';
   const textColor = slide.design?.textColor || '#ffffff';
 
@@ -78,6 +83,7 @@ export function SentimentMeterSlide({
     return distribution.slice(start, end).reduce((a, b) => a + b, 0);
   });
   const maxEmojiCount = Math.max(...emojiCounts, 1);
+  const dominantIdx = emojiCounts.indexOf(Math.max(...emojiCounts, 0));
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
@@ -93,7 +99,97 @@ export function SentimentMeterSlide({
         {/* Content area */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 overflow-hidden min-h-0">
           <div className="w-full max-w-2xl">
-            {isEmojiRow ? (
+            {isShowcase ? (
+            <ShowcaseShell className="max-w-xl w-full space-y-4 py-2">
+              {isEditing && (
+                <motion.div
+                  className="flex items-center justify-between gap-4 mb-4"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <input
+                      value={content.leftEmoji || "😡"}
+                      onChange={(e) => onUpdate?.({ ...content, leftEmoji: e.target.value })}
+                      className="w-16 text-center text-3xl bg-transparent border-0 outline-none"
+                      maxLength={2}
+                    />
+                    <input
+                      value={content.leftLabel || ""}
+                      onChange={(e) => onUpdate?.({ ...content, leftLabel: e.target.value })}
+                      placeholder="Label..."
+                      className="px-2 py-1 rounded bg-white/10 text-white/70 text-xs text-center w-24 border border-white/20"
+                    />
+                  </div>
+                  <div className="flex flex-col items-center gap-1">
+                    <input
+                      value={content.rightEmoji || "😍"}
+                      onChange={(e) => onUpdate?.({ ...content, rightEmoji: e.target.value })}
+                      className="w-16 text-center text-3xl bg-transparent border-0 outline-none"
+                      maxLength={2}
+                    />
+                    <input
+                      value={content.rightLabel || ""}
+                      onChange={(e) => onUpdate?.({ ...content, rightLabel: e.target.value })}
+                      placeholder="Label..."
+                      className="px-2 py-1 rounded bg-white/10 text-white/70 text-xs text-center w-24 border border-white/20"
+                    />
+                  </div>
+                </motion.div>
+              )}
+              {agg && (
+                <div className="text-center">
+                  <p className="text-xs uppercase tracking-widest text-[hsl(var(--theme-text-secondary))]">
+                    Dominant mood
+                  </p>
+                  <p className="mt-1 text-4xl md:text-5xl" aria-hidden>
+                    {emojiRow[dominantIdx]}
+                  </p>
+                  <p className="mt-2 text-sm tabular-nums text-[hsl(var(--theme-text-secondary))]">
+                    Average {Math.round(average)}% · {totalResponses} response
+                    {totalResponses === 1 ? "" : "s"}
+                  </p>
+                </div>
+              )}
+              <div className="space-y-3">
+                {emojiRow.map((emoji, i) => {
+                  const pct =
+                    totalResponses > 0
+                      ? (emojiCounts[i] / totalResponses) * 100
+                      : 0;
+                  return (
+                    <ShowcaseLabeledBar
+                      key={i}
+                      rank={i + 1}
+                      label={
+                        <span className="flex items-center gap-2">
+                          <span className="text-xl md:text-2xl">{emoji}</span>
+                          <span className="text-[hsl(var(--theme-text-secondary))] text-xs">
+                            {i === 0
+                              ? content.leftLabel || "Negative"
+                              : i === emojiRow.length - 1
+                                ? content.rightLabel || "Positive"
+                                : ""}
+                          </span>
+                        </span>
+                      }
+                      percent={pct}
+                      count={agg ? emojiCounts[i] : undefined}
+                      showStats={!!agg}
+                    />
+                  );
+                })}
+              </div>
+              {!agg && !isEditing && (
+                <div className="text-center pt-4">
+                  <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4" />
+                    <span>Waiting for responses…</span>
+                  </div>
+                </div>
+              )}
+            </ShowcaseShell>
+            ) : isEmojiRow ? (
             /* emojiRow: row of 5 emojis, tap to select; results show distribution */
             <div className="space-y-6">
               <div className="flex justify-between items-end gap-2">

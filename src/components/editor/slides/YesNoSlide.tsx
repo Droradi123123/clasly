@@ -4,6 +4,7 @@ import { SlideWrapper, QuestionHeader, ActivityFooter, CleanBarResults } from ".
 import { Slide, YesNoSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
+import { cn } from "@/lib/utils";
 
 export interface YesNoSlideProps {
   slide: Slide;
@@ -89,6 +90,7 @@ export function YesNoSlide({
 
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.yesNoVariant === "showcase";
   const isThumbsDynamic = slide.design?.yesNoVariant === 'thumbsDynamic';
 
   // Get text color from slide design
@@ -124,6 +126,132 @@ export function YesNoSlide({
                 isYesNo={true}
                 textColor={textColor}
               />
+            ) : isShowcase ? (
+            <>
+            <div className="flex w-full flex-row gap-3 md:gap-5 min-h-[300px] md:min-h-[360px]">
+              {[
+                {
+                  key: "yes" as const,
+                  pct: yesPercentage,
+                  count: results.yes,
+                  label: content.yesLabel || "Yes",
+                  correct: yesIsCorrect,
+                  onCorrect: () => handleCorrectAnswerChange(true),
+                },
+                {
+                  key: "no" as const,
+                  pct: noPercentage,
+                  count: results.no,
+                  label: content.noLabel || "No",
+                  correct: noIsCorrect,
+                  onCorrect: () => handleCorrectAnswerChange(false),
+                },
+              ].map((col, ci) => (
+                <motion.div
+                  key={col.key}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: ci * 0.08 }}
+                  className={cn(
+                    "flex flex-1 flex-col rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] p-4 md:p-5 shadow-sm min-h-0",
+                    showCorrectAnswer &&
+                      hasCorrectAnswer &&
+                      col.correct &&
+                      "ring-2 ring-[hsl(var(--theme-accent))] ring-offset-2 ring-offset-transparent",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-3">
+                    {isEditing ? (
+                      <input
+                        value={col.key === "yes" ? content.yesLabel || "Yes" : content.noLabel || "No"}
+                        onChange={(e) =>
+                          handleLabelChange(col.key, e.target.value)
+                        }
+                        className="flex-1 bg-transparent text-sm md:text-base font-semibold text-[hsl(var(--theme-text-primary))] outline-none border-b border-white/10"
+                      />
+                    ) : (
+                      <span className="text-sm md:text-base font-semibold text-[hsl(var(--theme-text-primary))]">
+                        {col.label}
+                      </span>
+                    )}
+                    {isEditing && (
+                      <button
+                        type="button"
+                        onClick={col.onCorrect}
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-1 text-xs font-bold",
+                          col.correct
+                            ? "bg-[hsl(var(--theme-accent)/0.25)] text-[hsl(var(--theme-accent))]"
+                            : "bg-[hsl(var(--theme-text-primary)/0.08)] text-[hsl(var(--theme-text-secondary))]",
+                        )}
+                      >
+                        {col.correct ? "Correct" : "Set"}
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative flex flex-1 min-h-[180px] rounded-2xl bg-[hsl(var(--theme-text-primary)/0.06)] overflow-hidden">
+                    <motion.div
+                      className="absolute bottom-0 left-0 right-0 rounded-t-2xl bg-[hsl(var(--theme-accent))]"
+                      initial={false}
+                      animate={{
+                        height:
+                          revealStats && hasResults
+                            ? `${Math.max(0, col.pct)}%`
+                            : isEditing
+                              ? "12%"
+                              : "0%",
+                      }}
+                      transition={{ type: "spring", stiffness: 120, damping: 22 }}
+                    />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center pb-4 pt-2">
+                      {!isEditing && revealStats && hasResults ? (
+                        <>
+                          <span className="text-4xl md:text-6xl font-semibold tabular-nums tracking-tight text-[hsl(var(--theme-text-primary))]">
+                            {col.pct}%
+                          </span>
+                          {showCounts ? (
+                            <span className="text-xs md:text-sm text-[hsl(var(--theme-text-secondary))] tabular-nums">
+                              {col.count} vote{col.count === 1 ? "" : "s"}
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="text-sm text-[hsl(var(--theme-text-secondary))]">
+                          {isEditing ? "Preview" : "—"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+            {!isEditing && !hasResults && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="mt-6 flex justify-center"
+              >
+                <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                  <Users className="w-4 h-4" />
+                  <span>Waiting for votes…</span>
+                </div>
+              </motion.div>
+            )}
+            {!isEditing && hasResults && !revealStats && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="mt-4 flex justify-center text-center"
+              >
+                <div className="inline-flex max-w-md flex-wrap items-center justify-center gap-2 rounded-2xl border border-white/15 bg-[hsl(var(--theme-surface)/0.35)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>
+                    {totalResponses} vote{totalResponses === 1 ? "" : "s"} — percentages hidden until the timer ends or the presenter shows results.
+                  </span>
+                </div>
+              </motion.div>
+            )}
+            </>
             ) : isThumbsDynamic ? (
             /* thumbsDynamic: two big thumbs; selected (by results) grows and glows, other shrinks and grays */
             <div className="relative flex flex-row items-center justify-center gap-8 md:gap-12">

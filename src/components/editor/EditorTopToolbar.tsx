@@ -705,87 +705,134 @@ export function EditorTopToolbar({
             </AlertDialogContent>
           </AlertDialog>
 
-          {/* Per-type distinct design: 2 options (default + one variant) – icons only with tooltip */}
+          {/* Per-type layout variants: default + alternate + Showcase (unified segmented control) */}
           {(() => {
             type IconComp = React.ComponentType<{ className?: string }>;
-            const variantConfig: Record<string, { key: keyof SlideDesign; variant2: string; label1: string; label2: string; icon1: IconComp; icon2: IconComp }> = {
-              quiz: { key: 'quizVariant', variant2: 'listWithIcons', label1: 'Cards', label2: 'Icon list', icon1: LayoutGrid, icon2: List },
-              poll: { key: 'pollVariant', variant2: 'rankedBars', label1: 'Bars', label2: 'Ranked bars', icon1: Rows3, icon2: TrendingUp },
-              poll_quiz: { key: 'pollVariant', variant2: 'rankedBars', label1: 'Bars', label2: 'Ranked bars', icon1: Rows3, icon2: TrendingUp },
-              yesno: { key: 'yesNoVariant', variant2: 'thumbsDynamic', label1: 'Buttons', label2: 'Thumbs', icon1: Circle, icon2: ThumbsUp },
-              scale: { key: 'scaleVariant', variant2: 'stepsClick', label1: 'Meter', label2: 'Steps', icon1: Sliders, icon2: ListOrdered },
-              ranking: { key: 'rankingVariant', variant2: 'podium', label1: 'List', label2: 'Podium', icon1: List, icon2: LayoutList },
-              guess_number: { key: 'guessNumberVariant', variant2: 'thermometer', label1: 'Input', label2: 'Thermometer', icon1: Hash, icon2: Thermometer },
-              sentiment_meter: { key: 'sentimentMeterVariant', variant2: 'emojiRow', label1: 'Slider', label2: 'Emoji row', icon1: Sliders, icon2: Heart },
-              agree_spectrum: { key: 'agreeSpectrumVariant', variant2: 'steps', label1: 'Spectrum', label2: 'Steps', icon1: ArrowLeftRight, icon2: ListOrdered },
+            type VariantOption = { value: string | undefined; label: string; icon: IconComp };
+            const variantConfig: Record<
+              string,
+              { key: keyof SlideDesign; options: VariantOption[] }
+            > = {
+              quiz: {
+                key: "quizVariant",
+                options: [
+                  { value: undefined, label: "Cards", icon: LayoutGrid },
+                  { value: "listWithIcons", label: "Icon list", icon: List },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              poll: {
+                key: "pollVariant",
+                options: [
+                  { value: undefined, label: "Bars", icon: Rows3 },
+                  { value: "rankedBars", label: "Ranked bars", icon: TrendingUp },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              poll_quiz: {
+                key: "pollVariant",
+                options: [
+                  { value: undefined, label: "Bars", icon: Rows3 },
+                  { value: "rankedBars", label: "Ranked bars", icon: TrendingUp },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              yesno: {
+                key: "yesNoVariant",
+                options: [
+                  { value: undefined, label: "Buttons", icon: Circle },
+                  { value: "thumbsDynamic", label: "Thumbs", icon: ThumbsUp },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              scale: {
+                key: "scaleVariant",
+                options: [
+                  { value: undefined, label: "Meter", icon: Sliders },
+                  { value: "stepsClick", label: "Steps", icon: ListOrdered },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              ranking: {
+                key: "rankingVariant",
+                options: [
+                  { value: undefined, label: "List", icon: List },
+                  { value: "podium", label: "Podium", icon: LayoutList },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              guess_number: {
+                key: "guessNumberVariant",
+                options: [
+                  { value: undefined, label: "Input", icon: Hash },
+                  { value: "thermometer", label: "Thermometer", icon: Thermometer },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              sentiment_meter: {
+                key: "sentimentMeterVariant",
+                options: [
+                  { value: undefined, label: "Slider", icon: Sliders },
+                  { value: "emojiRow", label: "Emoji row", icon: Heart },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              agree_spectrum: {
+                key: "agreeSpectrumVariant",
+                options: [
+                  { value: undefined, label: "Spectrum", icon: ArrowLeftRight },
+                  { value: "steps", label: "Steps", icon: ListOrdered },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
+              wordcloud: {
+                key: "wordCloudStyleId",
+                options: [
+                  { value: undefined, label: "Organic", icon: Cloud },
+                  { value: "compact", label: "Tags", icon: Tags },
+                  { value: "showcase", label: "Showcase", icon: Sparkles },
+                ],
+              },
             };
             const cfg = variantConfig[slide.type];
             if (!cfg) return null;
-            const currentVal = design[cfg.key];
-            const isVariant2 = currentVal === cfg.variant2;
-            const Icon1 = cfg.icon1;
-            const Icon2 = cfg.icon2;
+            const cur = design[cfg.key] as string | undefined;
+            const isActive = (opt: VariantOption) =>
+              opt.value === undefined
+                ? cur === undefined || cur === null
+                : cur === opt.value;
+            const labels = cfg.options.map((o) => o.label).join(" · ");
             return (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex items-center gap-0.5">
-                    <Button
-                      variant={!isVariant2 ? "secondary" : "ghost"}
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => updateDesign({ [cfg.key]: undefined } as Partial<SlideDesign>)}
-                      title={cfg.label1}
-                    >
-                      <Icon1 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant={isVariant2 ? "secondary" : "ghost"}
-                      size="sm"
-                      className="h-8 w-8 p-0"
-                      onClick={() => updateDesign({ [cfg.key]: cfg.variant2 } as Partial<SlideDesign>)}
-                      title={cfg.label2}
-                    >
-                      <Icon2 className="w-4 h-4" />
-                    </Button>
+                  <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/30 p-0.5">
+                    {cfg.options.map((opt) => {
+                      const Icon = opt.icon;
+                      const active = isActive(opt);
+                      return (
+                        <Button
+                          key={opt.label}
+                          variant={active ? "secondary" : "ghost"}
+                          size="sm"
+                          className="h-8 w-8 p-0 shrink-0"
+                          onClick={() =>
+                            updateDesign({ [cfg.key]: opt.value } as Partial<SlideDesign>)
+                          }
+                          title={opt.label}
+                          type="button"
+                        >
+                          <Icon className="w-4 h-4" />
+                        </Button>
+                      );
+                    })}
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{cfg.label1} / {cfg.label2}</p>
+                  <p>Layout: {labels}</p>
                 </TooltipContent>
               </Tooltip>
             );
           })()}
-
-          {/* Word Cloud style - organic vs compact */}
-          {slide.type === 'wordcloud' && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div className="flex items-center gap-0.5">
-                  <Button
-                    variant={design.wordCloudStyleId === 'organic' || !design.wordCloudStyleId ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() => updateDesign({ wordCloudStyleId: 'organic' })}
-                    title="Organic — scattered words"
-                  >
-                    <Cloud className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={design.wordCloudStyleId === 'compact' ? "secondary" : "ghost"}
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    onClick={() => updateDesign({ wordCloudStyleId: 'compact' })}
-                    title="Compact — tag-style words"
-                  >
-                    <Tags className="w-4 h-4" />
-                  </Button>
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Word cloud style: Organic / Compact</p>
-              </TooltipContent>
-            </Tooltip>
-          )}
 
           {/* Image Picker - upload or URL */}
           <ImageAndPositionPopover

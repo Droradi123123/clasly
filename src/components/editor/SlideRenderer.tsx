@@ -140,6 +140,7 @@ export function SlideRenderer({
           liveWords={liveResults?.words}
           totalResponses={totalResponses}
           themeId={themeId}
+          designStyleId={effectiveDesignStyleId}
           hideFooter={hideFooter}
           showResults={showResults}
         />

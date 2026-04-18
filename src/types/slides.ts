@@ -142,17 +142,17 @@ export interface SlideDesign {
   logoScope?: LogoScope; // 'current' = this slide only, 'all' = all slides in presentation
   /** Result visualization for quiz/poll/yesno: 'default' = cards/buttons, 'clean_bars' = clean horizontal bar chart */
   resultVisualization?: 'default' | 'clean_bars';
-  wordCloudStyleId?: 'organic' | 'compact';
+  wordCloudStyleId?: 'organic' | 'compact' | 'showcase';
   /** Per-type distinct design variants (default = current design when undefined) */
-  quizVariant?: 'cards' | 'listWithIcons';
-  pollVariant?: 'bars' | 'rankedBars';
-  yesNoVariant?: 'buttons' | 'thumbsDynamic';
-  scaleVariant?: 'meter' | 'stepsClick';
-  rankingVariant?: 'list' | 'podium';
-  guessNumberVariant?: 'input' | 'thermometer';
+  quizVariant?: 'cards' | 'listWithIcons' | 'showcase';
+  pollVariant?: 'bars' | 'rankedBars' | 'showcase';
+  yesNoVariant?: 'buttons' | 'thumbsDynamic' | 'showcase';
+  scaleVariant?: 'meter' | 'stepsClick' | 'showcase';
+  rankingVariant?: 'list' | 'podium' | 'showcase';
+  guessNumberVariant?: 'input' | 'thermometer' | 'showcase';
   finishSentenceVariant?: 'input' | 'wordBank';
-  sentimentMeterVariant?: 'slider' | 'emojiRow';
-  agreeSpectrumVariant?: 'spectrum' | 'steps';
+  sentimentMeterVariant?: 'slider' | 'emojiRow' | 'showcase';
+  agreeSpectrumVariant?: 'spectrum' | 'steps' | 'showcase';
 }
 
 // Activity settings for interactive slides

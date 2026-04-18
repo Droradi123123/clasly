@@ -16,6 +16,10 @@ import { AutoResizeTextarea } from "@/components/ui/AutoResizeTextarea";
 import { FormattedText } from "@/components/editor/FormattedText";
 import { useSlideLayout } from "@/contexts/SlideLayoutContext";
 import { cn } from "@/lib/utils";
+import {
+  ShowcaseShell,
+  ShowcaseLabeledBar,
+} from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 interface PollSlideProps {
   slide: Slide;
@@ -46,6 +50,7 @@ export function PollSlide({
   hideFooter = false,
   showCorrectAnswer = false,
   correctAnswerIndex,
+  forceShowStats = false,
 }: PollSlideProps) {
   const rawContent = slide.content as PollSlideContent & { correctAnswer?: number };
   const content = {
@@ -64,7 +69,11 @@ export function PollSlide({
   const results = liveResults || content.options.map(() => 0);
   const hasResults = totalResponses > 0;
   /** Pure opinion polls always show live aggregates in presentation (not tied to timer). */
-  const revealStats = isEditing || showResults || slide.type === "poll";
+  const revealStats =
+    isEditing ||
+    showResults ||
+    slide.type === "poll" ||
+    (forceShowStats && slide.type === "poll_quiz");
 
   // Animation entrance config based on style
   const getEntranceAnimation = (index: number) => {
@@ -107,6 +116,7 @@ export function PollSlide({
   };
 
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.pollVariant === "showcase";
   const isRankedBars = slide.design?.pollVariant === 'rankedBars';
   const correctIdx = correctAnswerIndex ?? content.correctAnswer;
   const showCorrect = showCorrectAnswer && typeof correctIdx === 'number' && correctIdx >= 0;
@@ -152,6 +162,154 @@ export function PollSlide({
               textColor={textColor}
               correctIndex={showCorrect ? correctIdx : undefined}
             />
+          </div>
+        ) : isShowcase ? (
+          <div className="flex-1 flex flex-col gap-4 min-h-0 overflow-y-auto py-2">
+            {isEditing ? (
+              <ShowcaseShell className="max-w-2xl">
+                {content.options.map((option, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.04 }}
+                    className="rounded-3xl border border-white/10 dark:border-black/10 bg-[hsl(var(--theme-surface)/0.45)] px-4 py-3 md:px-5 md:py-4 shadow-sm"
+                  >
+                    <div className="flex items-start gap-2 min-w-0">
+                      {slide.type === "poll_quiz" && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetCorrectAnswer(index)}
+                          className={cn(
+                            "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-colors",
+                            correctIdx === index
+                              ? "bg-[hsl(var(--theme-accent)/0.25)] text-[hsl(var(--theme-accent))] ring-1 ring-[hsl(var(--theme-accent)/0.5)]"
+                              : "bg-[hsl(var(--theme-text-primary)/0.06)] text-[hsl(var(--theme-text-secondary))] hover:bg-[hsl(var(--theme-text-primary)/0.1)]",
+                          )}
+                          title={correctIdx === index ? "Correct answer" : "Set as correct answer"}
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                      )}
+                      <AutoResizeTextarea
+                        value={option}
+                        onChange={(e) => handleOptionChange(index, e.target.value)}
+                        className="bg-transparent font-medium outline-none text-sm md:text-base flex-1 min-w-0 break-words text-[hsl(var(--theme-text-primary))]"
+                        style={{ textAlign }}
+                        placeholder={`Option ${index + 1}`}
+                        minRows={1}
+                      />
+                      {content.options.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => removeOption(index)}
+                          className="p-1 rounded-md opacity-70 hover:opacity-100 hover:bg-[hsl(var(--theme-text-primary)/0.08)] shrink-0"
+                          title="Remove option"
+                        >
+                          <Trash2 className="w-3 h-3 text-[hsl(var(--theme-text-secondary))]" />
+                        </button>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+                {content.options.length < 6 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={addOption}
+                    className="text-[hsl(var(--theme-text-secondary))] hover:text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-text-primary)/0.08)] gap-2"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Add option
+                  </Button>
+                )}
+              </ShowcaseShell>
+            ) : (
+              <ShowcaseShell>
+                {content.options
+                  .map((option, i) => ({ option, count: results[i] || 0, index: i }))
+                  .sort((a, b) => b.count - a.count)
+                  .map(({ option, count, index }, rank) => {
+                    const percentage =
+                      totalResponses > 0 ? (count / totalResponses) * 100 : 0;
+                    const isCorrectOpt = showCorrect && index === correctIdx;
+                    return (
+                      <div
+                        key={index}
+                        className={cn(
+                          "rounded-3xl transition-shadow",
+                          isCorrectOpt &&
+                            "ring-2 ring-[hsl(var(--theme-accent))] ring-offset-2 ring-offset-transparent",
+                        )}
+                      >
+                        <ShowcaseLabeledBar
+                          rank={rank + 1}
+                          label={
+                            <span className="flex items-center gap-2">
+                              <FormattedText>{String(option || "")}</FormattedText>
+                              {showCorrect && isCorrectOpt && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[hsl(var(--theme-accent)/0.2)] px-2 py-0.5 text-xs font-semibold text-[hsl(var(--theme-accent))]">
+                                  <Check className="w-3 h-3" /> Correct
+                                </span>
+                              )}
+                            </span>
+                          }
+                          percent={percentage}
+                          count={revealStats && hasResults ? count : undefined}
+                          showStats={revealStats && hasResults}
+                          barRtl={direction === "rtl"}
+                          muted={false}
+                        />
+                      </div>
+                    );
+                  })}
+              </ShowcaseShell>
+            )}
+            {!isEditing && !hasResults && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={cn(
+                  "mt-4",
+                  textAlign === "center"
+                    ? "text-center"
+                    : textAlign === "right"
+                      ? "text-right"
+                      : "text-left",
+                )}
+              >
+                <div className="inline-flex items-center gap-3 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-5 py-3 text-[hsl(var(--theme-text-secondary))]">
+                  <Users className="w-5 h-5 shrink-0" />
+                  <span className="text-sm font-medium">Waiting for responses…</span>
+                </div>
+              </motion.div>
+            )}
+            {!isEditing &&
+              slide.type === "poll_quiz" &&
+              hasResults &&
+              !showResults &&
+              !forceShowStats && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className={cn(
+                    "mt-4",
+                    textAlign === "center"
+                      ? "text-center"
+                      : textAlign === "right"
+                        ? "text-right"
+                        : "text-left",
+                  )}
+                >
+                  <div className="inline-flex max-w-xl flex-wrap items-center gap-2 rounded-2xl border border-white/15 bg-[hsl(var(--theme-surface)/0.35)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4 shrink-0" />
+                    <span>
+                      {totalResponses} response{totalResponses === 1 ? "" : "s"} — breakdown is
+                      hidden until the timer ends or the presenter shows results.
+                    </span>
+                  </div>
+                </motion.div>
+              )}
           </div>
         ) : !isEditing && showResults && isRankedBars ? (
         /* rankedBars: sort by popularity (most first), bar + bold % at end, smooth reorder animation */

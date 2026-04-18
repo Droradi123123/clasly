@@ -7,6 +7,7 @@ import { ThemeId, getTheme } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
 import { Input } from "@/components/ui/input";
 import { Confetti, SuccessBurst } from "@/components/effects";
+import { ShowcaseShell, ShowcaseStat } from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 interface GuessNumberSlideProps {
   slide: Slide;
@@ -67,6 +68,7 @@ export function GuessNumberSlide({
 
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.guessNumberVariant === "showcase";
   const isThermometer = slide.design?.guessNumberVariant === 'thermometer';
 
   const minR = content.minRange ?? 0;
@@ -79,8 +81,8 @@ export function GuessNumberSlide({
 
   return (
     <>
-      {styleConfig.celebrationOnResults && <Confetti isActive={showCelebration} />}
-      {styleConfig.celebrationOnResults && <SuccessBurst isActive={showCelebration} message="Revealed!" variant="celebration" />}
+      {!isShowcase && styleConfig.celebrationOnResults && <Confetti isActive={showCelebration} />}
+      {!isShowcase && styleConfig.celebrationOnResults && <SuccessBurst isActive={showCelebration} message="Revealed!" variant="celebration" />}
 
       <SlideWrapper slide={slide} themeId={themeId}>
         <div className="flex flex-col h-full min-h-0 overflow-hidden">
@@ -95,7 +97,134 @@ export function GuessNumberSlide({
           {/* Content area */}
           <div className="flex-1 flex items-center justify-center px-4 md:px-6 pb-4 min-h-0 overflow-y-auto">
             <div className="w-full max-w-xl flex flex-col items-center">
-              {isThermometer ? (
+              {isShowcase ? (
+              <>
+                <ShowcaseShell className="max-w-2xl items-center text-center py-2">
+                  <motion.div
+                    initial={false}
+                    animate={
+                      showAnswer || isEditing
+                        ? { scale: [0.96, 1.02, 1] }
+                        : {}
+                    }
+                    transition={{ type: "spring", stiffness: 200, damping: 18 }}
+                  >
+                    <ShowcaseStat
+                      value={
+                        isEditing || showAnswer ? content.correctNumber : "?"
+                      }
+                      label="Correct answer"
+                    />
+                  </motion.div>
+                  {revealDist && hasResults && (
+                    <p className="text-sm text-[hsl(var(--theme-text-secondary))] tabular-nums">
+                      {totalResponses} guesses · avg {averageGuess.toFixed(1)} · closest {closestGuess}
+                    </p>
+                  )}
+                  <div className="relative mt-8 w-full px-2">
+                    <div className="flex justify-between text-xs text-[hsl(var(--theme-text-secondary))] mb-2 tabular-nums">
+                      <span>{minR}</span>
+                      <span>{maxR}</span>
+                    </div>
+                    <div className="relative h-16 rounded-3xl border border-white/10 bg-[hsl(var(--theme-text-primary)/0.06)]">
+                      <div className="absolute inset-x-3 top-1/2 h-px -translate-y-1/2 bg-[hsl(var(--theme-text-primary)/0.15)]" />
+                      {revealDist &&
+                        hasResults &&
+                        guesses.map((g, i) => {
+                          const leftPct = toPercent(g);
+                          const stack = guesses.slice(0, i).filter((x) => x === g).length;
+                          return (
+                            <motion.div
+                              key={`${g}-${i}`}
+                              initial={{ opacity: 0, scale: 0 }}
+                              animate={{ opacity: 0.85, scale: 1 }}
+                              className="absolute top-1/2 h-2.5 w-2.5 rounded-full bg-[hsl(var(--theme-text-primary)/0.85)]"
+                              style={{
+                                left: `${leftPct}%`,
+                                transform: `translate(-50%, calc(-50% + ${stack * -6}px))`,
+                              }}
+                              title={`${g}`}
+                            />
+                          );
+                        })}
+                      {(showAnswer || isEditing) && (
+                        <div
+                          className="absolute flex flex-col items-center pointer-events-none"
+                          style={{
+                            left: `${toPercent(content.correctNumber)}%`,
+                            top: "100%",
+                            transform: "translateX(-50%)",
+                            marginTop: 6,
+                          }}
+                        >
+                          <div
+                            className="h-0 w-0 border-l-[7px] border-r-[7px] border-t-[10px] border-l-transparent border-r-transparent border-t-[hsl(var(--theme-accent))]"
+                            aria-hidden
+                          />
+                          <span className="mt-1 text-xs font-semibold tabular-nums text-[hsl(var(--theme-accent))]">
+                            {content.correctNumber}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </ShowcaseShell>
+                {isEditing && (
+                  <div className="mt-6 w-full max-w-sm space-y-3 text-center">
+                    <p className="text-sm text-[hsl(var(--theme-text-secondary))]">
+                      Correct answer
+                    </p>
+                    <Input
+                      type="number"
+                      value={content.correctNumber}
+                      onChange={(e) =>
+                        onUpdate?.({
+                          ...content,
+                          correctNumber: parseInt(e.target.value, 10) || 0,
+                        })
+                      }
+                      className="mx-auto w-28 text-center text-lg font-semibold bg-[hsl(var(--theme-text-primary)/0.08)] border-white/15 text-[hsl(var(--theme-text-primary))]"
+                    />
+                    <div className="flex gap-3 justify-center">
+                      <div>
+                        <p className="text-xs text-[hsl(var(--theme-text-secondary))] mb-1">Min</p>
+                        <Input
+                          type="number"
+                          value={content.minRange ?? 1}
+                          onChange={(e) =>
+                            onUpdate?.({
+                              ...content,
+                              minRange: parseInt(e.target.value, 10) || 1,
+                            })
+                          }
+                          className="w-24 text-center bg-[hsl(var(--theme-text-primary)/0.08)] border-white/15 text-[hsl(var(--theme-text-primary))] text-sm"
+                        />
+                      </div>
+                      <div>
+                        <p className="text-xs text-[hsl(var(--theme-text-secondary))] mb-1">Max</p>
+                        <Input
+                          type="number"
+                          value={content.maxRange ?? 100}
+                          onChange={(e) =>
+                            onUpdate?.({
+                              ...content,
+                              maxRange: parseInt(e.target.value, 10) || 100,
+                            })
+                          }
+                          className="w-24 text-center bg-[hsl(var(--theme-text-primary)/0.08)] border-white/15 text-[hsl(var(--theme-text-primary))] text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {!isEditing && !hasResults && (
+                  <div className="mt-8 inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4" />
+                    <span>Waiting for guesses…</span>
+                  </div>
+                )}
+              </>
+              ) : isThermometer ? (
               /* Thermometer: visual scale min–max; markers for average and correct when revealed */
               <>
                 <div className="w-full max-w-md mt-4">

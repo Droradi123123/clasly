@@ -5,6 +5,8 @@ import { Users } from "lucide-react";
 import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, WordCloudSlideContent } from "@/types/slides";
 import { ThemeId } from "@/types/themes";
+import { DesignStyleId } from "@/types/designStyles";
+import { ShowcaseShell, ShowcaseChip } from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 interface WordCloudSlideProps {
   slide: Slide;
@@ -13,6 +15,8 @@ interface WordCloudSlideProps {
   liveWords?: { text: string; count: number }[];
   totalResponses?: number;
   themeId?: ThemeId;
+  /** Passed from SlideRenderer for consistency with other slides */
+  designStyleId?: DesignStyleId;
   hideFooter?: boolean;
   /** When false (e.g. non-present contexts), hide live aggregate words */
   showResults?: boolean;
@@ -46,6 +50,7 @@ export function WordCloudSlide({
   liveWords = [],
   totalResponses = 0,
   themeId = 'academic-pro',
+  designStyleId: _designStyleId,
   hideFooter = false,
   showResults = true,
 }: WordCloudSlideProps) {
@@ -53,8 +58,11 @@ export function WordCloudSlide({
   const revealWords = isEditing || showResults;
   const wordsForDisplay = revealWords ? liveWords : [];
   const hasResults = wordsForDisplay.length > 0;
-  const wordCloudStyleId = slide.design?.wordCloudStyleId || 'compact';
-  const isCompactStyle = wordCloudStyleId === 'compact';
+  const rawStyle = slide.design?.wordCloudStyleId;
+  const isShowcase = rawStyle === "showcase";
+  const isCompactStyle = rawStyle === "compact";
+  /** undefined or legacy organic → scattered layout */
+  const isOrganicStyle = rawStyle === undefined || rawStyle === "organic";
 
   const handleQuestionChange = (question: string) => {
     onUpdate?.({ ...content, question });
@@ -74,13 +82,18 @@ export function WordCloudSlide({
   const displayWords = isEditing ? placeholderWords : wordsForDisplay;
   const maxCount = Math.max(...displayWords.map(w => w.count), 1);
 
-  // Font size range: larger and more readable (compact: 18-48px, classic/organic: 24-72px)
+  // Font size range: larger and more readable (compact: 18-48px, organic: 24-72px)
   const getFontSize = (ratio: number) => {
     if (isCompactStyle) {
       return Math.min(Math.max(18, 18 + ratio * 30), 48);
     }
     return Math.min(Math.max(24, 24 + ratio * 48), 72);
   };
+
+  const sortedWords = [...displayWords].sort((a, b) => b.count - a.count);
+  const topWord = sortedWords[0];
+  const nextFour = sortedWords.slice(1, 5);
+  const tailWords = sortedWords.slice(5);
 
   // Get text color from slide design
   const textColor = slide.design?.textColor || '#ffffff';
@@ -100,7 +113,102 @@ export function WordCloudSlide({
         {/* Word Cloud Display - IDENTICAL layout for both modes */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 min-h-0 overflow-y-auto">
           <div className="w-full max-w-4xl">
-            {/* Word cloud container – organic (scattered+rotate) or compact (rows, no rotate) */}
+            {isShowcase ? (
+              <ShowcaseShell className="min-h-[280px] justify-center py-6 md:py-10">
+                {sortedWords.length > 0 ? (
+                  <div className="flex flex-col items-center gap-6 md:gap-8 text-center">
+                    {topWord ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="w-full px-2"
+                      >
+                        <div
+                          className="text-4xl sm:text-5xl md:text-7xl font-semibold tracking-tight break-words leading-tight"
+                          style={{
+                            color: `hsl(var(--theme-accent))`,
+                            fontFamily: "var(--theme-font-family-display), var(--theme-font-family)",
+                          }}
+                        >
+                          {topWord.text}
+                        </div>
+                        {!isEditing && (
+                          <div className="mt-2 text-sm tabular-nums text-[hsl(var(--theme-text-secondary))]">
+                            ×{topWord.count}
+                          </div>
+                        )}
+                      </motion.div>
+                    ) : null}
+                    {nextFour.length > 0 ? (
+                      <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4 md:gap-6 w-full">
+                        {nextFour.map((word, i) => {
+                          const ratio =
+                            maxCount > 0 ? (word.count - 1) / (maxCount - 1 || 1) : 0;
+                          const fontSize = Math.min(
+                            Math.max(20, 20 + ratio * 28),
+                            44,
+                          );
+                          return (
+                            <motion.span
+                              key={`${word.text}-${i}`}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ delay: 0.06 + i * 0.05 }}
+                              className="font-semibold text-[hsl(var(--theme-text-primary))]"
+                              style={{ fontSize: `${fontSize}px` }}
+                            >
+                              {word.text}
+                              {!isEditing ? (
+                                <span className="text-[hsl(var(--theme-text-secondary))] text-sm ml-1 tabular-nums">
+                                  ×{word.count}
+                                </span>
+                              ) : null}
+                            </motion.span>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    {tailWords.length > 0 ? (
+                      <div className="flex flex-wrap justify-center gap-2 max-w-3xl">
+                        {tailWords.map((word, i) => (
+                          <motion.div
+                            key={`${word.text}-tail-${i}`}
+                            initial={{ opacity: 0, scale: 0.96 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            transition={{ delay: 0.15 + i * 0.02 }}
+                          >
+                            <ShowcaseChip>
+                              {word.text}
+                              {!isEditing ? (
+                                <span className="ml-1.5 tabular-nums text-[hsl(var(--theme-text-secondary))]">
+                                  ×{word.count}
+                                </span>
+                              ) : null}
+                            </ShowcaseChip>
+                          </motion.div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center justify-center gap-4 min-h-[200px]">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                      <motion.div
+                        key={i}
+                        className="rounded-full bg-[hsl(var(--theme-text-primary)/0.08)]"
+                        style={{
+                          width: `${60 + (i % 3) * 20}px`,
+                          height: `${30 + (i % 2) * 12}px`,
+                        }}
+                        animate={{ opacity: [0.15, 0.35, 0.15] }}
+                        transition={{ duration: 2, repeat: Infinity, delay: i * 0.2 }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </ShowcaseShell>
+            ) : (
+            /* Word cloud container – organic (scattered+rotate) or compact (rows, no rotate) */
             <motion.div
               className={`relative min-h-[280px] flex flex-wrap items-center justify-center content-center p-6 md:p-10 ${isCompactStyle ? 'gap-3 gap-y-4' : 'gap-4 md:gap-6 gap-y-5'}`}
               initial={{ opacity: 0 }}
@@ -115,7 +223,7 @@ export function WordCloudSlide({
                     const fontSize = getFontSize(ratio);
                     const hash = word.text.split('').reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0);
                     const color = WORD_COLORS[Math.abs(hash) % WORD_COLORS.length];
-                    const rotation = isCompactStyle ? 0 : (Math.sin(index * 1.3) * 6) + (hash % 3 - 1) * 3;
+                    const rotation = isCompactStyle || !isOrganicStyle ? 0 : (Math.sin(index * 1.3) * 6) + (hash % 3 - 1) * 3;
 
                     return (
                       <motion.span
@@ -163,6 +271,7 @@ export function WordCloudSlide({
                 </div>
               )}
             </motion.div>
+            )}
 
             {/* Live response count badge */}
             {!isEditing && hasResults && (

@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { GripVertical, Plus, Trash2, Users } from "lucide-react";
+import { GripVertical, Plus, Trash2, Users, Crown } from "lucide-react";
 import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, RankingSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
 import { Button } from "@/components/ui/button";
+import { ShowcaseShell } from "@/components/editor/slides/showcase/ShowcasePrimitives";
+import { cn } from "@/lib/utils";
 
 export interface RankingSlideProps {
   slide: Slide;
@@ -49,6 +51,7 @@ export function RankingSlide({
   const hasResults = totalResponses > 0;
   const revealStats = isEditing || showResults;
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.rankingVariant === "showcase";
   const isPodium = slide.design?.rankingVariant === 'podium';
 
   // Sort items by average rank if we have results
@@ -96,7 +99,134 @@ export function RankingSlide({
         
         <div className="flex-1 flex items-center justify-center px-4 md:px-6 pb-4 min-h-0 overflow-y-auto">
           <div className={`w-full max-h-full ${isCompact ? 'flex flex-row flex-wrap justify-center gap-2 md:gap-3 max-w-2xl' : 'max-w-lg space-y-2 md:space-y-3'}`}>
-            {isPodium && revealStats && hasResults && liveResults?.rankings ? (
+            {isShowcase ? (
+            <ShowcaseShell className="max-w-xl w-full space-y-3 mx-auto">
+              {isEditing ? (
+                content.items.map((item, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="group relative flex items-center gap-3 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.45)] px-4 py-3 md:px-5 md:py-4 shadow-sm"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/15 bg-[hsl(var(--theme-text-primary)/0.06)] text-sm font-semibold tabular-nums text-[hsl(var(--theme-text-primary))]">
+                      {index + 1}
+                    </span>
+                    <GripVertical className="w-4 h-4 text-[hsl(var(--theme-text-secondary))] shrink-0" />
+                    <input
+                      value={item}
+                      onChange={(e) => handleItemChange(index, e.target.value)}
+                      className="flex-1 min-w-0 bg-transparent text-sm md:text-base font-medium text-[hsl(var(--theme-text-primary))] outline-none"
+                      placeholder={`Item ${index + 1}`}
+                    />
+                    {content.items.length > 2 && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(index)}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity rounded-full p-1.5 text-red-400 hover:bg-red-500/20"
+                        title="Remove"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </motion.div>
+                ))
+              ) : revealStats && hasResults && liveResults?.rankings ? (
+                [...liveResults.rankings]
+                  .sort((a, b) => a.avgRank - b.avgRank)
+                  .map((r, index) => {
+                    const place = index + 1;
+                    return (
+                      <motion.div
+                        key={r.item}
+                        layout
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.06 }}
+                        className={cn(
+                          "flex items-center gap-3 rounded-3xl border px-4 py-3 md:px-5 md:py-4 shadow-sm",
+                          place === 1
+                            ? "border-[hsl(var(--theme-accent))] bg-[hsl(var(--theme-accent)/0.08)]"
+                            : "border-white/10 bg-[hsl(var(--theme-surface)/0.45)]",
+                        )}
+                      >
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-[hsl(var(--theme-text-primary)/0.06)]">
+                          {place === 1 ? (
+                            <Crown className="h-5 w-5 text-[hsl(var(--theme-accent))]" aria-hidden />
+                          ) : (
+                            <span className="text-sm font-semibold tabular-nums text-[hsl(var(--theme-text-primary))]">
+                              {place}
+                            </span>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm md:text-base font-medium leading-snug text-[hsl(var(--theme-text-primary))] break-words">
+                            {r.item}
+                          </p>
+                          <p className="mt-0.5 text-xs text-[hsl(var(--theme-text-secondary))]">
+                            Avg rank {r.avgRank.toFixed(2)}
+                          </p>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+              ) : (
+                content.items.map((item, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-3 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.45)] px-4 py-3"
+                  >
+                    <span className="text-sm font-semibold tabular-nums text-[hsl(var(--theme-text-secondary))]">
+                      {index + 1}.
+                    </span>
+                    <span className="text-sm md:text-base font-medium text-[hsl(var(--theme-text-primary))]">
+                      {item}
+                    </span>
+                  </motion.div>
+                ))
+              )}
+              {isEditing && content.items.length < 6 && (
+                <Button
+                  variant="outline"
+                  onClick={addItem}
+                  size="sm"
+                  className="mt-2 w-full border-white/15 bg-[hsl(var(--theme-text-primary)/0.06)] text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-text-primary)/0.1)]"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Item
+                </Button>
+              )}
+              {!isEditing && !hasResults && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="pt-4 text-center"
+                >
+                  <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4" />
+                    <span>Waiting for rankings…</span>
+                  </div>
+                </motion.div>
+              )}
+              {!isEditing && hasResults && !revealStats && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="pt-4 text-center"
+                >
+                  <div className="inline-flex max-w-lg flex-wrap items-center justify-center gap-2 rounded-2xl border border-white/15 bg-[hsl(var(--theme-surface)/0.35)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4 shrink-0" />
+                    <span>
+                      {totalResponses} response{totalResponses === 1 ? "" : "s"} — ranking revealed when timer ends
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+            </ShowcaseShell>
+            ) : isPodium && revealStats && hasResults && liveResults?.rankings ? (
             /* Podium: 1st, 2nd, 3rd with visual bars / medals */
             <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
               {liveResults.rankings.sort((a, b) => a.avgRank - b.avgRank).map((r, index) => {

@@ -4,6 +4,7 @@ import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, ScaleSlideContent } from "@/types/slides";
 import { ThemeId, getTheme } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
+import { ShowcaseShell, ShowcaseStat } from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 interface ScaleSlideProps {
   slide: Slide;
@@ -55,6 +56,7 @@ export function ScaleSlide({
 
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.scaleVariant === "showcase";
   const isStepsClick = slide.design?.scaleVariant === 'stepsClick';
 
   // Calculate meter position (0-100%)
@@ -126,7 +128,78 @@ export function ScaleSlide({
               )}
             </motion.div>
 
-            {isStepsClick ? (
+            {isShowcase ? (
+            <ShowcaseShell className="max-w-2xl w-full py-2">
+              <div className="flex flex-col items-center text-center gap-2">
+                <ShowcaseStat
+                  value={
+                    revealStats && hasResults && results.average > 0
+                      ? results.average.toFixed(1)
+                      : "—"
+                  }
+                  label="Average score"
+                />
+                <p className="text-xs md:text-sm text-[hsl(var(--theme-text-secondary))] tabular-nums">
+                  {steps} steps · {totalResponses} response
+                  {totalResponses === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="relative mt-6 w-full">
+                <div
+                  className="pointer-events-none absolute left-1/2 z-10 w-px bg-[hsl(var(--theme-accent)/0.65)]"
+                  style={{
+                    top: "-4.5rem",
+                    height: "4.5rem",
+                    transform: "translateX(-50%)",
+                  }}
+                  aria-hidden
+                />
+                <div className="flex justify-between gap-1 border-t border-[hsl(var(--theme-text-primary)/0.15)] pt-3">
+                  {Array.from({ length: steps }, (_, i) => i + 1).map((value, index) => {
+                    const count = results.distribution?.[index] || 0;
+                    const showTick =
+                      revealStats && hasResults && (showCounts || forceShowStats);
+                    return (
+                      <div
+                        key={value}
+                        className="flex min-w-0 flex-1 flex-col items-center gap-1"
+                      >
+                        <span className="text-[10px] md:text-xs tabular-nums text-[hsl(var(--theme-text-secondary))]">
+                          {showTick ? count : ""}
+                        </span>
+                        <div className="h-1 w-px bg-[hsl(var(--theme-text-primary)/0.2)]" />
+                        <span className="text-xs md:text-sm font-semibold tabular-nums text-[hsl(var(--theme-text-primary))]">
+                          {value}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {revealStats && hasResults && results.average > 0 && (
+                  <motion.div
+                    className="absolute bottom-8 left-0 right-0 h-3 pointer-events-none"
+                    initial={false}
+                  >
+                    <motion.div
+                      className="absolute top-0 h-3 w-3 -translate-x-1/2 rounded-full border-2 border-[hsl(var(--theme-accent))] bg-[hsl(var(--theme-bg))]"
+                      style={{
+                        left: `${((results.average - 1) / Math.max(steps - 1, 1)) * 100}%`,
+                      }}
+                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                    />
+                  </motion.div>
+                )}
+              </div>
+              {!isEditing && (!revealStats || !hasResults) && (
+                <div className="mt-8 flex justify-center">
+                  <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4" />
+                    <span>Waiting for ratings…</span>
+                  </div>
+                </div>
+              )}
+            </ShowcaseShell>
+            ) : isStepsClick ? (
             /* stepsClick: discrete step buttons 1..N; results show distribution + average */
             <>
               <div className="flex justify-center gap-2 md:gap-3 mb-6 flex-wrap">

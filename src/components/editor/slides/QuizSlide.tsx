@@ -9,6 +9,13 @@ import { Confetti, SuccessBurst } from "@/components/effects";
 import { ThemeId, getTheme, getSafeOptionColor } from "@/types/themes";
 import { FormattedText } from "@/components/editor/FormattedText";
 import { DesignStyleId, getDesignStyle, getAnimationVariants, getSpacingClasses, getShadowClasses } from "@/types/designStyles";
+import { useSlideLayout } from "@/contexts/SlideLayoutContext";
+import { cn } from "@/lib/utils";
+import {
+  ShowcaseShell,
+  ShowcaseLetterBadge,
+  ShowcaseBar,
+} from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 export interface QuizSlideProps {
   slide: Slide;
@@ -130,7 +137,9 @@ export function QuizSlide({
 
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.quizVariant === "showcase";
   const isListWithIcons = slide.design?.quizVariant === 'listWithIcons';
+  const { direction } = useSlideLayout();
 
   // Content-matched icon for listWithIcons variant (simple keyword match)
   const getOptionIcon = (option: string): LucideIcon => {
@@ -142,8 +151,8 @@ export function QuizSlide({
 
   return (
     <>
-      {styleConfig.celebrationOnResults && <Confetti isActive={showCelebration} />}
-      {styleConfig.celebrationOnResults && <SuccessBurst isActive={showCelebration} message="Correct!" variant="correct" />}
+      {!isShowcase && styleConfig.celebrationOnResults && <Confetti isActive={showCelebration} />}
+      {!isShowcase && styleConfig.celebrationOnResults && <SuccessBurst isActive={showCelebration} message="Correct!" variant="correct" />}
 
       <SlideWrapper slide={slide} themeId={themeId}>
         <div className="flex flex-col h-full min-h-0 overflow-hidden gap-3 md:gap-5">
@@ -169,6 +178,140 @@ export function QuizSlide({
                   correctIndex={showCorrectAnswer ? content.correctAnswer : undefined}
                   textColor={textColor}
                 />
+              ) : isShowcase ? (
+              <ShowcaseShell className="w-full">
+                <div className="space-y-3 md:space-y-4">
+                  {content.options.map((option, index) => {
+                    const letters = ["A", "B", "C", "D", "E", "F"];
+                    const letter = letters[index] ?? String(index + 1);
+                    const count = results[index] || 0;
+                    const percentage =
+                      totalResponses > 0 ? Math.round((count / totalResponses) * 100) : 0;
+                    const isCorrect = index === content.correctAnswer;
+                    const highlight = !!(showCorrectAnswer && isCorrect && hasResults);
+                    const muted =
+                      !!(showCorrectAnswer && hasResults && !isCorrect);
+                    return (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        className={cn(
+                          "rounded-3xl border px-4 py-3 md:px-5 md:py-4 flex flex-col gap-3 shadow-sm",
+                          highlight
+                            ? "border-[hsl(var(--theme-accent))] bg-[hsl(var(--theme-accent)/0.12)]"
+                            : "border-white/10 dark:border-black/10 bg-[hsl(var(--theme-surface)/0.45)]",
+                          muted && "opacity-[0.35]",
+                        )}
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <ShowcaseLetterBadge letter={letter} highlight={highlight} />
+                          <div className="flex-1 min-w-0">
+                            {isEditing ? (
+                              <AutoResizeTextarea
+                                value={option}
+                                onChange={(e) => handleOptionChange(index, e.target.value)}
+                                className="w-full bg-transparent text-[hsl(var(--theme-text-primary))] font-medium outline-none resize-none text-base md:text-lg"
+                                placeholder={`Option ${index + 1}`}
+                                minRows={1}
+                                maxRows={3}
+                              />
+                            ) : (
+                              <span className="text-base md:text-lg font-medium text-[hsl(var(--theme-text-primary))] leading-snug break-words">
+                                <FormattedText>{String(option || "")}</FormattedText>
+                              </span>
+                            )}
+                          </div>
+                          {!isEditing && revealStats && hasResults ? (
+                            <span className="shrink-0 tabular-nums text-lg md:text-xl font-semibold text-[hsl(var(--theme-text-primary))]">
+                              {percentage}%
+                            </span>
+                          ) : null}
+                        </div>
+                        {!isEditing && revealStats && hasResults ? (
+                          <ShowcaseBar
+                            percent={percentage}
+                            show
+                            rtl={direction === "rtl"}
+                          />
+                        ) : null}
+                        {isEditing ? (
+                          <div className="flex justify-end gap-1">
+                            <motion.button
+                              type="button"
+                              whileTap={{ scale: 0.9 }}
+                              onClick={() => handleCorrectAnswerChange(index)}
+                              className={cn(
+                                "w-8 h-8 rounded-full flex items-center justify-center",
+                                isCorrect
+                                  ? "bg-[hsl(var(--theme-accent)/0.35)] text-[hsl(var(--theme-accent))]"
+                                  : "bg-[hsl(var(--theme-text-primary)/0.08)] text-[hsl(var(--theme-text-secondary))]",
+                              )}
+                              title="Mark as correct"
+                            >
+                              <Check className="w-4 h-4" />
+                            </motion.button>
+                            {content.options.length > 2 && (
+                              <motion.button
+                                type="button"
+                                whileTap={{ scale: 0.9 }}
+                                onClick={() => removeOption(index)}
+                                className="w-8 h-8 rounded-full bg-[hsl(var(--theme-text-primary)/0.08)] text-[hsl(var(--theme-text-secondary))] hover:bg-red-500/30 flex items-center justify-center"
+                                title="Remove"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </motion.button>
+                            )}
+                          </div>
+                        ) : null}
+                        {!isEditing && showCorrectAnswer && isCorrect && hasResults ? (
+                          <div className="flex items-center gap-1 text-sm font-medium text-[hsl(var(--theme-accent))]">
+                            <Check className="w-4 h-4" />
+                            Correct answer
+                          </div>
+                        ) : null}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+                {isEditing && content.options.length < 6 && (
+                  <Button
+                    variant="outline"
+                    onClick={addOption}
+                    className="mt-4 bg-[hsl(var(--theme-text-primary)/0.06)] border-white/15 text-[hsl(var(--theme-text-primary))] hover:bg-[hsl(var(--theme-text-primary)/0.1)]"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Option
+                  </Button>
+                )}
+                {!isEditing && !hasResults && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-8 text-center"
+                  >
+                    <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                      <Users className="w-4 h-4" />
+                      <span>Waiting for responses…</span>
+                    </div>
+                  </motion.div>
+                )}
+                {!isEditing && hasResults && !revealStats && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-6 text-center"
+                  >
+                    <div className="inline-flex flex-wrap items-center justify-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.35)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))] max-w-md mx-auto">
+                      <Users className="w-4 h-4 shrink-0" />
+                      <span>
+                        {totalResponses} response{totalResponses === 1 ? "" : "s"} — vote breakdown is hidden until the timer ends or the presenter shows results.
+                      </span>
+                    </div>
+                  </motion.div>
+                )}
+              </ShowcaseShell>
               ) : isListWithIcons ? (
               /* listWithIcons: vertical list with content-matched icon per option */
               <div className="flex flex-col gap-4 max-w-lg mx-auto">

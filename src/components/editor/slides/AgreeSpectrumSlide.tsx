@@ -4,6 +4,10 @@ import { SlideWrapper, QuestionHeader, ActivityFooter } from "./index";
 import { Slide, AgreeSpectrumSlideContent } from "@/types/slides";
 import { ThemeId } from "@/types/themes";
 import { DesignStyleId, getDesignStyle } from "@/types/designStyles";
+import {
+  ShowcaseShell,
+  ShowcaseTitle,
+} from "@/components/editor/slides/showcase/ShowcasePrimitives";
 
 interface AgreeSpectrumSlideProps {
   slide: Slide;
@@ -54,6 +58,7 @@ export function AgreeSpectrumSlide({
   const agg = revealStats && hasResults;
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
+  const isShowcase = slide.design?.agreeSpectrumVariant === "showcase";
   const isSteps = slide.design?.agreeSpectrumVariant === 'steps';
   const textColor = slide.design?.textColor || '#ffffff';
 
@@ -85,7 +90,8 @@ export function AgreeSpectrumSlide({
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
       <div className="flex flex-col h-full min-h-0 overflow-hidden">
-        {/* Statement as main question */}
+        {/* Statement as main question (Showcase variant renders statement inside content) */}
+        {!isShowcase && (
         <div className="px-6 md:px-10 py-3 md:py-4 text-center">
           {isEditing ? (
             <textarea
@@ -105,11 +111,74 @@ export function AgreeSpectrumSlide({
             </h2>
           )}
         </div>
+        )}
 
         {/* Content area */}
         <div className="flex-1 flex items-center justify-center px-4 md:px-8 pb-4 overflow-hidden min-h-0">
           <div className="w-full max-w-3xl">
-            {isSteps ? (
+            {isShowcase ? (
+            <ShowcaseShell className="max-w-3xl w-full space-y-8 py-2">
+              {isEditing ? (
+                <textarea
+                  value={content.statement}
+                  onChange={(e) => onUpdate?.({ ...content, statement: e.target.value })}
+                  className="w-full rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.35)] px-4 py-3 text-center text-lg md:text-2xl font-semibold text-[hsl(var(--theme-text-primary))] outline-none placeholder:opacity-40"
+                  placeholder="Enter statement..."
+                  rows={3}
+                />
+              ) : (
+                <ShowcaseTitle className="text-center !text-2xl md:!text-4xl font-semibold">
+                  &ldquo;{content.statement}&rdquo;
+                </ShowcaseTitle>
+              )}
+              <div className="w-full px-1 md:px-2">
+                <div className="mb-2 flex justify-between text-xs md:text-sm text-[hsl(var(--theme-text-secondary))]">
+                  <span>{leftLabel}</span>
+                  <span>{rightLabel}</span>
+                </div>
+                <div className="relative h-24 md:h-28 overflow-hidden rounded-3xl border border-white/10 bg-[hsl(var(--theme-text-primary)/0.05)]">
+                  {agg && (
+                    <div className="absolute inset-0 flex items-end px-1">
+                      {buckets.map((count, i) => {
+                        const h = maxBucket > 0 ? (count / maxBucket) * 85 : 0;
+                        return (
+                          <motion.div
+                            key={i}
+                            className="flex-1 mx-px rounded-t-md bg-[hsl(var(--theme-accent)/0.22)]"
+                            initial={{ height: 0 }}
+                            animate={{ height: `${h}%` }}
+                            transition={{ type: "spring", stiffness: 100, damping: 22 }}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                  {agg && (
+                    <motion.div
+                      className="absolute top-1/2 z-10 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[hsl(var(--theme-accent))] bg-[hsl(var(--theme-bg))] shadow-lg"
+                      initial={false}
+                      animate={{ left: `${average}%` }}
+                      transition={{ type: "spring", stiffness: 120, damping: 20 }}
+                    />
+                  )}
+                </div>
+                {agg && (
+                  <p className="mt-3 text-center text-sm tabular-nums text-[hsl(var(--theme-text-secondary))]">
+                    Average {Math.round(average)}% · {totalResponses} response
+                    {totalResponses === 1 ? "" : "s"}
+                  </p>
+                )}
+              </div>
+              {!agg && !isEditing && (
+                <div className="flex justify-center pt-2">
+                  <div className="inline-flex items-center gap-2 rounded-3xl border border-white/10 bg-[hsl(var(--theme-surface)/0.4)] px-4 py-2 text-sm text-[hsl(var(--theme-text-secondary))]">
+                    <Users className="w-4 h-4" />
+                    <span>Waiting for positions…</span>
+                  </div>
+                </div>
+              )}
+            </ShowcaseShell>
+            ) : isSteps ? (
             /* steps: 5 discrete buttons */
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 justify-between">
