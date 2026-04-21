@@ -39,10 +39,10 @@ const Header = () => {
   const isHome = path === "/";
   const isWebinarLanding = path === "/webinar";
 
-  const isWebinarProductContext = isWebinarChromeContext(path, searchParams);
-  const dashboardPath = isWebinarProductContext ? "/webinar/dashboard" : "/dashboard";
-  const dashboardLabelFull = isWebinarProductContext ? "Webinar dashboard" : "Educator dashboard";
-  const dashboardLabelShort = isWebinarProductContext ? "Webinar" : "Educator";
+  const routeWebinarChrome = isWebinarChromeContext(path, searchParams);
+  const dashboardPath = routeWebinarChrome ? "/webinar/dashboard" : "/dashboard";
+  const dashboardLabelFull = routeWebinarChrome ? "Webinar dashboard" : "Educator dashboard";
+  const dashboardLabelShort = routeWebinarChrome ? "Webinar" : "Educator";
 
   const showAppSurfacesChrome = isAppSurfacePath(path);
 
@@ -74,7 +74,6 @@ const Header = () => {
 
   /** Logged-in users see one product only (their plan) — no Educator/Webinar switcher. */
   const subscriberChromeWebinar = !!user && !isSubLoading && planProduct === "webinar";
-  const routeWebinarChrome = isWebinarChromeContext(path, searchParams);
   const isWebinarProductContext =
     user && !isSubLoading ? subscriberChromeWebinar : routeWebinarChrome;
 
