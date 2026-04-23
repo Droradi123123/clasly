@@ -12,6 +12,17 @@ const PAYPAL_API_BASE =
     ? "https://api-m.paypal.com"
     : "https://api-m.sandbox.paypal.com";
 
+function roundUsd(amount: number): number {
+  return Math.round(amount * 100) / 100;
+}
+
+function getLaunchOfferPct(): number {
+  const raw = Deno.env.get("PAYPAL_LAUNCH_OFFER_PCT") ?? "20";
+  const pct = Number(raw);
+  if (!Number.isFinite(pct)) return 20;
+  return Math.max(0, Math.min(90, pct));
+}
+
 async function getPayPalAccessToken(): Promise<string> {
   const clientId = Deno.env.get("PAYPAL_CLIENT_ID");
   const secretKey = Deno.env.get("PAYPAL_SECRET_KEY");
@@ -112,6 +123,10 @@ serve(async (req) => {
       );
     }
 
+    const offerPct = getLaunchOfferPct();
+    const discountedPrice = roundUsd(price * (1 - offerPct / 100));
+    const effectivePrice = discountedPrice > 0 ? discountedPrice : price;
+
     const accessToken = await getPayPalAccessToken();
 
     // Create PayPal subscription product if not exists, then create subscription
@@ -146,7 +161,7 @@ serve(async (req) => {
         {
           amount: {
             currency_code: "USD",
-            value: price.toFixed(2),
+            value: effectivePrice.toFixed(2),
           },
           description: `Clasly ${plan.name} (${plan.product ?? "education"}, ${interval}ly)`,
           custom_id: JSON.stringify({
@@ -154,6 +169,9 @@ serve(async (req) => {
             plan_id: plan_id,
             interval: interval,
             product: plan.product ?? "education",
+            offer_pct: offerPct,
+            list_price_usd: roundUsd(price),
+            paid_price_usd: effectivePrice,
           }),
         },
       ],

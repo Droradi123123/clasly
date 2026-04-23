@@ -16,7 +16,7 @@ import { normalizePlanNameForFeatures } from "@/types/subscription";
 import type { PlanProduct } from "@/types/subscription";
 import { CONTACT_EMAIL } from "@/lib/constants";
 
-/** Display-only “launch” discount (checkout still uses list prices in Stripe). */
+/** Launch discount shown on page and applied at checkout. */
 const DISPLAY_LAUNCH_OFFER_PCT = 20;
 
 function resolveProductLine(pathname: string, searchParams: URLSearchParams): PlanProduct {
@@ -266,7 +266,7 @@ const Pricing = () => {
                 <span>48-hour welcome: {DISPLAY_LAUNCH_OFFER_PCT}% off shown below</span>
               </div>
               <p className="mt-1 text-center text-[11px] text-muted-foreground leading-snug">
-                Launch-offer display only — checkout uses standard list prices unless a code applies.
+                Discount is applied at checkout.
               </p>
             </div>
 
