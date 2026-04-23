@@ -147,6 +147,7 @@ export function SlideRenderer({
       );
 
     case "yesno":
+    case "yesno_interactive":
       return (
         <YesNoSlide
           slide={slide}
@@ -180,6 +181,7 @@ export function SlideRenderer({
       );
 
     case "guess_number":
+    case "guess_number_interactive":
       return (
         <GuessNumberSlide
           slide={slide}

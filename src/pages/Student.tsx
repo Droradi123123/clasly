@@ -1222,7 +1222,7 @@ const Student = () => {
             })()}
 
             {/* ─── Yes / No ─── */}
-            {currentSlide.type === 'yesno' && (
+            {(currentSlide.type === 'yesno' || currentSlide.type === 'yesno_interactive') && (
               <div className="grid grid-cols-2 gap-3 flex-1 content-center touch-manipulation">
                 <motion.button
                   type="button"
@@ -1292,7 +1292,7 @@ const Student = () => {
             )}
 
             {/* ─── Guess Number ─── */}
-            {currentSlide.type === 'guess_number' && (
+            {(currentSlide.type === 'guess_number' || currentSlide.type === 'guess_number_interactive') && (
               <div className="flex flex-col gap-3 flex-1 justify-center">
                 <div className="flex items-center justify-center">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-muted text-sm font-medium text-muted-foreground">

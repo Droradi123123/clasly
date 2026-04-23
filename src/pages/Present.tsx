@@ -56,12 +56,14 @@ import {
   updateLecture,
   startLecture,
   endLecture,
+  duplicateLecture,
   subscribeStudents,
   subscribeResponses,
 } from "@/lib/lectureService";
 import { supabase, removeAllChannels } from "@/integrations/supabase/client";
 import { Json } from "@/integrations/supabase/types";
 import { toast } from "sonner";
+import { logProductEvent } from "@/lib/productEvents";
 import {
   createLectureSyncChannel,
   createPresenterPresenceChannel,
@@ -128,6 +130,8 @@ const Present = () => {
   const reloadQuestionsRef = useRef<() => void>(() => {});
   const [isEnding, setIsEnding] = useState(false);
   const [isStartingLecture, setIsStartingLecture] = useState(false);
+  const [showWrapUp, setShowWrapUp] = useState(false);
+  const [isDuplicating, setIsDuplicating] = useState(false);
   const [presenceOnlineCount, setPresenceOnlineCount] = useState(0);
   const presenceStateRef = useRef<Record<string, unknown[]>>({});
   const [raffleWinnerName, setRaffleWinnerName] = useState<string | null>(null);
@@ -801,6 +805,12 @@ const Present = () => {
     if (!lectureId || isStartingLecture || slides.length === 0) return;
     setIsStartingLecture(true);
     try {
+      void logProductEvent({
+        userId: lecture?.user_id,
+        event: "present_started",
+        lectureId,
+        metadata: { lecture_mode: lecture?.lecture_mode, slides_count: slides.length },
+      });
       const idx = effectiveSlideIndex;
       const targetSlide = slides[idx];
       const activityStartedAt =
@@ -837,18 +847,18 @@ const Present = () => {
   const handleEndLecture = async () => {
     if (!lectureId || isEnding) return;
     setIsEnding(true);
-    const analyticsQs =
-      lecture?.lecture_mode === "webinar" ? "?track=webinar" : "";
-    navigate(`/lecture/${lectureId}/analytics${analyticsQs}`, {
-      replace: true,
-      state: {
-        fromPresent: { lecture, slides, students },
-      },
+    setShowWrapUp(true);
+    void logProductEvent({
+      userId: lecture?.user_id,
+      event: "lecture_ended",
+      lectureId,
+      metadata: { lecture_mode: lecture?.lecture_mode, students: students.length, responses: responses.length },
     });
     endLecture(lectureId).catch((e) => {
       console.error(e);
       toast.error('Failed to end lecture');
     });
+    setIsEnding(false);
   };
 
   const copyCode = () => {
@@ -1202,7 +1212,7 @@ const Present = () => {
               ) : (
                 <>
                   <Flag className="w-5 h-5 mr-2" />
-                  End lecture & view analytics
+                  End lecture
                 </>
               )}
             </Button>
@@ -1320,6 +1330,121 @@ const Present = () => {
                   </Button>
                 </div>
               )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Wrap-up Overlay: encourage duplicate + next lesson */}
+      <AnimatePresence>
+        {showWrapUp && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[110]"
+            onClick={() => setShowWrapUp(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="relative z-[111] bg-card/95 backdrop-blur-md rounded-3xl shadow-2xl border border-border/40 w-full max-w-[min(95vw,520px)] overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-6">
+                <h3 className="font-display font-bold text-xl md:text-2xl text-card-foreground">
+                  Session finished
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  If you’d like, you can duplicate this lesson and adjust it for next time.
+                </p>
+                {(students.length > 0 || responses.length > 0) && (
+                  <div className="mt-4 rounded-2xl border border-border/60 bg-muted/30 p-3">
+                    <p className="text-sm font-semibold text-card-foreground">
+                      Want a little more detail?
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Plans unlock richer analytics and export-ready reporting.
+                    </p>
+                    <div className="mt-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          const pricingPath =
+                            lecture?.lecture_mode === "webinar" ? "/webinar/pricing" : "/pricing";
+                          navigate(pricingPath);
+                        }}
+                      >
+                        See plans
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <div className="mt-5 grid gap-2">
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    disabled={isDuplicating || !lectureId}
+                    onClick={async () => {
+                      if (!lectureId) return;
+                      setIsDuplicating(true);
+                      try {
+                        const newLecture = await duplicateLecture(lectureId);
+                        const isWebinar = lecture?.lecture_mode === "webinar";
+                        toast.success("Duplicated.");
+                        navigate(isWebinar ? `/webinar/editor/${newLecture.id}` : `/editor/${newLecture.id}`, {
+                          state: { preloadedLecture: newLecture },
+                        });
+                      } catch (e) {
+                        console.error(e);
+                        toast.error("Failed to duplicate");
+                      } finally {
+                        setIsDuplicating(false);
+                        setShowWrapUp(false);
+                      }
+                    }}
+                  >
+                    {isDuplicating ? (
+                      <>
+                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                        Duplicating…
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-5 h-5 mr-2" />
+                        Duplicate to edit
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    onClick={() => {
+                      const analyticsQs = lecture?.lecture_mode === "webinar" ? "?track=webinar" : "";
+                      navigate(`/lecture/${lectureId}/analytics${analyticsQs}`, {
+                        replace: true,
+                        state: { fromPresent: { lecture, slides, students } },
+                      });
+                    }}
+                  >
+                    View analytics
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    onClick={() => {
+                      setShowWrapUp(false);
+                      navigate(lecture?.lecture_mode === "webinar" ? "/webinar/dashboard" : "/dashboard", { replace: true });
+                    }}
+                  >
+                    Back to dashboard
+                  </Button>
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}

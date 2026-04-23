@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Slide } from "@/types/slides";
 import { ensureSlidesDesignDefaults } from "@/lib/designDefaults";
 import { Json } from "@/integrations/supabase/types";
+import { logProductEvent } from "@/lib/productEvents";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { z } from "zod";
 
@@ -86,6 +87,12 @@ export async function createLecture(
     .single();
 
   if (error) throw error;
+  void logProductEvent({
+    userId: finalUserId,
+    event: "lecture_created",
+    lectureId: data.id,
+    metadata: { lecture_mode: mode, slides_count: slides.length },
+  });
   return { ...data, slides: slides as unknown as Json };
 }
 

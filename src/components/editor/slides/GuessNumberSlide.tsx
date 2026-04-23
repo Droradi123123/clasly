@@ -41,12 +41,14 @@ export function GuessNumberSlide({
   const styleConfig = designStyle.config;
   
   const [showCelebration, setShowCelebration] = useState(false);
-  const [prevShowAnswer, setPrevShowAnswer] = useState(showAnswer);
+  const [prevShowAnswer, setPrevShowAnswer] = useState(false);
 
   // Use live results if provided, otherwise use empty - safely handle undefined guesses
   const guesses = liveResults?.guesses ?? [];
   const hasResults = guesses.length > 0;
   const revealDist = isEditing || showResults;
+  const supportsCorrectAnswer = slide.type === "guess_number";
+  const effectiveShowAnswer = supportsCorrectAnswer ? showAnswer : false;
   const averageGuess = hasResults 
     ? guesses.reduce((a, b) => a + b, 0) / guesses.length 
     : 0;
@@ -58,13 +60,13 @@ export function GuessNumberSlide({
 
   // Trigger celebration when answer is revealed
   useEffect(() => {
-    if (showAnswer && !prevShowAnswer && hasResults && styleConfig.celebrationOnResults) {
+    if (effectiveShowAnswer && !prevShowAnswer && hasResults && styleConfig.celebrationOnResults) {
       setShowCelebration(true);
       const timer = setTimeout(() => setShowCelebration(false), 3000);
       return () => clearTimeout(timer);
     }
-    setPrevShowAnswer(showAnswer);
-  }, [showAnswer, prevShowAnswer, hasResults, styleConfig.celebrationOnResults]);
+    setPrevShowAnswer(effectiveShowAnswer);
+  }, [effectiveShowAnswer, prevShowAnswer, hasResults, styleConfig.celebrationOnResults]);
 
   const isMinimal = designStyleId === 'minimal';
   const isCompact = designStyleId === 'compact';
@@ -103,7 +105,7 @@ export function GuessNumberSlide({
                   <motion.div
                     initial={false}
                     animate={
-                      showAnswer || isEditing
+                      effectiveShowAnswer || isEditing
                         ? { scale: [0.96, 1.02, 1] }
                         : {}
                     }
@@ -111,7 +113,7 @@ export function GuessNumberSlide({
                   >
                     <ShowcaseStat
                       value={
-                        isEditing || showAnswer ? content.correctNumber : "?"
+                        isEditing || effectiveShowAnswer ? content.correctNumber : "?"
                       }
                       label="Correct answer"
                     />
@@ -147,7 +149,7 @@ export function GuessNumberSlide({
                             />
                           );
                         })}
-                      {(showAnswer || isEditing) && (
+                      {(effectiveShowAnswer || isEditing) && (
                         <div
                           className="absolute flex flex-col items-center pointer-events-none"
                           style={{
@@ -271,7 +273,7 @@ export function GuessNumberSlide({
                   <div className="mt-4 flex justify-center gap-4 text-white/80 text-sm">
                     <span>Guesses: {totalResponses}</span>
                     <span>Average: {averageGuess.toFixed(0)}</span>
-                    {showAnswer && <span className="text-green-300 font-bold">Answer: {content.correctNumber}</span>}
+                    {effectiveShowAnswer && <span className="text-green-300 font-bold">Answer: {content.correctNumber}</span>}
                   </div>
                 )}
               </>
@@ -280,7 +282,7 @@ export function GuessNumberSlide({
               {/* Mystery box / Answer display */}
               <motion.div 
                 className="relative w-24 h-24 md:w-32 md:h-32 mx-auto mb-6"
-                animate={!showAnswer && !isMinimal ? { 
+                animate={!effectiveShowAnswer && !isMinimal ? { 
                   rotate: isCompact ? [0, 1, -1, 0] : [0, 2, -2, 0],
                   scale: isCompact ? [1, 1.01, 1] : [1, 1.02, 1],
                 } : undefined}
@@ -289,7 +291,7 @@ export function GuessNumberSlide({
                 {/* Glow effect - moderate for compact, full for dynamic, none for minimal */}
                 {!isMinimal && (
                   <motion.div
-                    className={`absolute inset-0 rounded-2xl md:rounded-3xl blur-xl ${showAnswer ? 'bg-green-400' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}
+                    className={`absolute inset-0 rounded-2xl md:rounded-3xl blur-xl ${effectiveShowAnswer ? 'bg-green-400' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}
                     animate={{ 
                       opacity: isCompact ? [0.35, 0.5, 0.35] : [0.4, 0.7, 0.4],
                       scale: isCompact ? [0.95, 1.05, 0.95] : [0.9, 1.1, 0.9],
@@ -302,7 +304,7 @@ export function GuessNumberSlide({
                 <motion.div
                   className={`
                     relative w-full h-full rounded-2xl md:rounded-3xl shadow-xl flex items-center justify-center overflow-visible
-                    ${showAnswer 
+                    ${effectiveShowAnswer 
                       ? isMinimal 
                         ? 'bg-emerald-500 border-2 border-emerald-400' 
                         : 'bg-gradient-to-br from-green-400 to-emerald-500' 
@@ -314,7 +316,7 @@ export function GuessNumberSlide({
                   style={{ fontFamily: theme.tokens.fontFamily }}
                 >
                   {/* Sparkle decorations */}
-                  {!showAnswer && !isMinimal && Array.from({ length: 4 }).map((_, i) => (
+                  {!effectiveShowAnswer && !isMinimal && Array.from({ length: 4 }).map((_, i) => (
                     <motion.div
                       key={i}
                       className="absolute"
@@ -338,11 +340,11 @@ export function GuessNumberSlide({
                   ))}
 
                   {/* Number display */}
-                  {(isEditing || showAnswer) ? (
+                  {(isEditing || effectiveShowAnswer) ? (
                     <motion.span 
                       className="text-4xl md:text-6xl font-bold text-white drop-shadow-lg"
-                      initial={showAnswer ? { scale: 0 } : undefined}
-                      animate={showAnswer ? { scale: [0, 1.2, 1] } : undefined}
+                      initial={effectiveShowAnswer ? { scale: 0 } : undefined}
+                      animate={effectiveShowAnswer ? { scale: [0, 1.2, 1] } : undefined}
                       transition={{ type: "spring", stiffness: 300 }}
                     >
                       {content.correctNumber}

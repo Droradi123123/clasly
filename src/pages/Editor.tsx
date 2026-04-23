@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -106,6 +107,7 @@ import { BuilderPreviewProvider } from "@/contexts/BuilderPreviewContext";
 import { SlideLayoutProvider } from "@/contexts/SlideLayoutContext";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
 import { motion, AnimatePresence } from "framer-motion";
+import { logProductEvent } from "@/lib/productEvents";
 
 function isCreateFromScratchRequest(msg: string): boolean {
   const t = msg.trim().toLowerCase();
@@ -251,6 +253,17 @@ const Editor = () => {
   /** Increment to replay the editor product tour from the header */
   const [editorTourReplay, setEditorTourReplay] = useState(0);
   const [showOutOfCreditsModal, setShowOutOfCreditsModal] = useState(false);
+  const onboardingKey = user?.id
+    ? `clasly:onboarding:${user.id}:go_live_v1`
+    : "clasly:onboarding:go_live_v1";
+  const [dismissedOnboarding, setDismissedOnboarding] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem(onboardingKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [presentClickedThisSession, setPresentClickedThisSession] = useState(false);
   const [isInitialGenerating, setIsInitialGenerating] = useState(false);
   const [aiGenTipIndex, setAiGenTipIndex] = useState(0);
   const [aiProgressStage, setAiProgressStage] = useState(0);
@@ -1263,6 +1276,13 @@ const Editor = () => {
   };
 
   const handlePresent = (startFromCurrent = false) => {
+    setPresentClickedThisSession(true);
+    void logProductEvent({
+      userId: user?.id,
+      event: "present_clicked",
+      lectureId: lectureDbId,
+      metadata: { lecture_mode: lectureMode, slides_count: displaySlides.length },
+    });
     const targetSlideIndex = startFromCurrent ? currentSlideIndex : 0;
     let normalizedSlides = ensureSlidesDesignDefaults(displaySlides);
     // So Present matches Editor: each slide carries theme/designStyleId (fallback to Editor selection when missing)
@@ -1445,6 +1465,82 @@ const Editor = () => {
           </div>
         </div>
       </div>
+
+      {/* Gentle activation nudge: first Present */}
+      {(() => {
+        const hasParticipativeSlide = displaySlides.some((s) => isParticipativeSlide(s.type));
+        const hasJoinCode = !!lectureCode;
+        const readyToGoLive = displaySlides.length >= 3;
+        const showNudge =
+          !dismissedOnboarding &&
+          !slidesGenerationLocked &&
+          readyToGoLive &&
+          (!!user || lectureId === "new" || !!lectureDbId);
+
+        if (!showNudge) return null;
+
+        const steps = [
+          { label: "Add 1 interactive slide", done: hasParticipativeSlide },
+          { label: "Click Present", done: presentClickedThisSession },
+          { label: "Copy join code", done: hasJoinCode },
+        ];
+        const doneCount = steps.filter((s) => s.done).length;
+
+        return (
+          <div className="flex-shrink-0 px-3 sm:px-4 py-2 border-b border-border/40 bg-background/40">
+            <Card className="border-border/60 bg-card/60">
+              <CardContent className="p-3 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Ready to try Present?</span>
+                    <span className="text-[11px] text-muted-foreground tabular-nums">
+                      {doneCount}/{steps.length}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                    {steps.map((s) => (
+                      <span key={s.label} className="inline-flex items-center gap-1">
+                        <span className={s.done ? "text-emerald-600" : "text-muted-foreground"}>
+                          {s.done ? "✓" : "•"}
+                        </span>
+                        {s.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-9"
+                    onClick={() => handlePresent(true)}
+                    disabled={slidesGenerationLocked}
+                    title={slidesGenerationLocked ? "Wait until slide generation finishes" : undefined}
+                  >
+                    <Play className="w-4 h-4" />
+                    <span className="ml-1">Present (from here)</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 text-muted-foreground"
+                    onClick={() => {
+                      try {
+                        window.localStorage.setItem(onboardingKey, "1");
+                      } catch {}
+                      setDismissedOnboarding(true);
+                    }}
+                  >
+                    Not now
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* Top Toolbar - Google Slides style; settings stay clickable while AI generates slides */}
       <div className="flex flex-shrink-0 border-b border-border/50 bg-card/80 backdrop-blur-sm">

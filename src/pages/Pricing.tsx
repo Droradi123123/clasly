@@ -147,37 +147,29 @@ const Pricing = () => {
 
   const getEducatorTierFeatures = (tier: string, plan: SubscriptionPlan): string[] => {
     const out: string[] = [];
-    if (tier === "Free") {
-      out.push("15 slides free");
-    } else if (plan.max_slides) {
+    if (plan.max_slides) {
       out.push(`Up to ${plan.max_slides} slides per presentation`);
     } else {
-      out.push("Unlimited slides");
+      out.push("Unlimited slides per presentation");
     }
 
     if (tier === "Free") {
-      out.push("15 AI credits to start (one-time)");
+      out.push("Starter AI credits included");
     } else {
       out.push(`${plan.monthly_ai_tokens.toLocaleString()} AI credits/month`);
     }
 
     if (tier === "Free") {
-      out.push("Basic slide types (Poll, WordCloud)");
-      out.push("7-day analytics retention");
+      out.push("Basic editor + Present mode");
+      out.push("Interactive slides + live results");
     } else if (tier === "Standard") {
-      out.push("Advanced AI model");
       out.push("Import PowerPoint & PDF");
-      out.push("All basic slide types + Scale, Sentiment");
-      out.push("30-day analytics retention");
-      out.push("Buy additional credits");
+      out.push("Buy additional AI credits");
     } else if (tier === "Pro") {
-      out.push("Advanced AI model");
-      out.push("All slide types (Quiz, Timeline, etc.)");
-      out.push("Import PowerPoint & PDF");
       out.push("Premium themes");
-      out.push("Export reports (Excel, PDF)");
-      out.push("90-day analytics retention");
-      out.push("Priority support");
+      out.push("Custom colors + logo branding");
+      out.push("Import PowerPoint & PDF");
+      out.push("Buy additional AI credits");
     }
     return out;
   };

@@ -16,8 +16,10 @@ export type SlideType =
   | 'poll_quiz'  // Poll design with correct answer (quiz category)
   | 'wordcloud' 
   | 'yesno' 
+  | 'yesno_interactive'
   | 'ranking' 
   | 'guess_number' 
+  | 'guess_number_interactive'
   | 'scale'
   | 'sentiment_meter'
   | 'agree_spectrum';
@@ -377,6 +379,8 @@ export const SLIDE_TYPES: SlideTypeInfo[] = [
   { type: 'scale', label: 'Scale', labelHe: 'סולם', icon: 'Sliders', category: 'interactive', description: 'Rate on a scale' },
   { type: 'sentiment_meter', label: 'Sentiment', labelHe: 'סנטימנט', icon: 'Heart', category: 'interactive', description: 'Continuous emotional scale' },
   { type: 'agree_spectrum', label: 'Agree/Disagree', labelHe: 'מסכים/לא', icon: 'ArrowLeftRight', category: 'interactive', description: 'Opinion spectrum on a statement' },
+  { type: 'yesno_interactive', label: 'Yes/No (Interactive)', labelHe: 'כן/לא (אינטראקטיבי)', icon: 'CheckCircle', category: 'interactive', description: 'Binary yes/no without correct answer' },
+  { type: 'guess_number_interactive', label: 'Guess Number (Interactive)', labelHe: 'נחש מספר (אינטראקטיבי)', icon: 'Hash', category: 'interactive', description: 'Guess a number (no correct answer)' },
   
   // Quiz slides - competition focused, with correct answers
   { type: 'quiz', label: 'Quiz', labelHe: 'מבחן', icon: 'HelpCircle', category: 'quiz', description: 'Multiple choice with correct answer', supportsCorrectAnswer: true },
@@ -520,6 +524,7 @@ export function createDefaultSlideContent(type: SlideType): SlideContent {
     case 'wordcloud':
       return { question: 'Describe this in one word...' };
     case 'yesno':
+    case 'yesno_interactive':
       return { question: 'Do you agree?' };
     case 'ranking':
       return { 
@@ -527,6 +532,7 @@ export function createDefaultSlideContent(type: SlideType): SlideContent {
         items: ['First Item', 'Second Item', 'Third Item'] 
       };
     case 'guess_number':
+    case 'guess_number_interactive':
       return { 
         question: 'Guess the number!', 
         correctNumber: 42,

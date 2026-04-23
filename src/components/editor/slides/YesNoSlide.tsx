@@ -96,10 +96,12 @@ export function YesNoSlide({
   // Get text color from slide design
   const textColor = slide.design?.textColor || '#ffffff';
   
+  const supportsCorrectAnswer = slide.type === "yesno";
+
   // Check which answer is correct
-  const yesIsCorrect = content.correctAnswer === true;
-  const noIsCorrect = content.correctAnswer === false;
-  const hasCorrectAnswer = content.correctAnswer !== undefined;
+  const yesIsCorrect = supportsCorrectAnswer && content.correctAnswer === true;
+  const noIsCorrect = supportsCorrectAnswer && content.correctAnswer === false;
+  const hasCorrectAnswer = supportsCorrectAnswer && content.correctAnswer !== undefined;
 
   return (
     <SlideWrapper slide={slide} themeId={themeId}>
@@ -261,7 +263,7 @@ export function YesNoSlide({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.1 }}
               >
-                {isEditing && (
+                {isEditing && supportsCorrectAnswer && (
                   <button
                     onClick={() => handleCorrectAnswerChange(true)}
                     className={`px-3 py-1 rounded-full text-xs font-bold ${yesIsCorrect ? 'bg-white text-green-600' : 'bg-white/20 text-white'}`}
@@ -294,7 +296,7 @@ export function YesNoSlide({
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.2 }}
               >
-                {isEditing && (
+                {isEditing && supportsCorrectAnswer && (
                   <button
                     onClick={() => handleCorrectAnswerChange(false)}
                     className={`px-3 py-1 rounded-full text-xs font-bold ${noIsCorrect ? 'bg-white text-green-600' : 'bg-white/20 text-white'}`}
@@ -351,7 +353,7 @@ export function YesNoSlide({
                 transition={{ delay: 0.1 }}
               >
                 {/* Correct answer indicator in editing mode */}
-                {isEditing && (
+                {isEditing && supportsCorrectAnswer && (
                   <button
                     onClick={() => handleCorrectAnswerChange(true)}
                     className={`absolute -top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
@@ -366,7 +368,7 @@ export function YesNoSlide({
                 )}
                 
                 {/* Show correct indicator when revealed */}
-                {showCorrectAnswer && yesIsCorrect && (
+                {supportsCorrectAnswer && showCorrectAnswer && yesIsCorrect && (
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -386,7 +388,7 @@ export function YesNoSlide({
                       ? 'bg-emerald-500/90 border-2 border-emerald-400/80 shadow-md min-w-[120px] flex-1 max-w-[200px]'
                       : 'bg-gradient-to-br from-emerald-500 to-green-400'
                     }
-                    ${showCorrectAnswer && yesIsCorrect ? 'ring-4 ring-white/80' : ''}
+                    ${supportsCorrectAnswer && showCorrectAnswer && yesIsCorrect ? 'ring-4 ring-white/80' : ''}
                   `}
                   whileHover={!isEditing ? { scale: (styleConfig.animationIntensity === 'high' || isCompact) ? 1.03 : 1.01 } : undefined}
                   animate={!isEditing && !isMinimal && !isCompact ? { y: [0, -3, 0] } : undefined}
@@ -462,7 +464,7 @@ export function YesNoSlide({
                 transition={{ delay: 0.2 }}
               >
                 {/* Correct answer indicator in editing mode */}
-                {isEditing && (
+                {isEditing && supportsCorrectAnswer && (
                   <button
                     onClick={() => handleCorrectAnswerChange(false)}
                     className={`absolute -top-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full text-xs font-bold transition-all flex items-center gap-1 ${
@@ -477,7 +479,7 @@ export function YesNoSlide({
                 )}
                 
                 {/* Show correct indicator when revealed */}
-                {showCorrectAnswer && noIsCorrect && (
+                {supportsCorrectAnswer && showCorrectAnswer && noIsCorrect && (
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
@@ -497,7 +499,7 @@ export function YesNoSlide({
                       ? 'bg-rose-500/90 border-2 border-rose-400/80 shadow-md min-w-[120px] flex-1 max-w-[200px]'
                       : 'bg-gradient-to-br from-rose-500 to-red-500'
                     }
-                    ${showCorrectAnswer && noIsCorrect ? 'ring-4 ring-white/80' : ''}
+                    ${supportsCorrectAnswer && showCorrectAnswer && noIsCorrect ? 'ring-4 ring-white/80' : ''}
                   `}
                   whileHover={!isEditing ? { scale: (styleConfig.animationIntensity === 'high' || isCompact) ? 1.03 : 1.01 } : undefined}
                   animate={!isEditing && !isMinimal && !isCompact ? { y: [0, -3, 0] } : undefined}
@@ -617,7 +619,7 @@ export function YesNoSlide({
             )}
 
             {/* Editor hint - show if no correct answer set */}
-            {isEditing && !hasCorrectAnswer && (
+            {isEditing && supportsCorrectAnswer && !hasCorrectAnswer && (
               <motion.p
                 className="text-center text-amber-300/90 mt-6 text-xs md:text-sm bg-amber-500/20 px-4 py-2 rounded-xl mx-auto max-w-md"
                 animate={{ opacity: [0.7, 1, 0.7] }}
@@ -627,7 +629,7 @@ export function YesNoSlide({
               </motion.p>
             )}
             
-            {isEditing && hasCorrectAnswer && (
+            {isEditing && supportsCorrectAnswer && hasCorrectAnswer && (
               <motion.p
                 className="text-center text-white/50 mt-6 text-xs md:text-sm"
                 animate={{ opacity: [0.4, 0.7, 0.4] }}
