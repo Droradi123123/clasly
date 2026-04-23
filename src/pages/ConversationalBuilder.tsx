@@ -14,7 +14,12 @@ import { useAuth } from '@/hooks/useAuth';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { supabase } from '@/integrations/supabase/client';
-import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus, withTimeout } from '@/lib/supabaseFunctions';
+import {
+  getEdgeFunctionErrorMessage,
+  getEdgeFunctionStatus,
+  invokeEdgeFunctionWithRetry,
+  withTimeout,
+} from '@/lib/supabaseFunctions';
 import { ensureSlidesDesignDefaults } from '@/lib/designDefaults';
 import { hydratePendingSlideImages, type PendingSlideImage } from '@/lib/hydrateSlideImages';
 import { useSubscriptionContext } from '@/contexts/SubscriptionContext';
@@ -527,12 +532,10 @@ const ConversationalBuilder: React.FC = () => {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
 
-      let result = await withTimeout(invokeFn(), 90_000, 'Request timed out. Please try again.');
-      if (result.error && getEdgeFunctionStatus(result.error) === 503) {
-        await new Promise((r) => setTimeout(r, 2500));
-        result = await withTimeout(invokeFn(), 90_000, 'Request timed out. Please try again.');
-      }
-
+      const result = await invokeEdgeFunctionWithRetry(
+        () => withTimeout(invokeFn(), 110_000, 'Request timed out. Please try again.'),
+        { actionLabel: 'process that request', timeoutMs: 115_000, maxAttempts: 3 }
+      );
       const { data, error: fnError } = result;
 
       if (fnError) {

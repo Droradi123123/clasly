@@ -23,7 +23,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { Slide, SlideContent } from "@/types/slides";
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
+import {
+  getEdgeFunctionErrorMessage,
+  getEdgeFunctionStatus,
+  invokeEdgeFunctionWithRetry,
+} from "@/lib/supabaseFunctions";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
 
@@ -146,17 +150,22 @@ export default function GenerateAIDialog({
         throw new Error("Please sign in to generate content");
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("generate-slides", {
-        body: {
-          singleSlide: {
-            type: slide.type,
-            prompt,
-            style,
-            includeImage: supportsImage && includeImage,
-          },
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const result = await invokeEdgeFunctionWithRetry(
+        () =>
+          supabase.functions.invoke("generate-slides", {
+            body: {
+              singleSlide: {
+                type: slide.type,
+                prompt,
+                style,
+                includeImage: supportsImage && includeImage,
+              },
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+        { actionLabel: "generate content", timeoutMs: 120_000, maxAttempts: 3 }
+      );
+      const { data, error: fnError } = result;
 
       clearInterval(messageInterval);
 
@@ -235,10 +244,15 @@ export default function GenerateAIDialog({
         throw new Error("Please sign in to generate images");
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("generate-image", {
-        body: { prompt: imagePrompt, style: imageStyle },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const result = await invokeEdgeFunctionWithRetry(
+        () =>
+          supabase.functions.invoke("generate-image", {
+            body: { prompt: imagePrompt, style: imageStyle },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+        { actionLabel: "generate an image", timeoutMs: 120_000, maxAttempts: 3 }
+      );
+      const { data, error: fnError } = result;
 
       clearInterval(messageInterval);
 

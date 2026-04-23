@@ -23,7 +23,11 @@ import { toast } from "sonner";
 import { Slide, createNewSlide } from "@/types/slides";
 import { GeneratedTheme } from "@/types/generatedTheme";
 import { supabase } from "@/integrations/supabase/client";
-import { getEdgeFunctionErrorMessage, getEdgeFunctionStatus } from "@/lib/supabaseFunctions";
+import {
+  getEdgeFunctionErrorMessage,
+  getEdgeFunctionStatus,
+  invokeEdgeFunctionWithRetry,
+} from "@/lib/supabaseFunctions";
 import { useSubscriptionContext } from "@/contexts/SubscriptionContext";
 import { OutOfCreditsModal } from "@/components/credits/OutOfCreditsModal";
 import { Link } from "react-router-dom";
@@ -132,15 +136,20 @@ export default function GenerateSlidesAIDialog({
         throw new Error("Please sign in to generate presentations");
       }
 
-      const { data, error: fnError } = await supabase.functions.invoke("generate-slides", {
-        body: {
-          description,
-          contentType,
-          difficulty,
-          slideCount: expectedCount,
-        },
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const result = await invokeEdgeFunctionWithRetry(
+        () =>
+          supabase.functions.invoke("generate-slides", {
+            body: {
+              description,
+              contentType,
+              difficulty,
+              slideCount: expectedCount,
+            },
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          }),
+        { actionLabel: "generate slides", timeoutMs: 120_000, maxAttempts: 3 }
+      );
+      const { data, error: fnError } = result;
 
       if (fnError) {
         if (getEdgeFunctionStatus(fnError) === 402) {
