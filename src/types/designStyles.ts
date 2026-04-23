@@ -37,9 +37,7 @@ export interface DesignStyleConfig {
 export interface DesignStyle {
   id: DesignStyleId;
   name: string;
-  nameHe: string;
   description: string;
-  descriptionHe: string;
   icon: string;
   preview: {
     thumbnail: string; // For future use with actual thumbnails
@@ -54,9 +52,7 @@ export const DESIGN_STYLES: Record<DesignStyleId, DesignStyle> = {
   'minimal': {
     id: 'minimal',
     name: 'Minimal',
-    nameHe: 'מינימלי',
     description: 'Clean & professional for corporate settings',
-    descriptionHe: 'נקי ומקצועי לסביבות עסקיות',
     icon: '◻️',
     preview: {
       thumbnail: '/styles/minimal.png',
@@ -96,9 +92,7 @@ export const DESIGN_STYLES: Record<DesignStyleId, DesignStyle> = {
   'dynamic': {
     id: 'dynamic',
     name: 'Dynamic',
-    nameHe: 'דינמי',
     description: 'Energetic & engaging for live events',
-    descriptionHe: 'אנרגטי ומרתק לאירועים חיים',
     icon: '✨',
     preview: {
       thumbnail: '/styles/dynamic.png',
@@ -138,9 +132,7 @@ export const DESIGN_STYLES: Record<DesignStyleId, DesignStyle> = {
   'compact': {
     id: 'compact',
     name: 'Compact',
-    nameHe: 'קומפקטי',
     description: 'Horizontal layout, balanced & modern',
-    descriptionHe: 'פריסה אופקית, מאוזנת ומודרנית',
     icon: '▫️',
     preview: {
       thumbnail: '/styles/compact.png',

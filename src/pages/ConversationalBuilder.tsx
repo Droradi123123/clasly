@@ -467,9 +467,9 @@ const ConversationalBuilder: React.FC = () => {
       );
       const isSessionError = /sign out|session invalid|invalid jwt/i.test(errorMessage);
       if (isSessionError) {
-        toast.error('נא להתנתק ולהתחבר מחדש', {
+        toast.error('Please sign out and sign in again.', {
           action: {
-            label: 'התנתק והתחבר',
+            label: 'Sign out',
             onClick: async () => {
               await supabase.auth.signOut();
               setShowAuthModal(true);

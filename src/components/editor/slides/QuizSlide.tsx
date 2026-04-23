@@ -145,7 +145,7 @@ export function QuizSlide({
   const getOptionIcon = (option: string): LucideIcon => {
     const t = String(option ?? "").toLowerCase();
     if (/\d|one|two|first|second|1|2|3|4/.test(t)) return Circle;
-    if (/yes|true|correct|right|✓|נכון|כן/.test(t)) return Check;
+    if (/yes|true|correct|right|✓/.test(t)) return Check;
     return HelpCircle;
   };
 

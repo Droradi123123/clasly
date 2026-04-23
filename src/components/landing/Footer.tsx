@@ -19,16 +19,13 @@ export default function Footer({ variant = "default" }: FooterProps) {
         </div>
         <div className="flex items-center gap-6">
           <Link to="/changelog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            שינויים
+            Changelog
           </Link>
           <Link to="/terms" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Terms and Conditions
           </Link>
           <Link to="/privacy" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Privacy Policy
-          </Link>
-          <Link to="/changelog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            שינויים
           </Link>
           <p className="text-sm text-muted-foreground">
             © 2026 Clasly. {tagline}

@@ -362,31 +362,31 @@ export interface SlideTypeInfo {
 
 export const SLIDE_TYPES: SlideTypeInfo[] = [
   // Content slides - static, no interaction
-  { type: 'title', label: 'Title Slide', labelHe: 'שקופית כותרת', icon: 'Type', category: 'content', description: 'Opening slide with title and subtitle' },
-  { type: 'content', label: 'Content', labelHe: 'תוכן', icon: 'FileText', category: 'content', description: 'Text content slide' },
-  { type: 'image', label: 'Image', labelHe: 'תמונה', icon: 'Image', category: 'content', description: 'Image focused slide' },
-  { type: 'split_content', label: 'Split Content', labelHe: 'תוכן + תמונה', icon: 'Columns', category: 'content', description: 'Half text, half image' },
-  { type: 'before_after', label: 'Before/After', labelHe: 'לפני/אחרי', icon: 'ArrowRightLeft', category: 'content', description: 'Compare before and after' },
-  { type: 'bullet_points', label: 'Bullet Points', labelHe: 'נקודות', icon: 'List', category: 'content', description: 'List of key points' },
-  { type: 'timeline', label: 'Timeline', labelHe: 'ציר זמן', icon: 'Clock', category: 'content', description: 'Chronological events' },
-  { type: 'bar_chart', label: 'Bar Chart', labelHe: 'גרף עמודות', icon: 'BarChart', category: 'content', description: 'Data visualization chart' },
+  { type: 'title', label: 'Title Slide', labelHe: 'Title Slide', icon: 'Type', category: 'content', description: 'Opening slide with title and subtitle' },
+  { type: 'content', label: 'Content', labelHe: 'Content', icon: 'FileText', category: 'content', description: 'Text content slide' },
+  { type: 'image', label: 'Image', labelHe: 'Image', icon: 'Image', category: 'content', description: 'Image focused slide' },
+  { type: 'split_content', label: 'Split Content', labelHe: 'Split Content', icon: 'Columns', category: 'content', description: 'Half text, half image' },
+  { type: 'before_after', label: 'Before/After', labelHe: 'Before/After', icon: 'ArrowRightLeft', category: 'content', description: 'Compare before and after' },
+  { type: 'bullet_points', label: 'Bullet Points', labelHe: 'Bullet Points', icon: 'List', category: 'content', description: 'List of key points' },
+  { type: 'timeline', label: 'Timeline', labelHe: 'Timeline', icon: 'Clock', category: 'content', description: 'Chronological events' },
+  { type: 'bar_chart', label: 'Bar Chart', labelHe: 'Bar Chart', icon: 'BarChart', category: 'content', description: 'Data visualization chart' },
   
   // Interactive slides - engagement focused, no correct answers
-  { type: 'poll', label: 'Poll', labelHe: 'סקר', icon: 'BarChart3', category: 'interactive', description: 'Opinion poll without correct answer' },
+  { type: 'poll', label: 'Poll', labelHe: 'Poll', icon: 'BarChart3', category: 'interactive', description: 'Opinion poll without correct answer' },
   // Quiz slides - with correct answers (poll_quiz = poll design + correct answer)
-  { type: 'poll_quiz', label: 'Poll (Quiz)', labelHe: 'סקר (מבחן)', icon: 'BarChart3', category: 'quiz', description: 'Poll-style bar chart with one correct answer', supportsCorrectAnswer: true },
-  { type: 'wordcloud', label: 'Word Cloud', labelHe: 'ענן מילים', icon: 'Cloud', category: 'interactive', description: 'Collect words and visualize' },
-  { type: 'scale', label: 'Scale', labelHe: 'סולם', icon: 'Sliders', category: 'interactive', description: 'Rate on a scale' },
-  { type: 'sentiment_meter', label: 'Sentiment', labelHe: 'סנטימנט', icon: 'Heart', category: 'interactive', description: 'Continuous emotional scale' },
-  { type: 'agree_spectrum', label: 'Agree/Disagree', labelHe: 'מסכים/לא', icon: 'ArrowLeftRight', category: 'interactive', description: 'Opinion spectrum on a statement' },
-  { type: 'yesno_interactive', label: 'Yes/No (Interactive)', labelHe: 'כן/לא (אינטראקטיבי)', icon: 'CheckCircle', category: 'interactive', description: 'Binary yes/no without correct answer' },
-  { type: 'guess_number_interactive', label: 'Guess Number (Interactive)', labelHe: 'נחש מספר (אינטראקטיבי)', icon: 'Hash', category: 'interactive', description: 'Guess a number (no correct answer)' },
+  { type: 'poll_quiz', label: 'Poll (Quiz)', labelHe: 'Poll (Quiz)', icon: 'BarChart3', category: 'quiz', description: 'Poll-style bar chart with one correct answer', supportsCorrectAnswer: true },
+  { type: 'wordcloud', label: 'Word Cloud', labelHe: 'Word Cloud', icon: 'Cloud', category: 'interactive', description: 'Collect words and visualize' },
+  { type: 'scale', label: 'Scale', labelHe: 'Scale', icon: 'Sliders', category: 'interactive', description: 'Rate on a scale' },
+  { type: 'sentiment_meter', label: 'Sentiment', labelHe: 'Sentiment', icon: 'Heart', category: 'interactive', description: 'Continuous emotional scale' },
+  { type: 'agree_spectrum', label: 'Agree/Disagree', labelHe: 'Agree/Disagree', icon: 'ArrowLeftRight', category: 'interactive', description: 'Opinion spectrum on a statement' },
+  { type: 'yesno_interactive', label: 'Yes/No (Interactive)', labelHe: 'Yes/No (Interactive)', icon: 'CheckCircle', category: 'interactive', description: 'Binary yes/no without correct answer' },
+  { type: 'guess_number_interactive', label: 'Guess Number (Interactive)', labelHe: 'Guess Number (Interactive)', icon: 'Hash', category: 'interactive', description: 'Guess a number (no correct answer)' },
   
   // Quiz slides - competition focused, with correct answers
-  { type: 'quiz', label: 'Quiz', labelHe: 'מבחן', icon: 'HelpCircle', category: 'quiz', description: 'Multiple choice with correct answer', supportsCorrectAnswer: true },
-  { type: 'yesno', label: 'Yes/No', labelHe: 'כן/לא', icon: 'CheckCircle', category: 'quiz', description: 'Binary yes or no question', supportsCorrectAnswer: true },
-  { type: 'ranking', label: 'Ranking', labelHe: 'דירוג', icon: 'ListOrdered', category: 'quiz', description: 'Rank items in correct order', supportsCorrectAnswer: true },
-  { type: 'guess_number', label: 'Guess Number', labelHe: 'נחש מספר', icon: 'Hash', category: 'quiz', description: 'Guess the hidden number', supportsCorrectAnswer: true },
+  { type: 'quiz', label: 'Quiz', labelHe: 'Quiz', icon: 'HelpCircle', category: 'quiz', description: 'Multiple choice with correct answer', supportsCorrectAnswer: true },
+  { type: 'yesno', label: 'Yes/No', labelHe: 'Yes/No', icon: 'CheckCircle', category: 'quiz', description: 'Binary yes or no question', supportsCorrectAnswer: true },
+  { type: 'ranking', label: 'Ranking', labelHe: 'Ranking', icon: 'ListOrdered', category: 'quiz', description: 'Rank items in correct order', supportsCorrectAnswer: true },
+  { type: 'guess_number', label: 'Guess Number', labelHe: 'Guess Number', icon: 'Hash', category: 'quiz', description: 'Guess the hidden number', supportsCorrectAnswer: true },
 ];
 
 // Helper to check if a slide type supports correct answers

@@ -316,7 +316,10 @@ export function RankingSlide({
                     {/* Live rank indicator */}
                     {!isEditing && revealStats && hasResults && liveResults?.rankings && (
                       <div className="flex items-center gap-1 text-white/80 text-xs md:text-sm flex-shrink-0">
-                        <span>דירוג ממוצע: {liveResults.rankings.find(r => r.item === item)?.avgRank.toFixed(1)}</span>
+                        <span>
+                          Avg. rank:{" "}
+                          {liveResults.rankings.find((r) => r.item === item)?.avgRank.toFixed(1)}
+                        </span>
                       </div>
                     )}
                   </motion.div>

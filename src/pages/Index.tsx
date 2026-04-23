@@ -23,7 +23,9 @@ const Index = () => {
     const error = searchParams.get("error");
     const desc = searchParams.get("error_description");
     if (error || desc) {
-      const msg = desc ? decodeURIComponent(desc.replace(/\+/g, " ")) : "ההרשמה נכשלה. נסה שוב מאוחר יותר.";
+      const msg = desc
+        ? decodeURIComponent(desc.replace(/\+/g, " "))
+        : "Signup failed. Please try again later.";
       toast.error(msg);
       setSearchParams({}, { replace: true });
     }

@@ -111,9 +111,8 @@ import { logProductEvent } from "@/lib/productEvents";
 
 function isCreateFromScratchRequest(msg: string): boolean {
   const t = msg.trim().toLowerCase();
-  const hePatterns = /תכין|תבנה|תעשה|תיצור|תכינו|בנה לי|עשה לי|יצור (לי )?(הרצאה|מצגת|מצגות|פרזנטציה)/i;
   const enPatterns = /^(create|build|make|generate)\s+(a\s+)?(presentation|lecture|deck)/i;
-  return hePatterns.test(t) || enPatterns.test(t) || /הרצאה על|lecture about|presentation about/i.test(t);
+  return enPatterns.test(t) || /lecture about|presentation about/i.test(t);
 }
 
 function arePlaceholderOrEmptySlides(slides: Slide[]): boolean {
@@ -450,7 +449,12 @@ const Editor = () => {
     const slideCount = Math.min(maxSlides ?? (isFree ? 5 : 8), 10);
     // Server charges 1 (plan) + N (slides) for internal pipeline or plan+progressive; align client gate.
     if (!hasAITokens(slideCount + 1)) {
-      addMessage({ role: 'assistant', content: 'אין לך מספיק קרדיטים. שדרג את התוכנית שלך או רכוש קרדיטים נוספים כדי להמשיך.\n\nYou don\'t have enough credits. Upgrade your plan or purchase more credits to continue.', isLoading: false });
+      addMessage({
+        role: "assistant",
+        content:
+          "You don't have enough credits. Upgrade your plan or purchase more credits to continue.",
+        isLoading: false,
+      });
       setShowOutOfCreditsModal(true);
       return;
     }
@@ -713,7 +717,7 @@ const Editor = () => {
       const errorMessage = isTransientAiError
         ? getFriendlyAiTransientMessage("generate your presentation")
         : rawErrorMessage;
-      const isLimitError = /credits?|limit|מגבלה|קרדיטים|שדרג|slide limit/i.test(errorMessage);
+      const isLimitError = /credits?|limit|upgrade|slide limit/i.test(errorMessage);
       updateLastMessage(
         isLimitError
           ? errorMessage
@@ -867,7 +871,7 @@ const Editor = () => {
       const errMsg = TRANSIENT_AI_ERROR_RE.test(rawErrMsg)
         ? getFriendlyAiTransientMessage("process your request")
         : rawErrMsg;
-      const isLimitError = /credits?|limit|מגבלה|קרדיטים|שדרג/i.test(errMsg);
+      const isLimitError = /credits?|limit|upgrade/i.test(errMsg);
       updateLastMessage(
         isLimitError
           ? errMsg

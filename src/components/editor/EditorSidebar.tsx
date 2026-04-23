@@ -509,9 +509,9 @@ export function EditorSidebar({
                 : 'bg-muted/50 text-muted-foreground hover:bg-muted'
               }
             `}
-            title="Toggle RTL (Right-to-Left) for Hebrew text"
+            title="Toggle RTL (Right-to-Left) direction"
           >
-            <span className="text-[10px]">עב</span>
+            <span className="text-[10px]">RTL</span>
             <span>RTL</span>
           </motion.button>
         </div>

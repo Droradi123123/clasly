@@ -6,28 +6,33 @@ import { ArrowLeft, CheckCircle2, Layout, Palette, Type } from "lucide-react";
 const CHANGES = [
   {
     date: "2025-03-07",
-    title: "תיקון WYSIWYG – שקופיות AI",
-    description: "תיקון התאמה מלאה בין מצב עריכה למצב הצגה עבור שקופיות שנוצרו ב-AI",
+    title: "WYSIWYG Fix – AI Slides",
+    description:
+      "Improved consistency between Edit mode and Present mode for AI-generated slides.",
     items: [
       {
         icon: Layout,
-        title: "התאמת Theme ו-Design לכל שקופית",
-        detail: "Editor ו-Present משתמשים כעת באותה לוגיקה: themeId ו-designStyleId נלקחים קודם מה-design של השקופית עצמה, ואז מהגדרות ההרצאה.",
+        title: "Theme + design style are applied consistently",
+        detail:
+          "Editor and Present now follow the same priority: slide design first, then lecture settings.",
       },
       {
         icon: Palette,
-        title: "נרמול designStyleId",
-        detail: "ערכי AI כמו 'elegant', 'bold', 'cinematic' מנורמלים אוטומטית ל-'dynamic' או 'minimal' כדי להתאים ל-Frontend.",
+        title: "Design style normalization",
+        detail:
+          "AI style values are normalized to supported frontend styles for consistent rendering.",
       },
       {
         icon: Type,
-        title: "צבע טקסט לפי Theme",
-        detail: "ב-themes בהירים (כמו soft-pop) הטקסט משתמש בצבע כהה (#1f2937) כדי לשמור על קריאות. ב-quiz, שאלה עם רקע בהיר תציג טקסט קריא.",
+        title: "Text contrast improvements",
+        detail:
+          "Light themes now use higher-contrast text colors to keep slides readable.",
       },
       {
         icon: CheckCircle2,
-        title: "ensureSlidesDesignDefaults ב-Present",
-        detail: "בטעינת הרצאה מה-DB, השקופיות עוברות נרמול כדי להבטיח ערכים תקינים.",
+        title: "Design defaults applied on load",
+        detail:
+          "When a lecture is loaded from the database, slides are normalized to ensure valid design values.",
       },
     ],
   },
@@ -46,12 +51,12 @@ const Changelog = () => {
           className="mb-6 -ml-2"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
-          חזרה
+          Back
         </Button>
 
-        <h1 className="text-3xl font-bold mb-2">שינויים ועדכונים</h1>
+        <h1 className="text-3xl font-bold mb-2">Changelog</h1>
         <p className="text-muted-foreground mb-8">
-          תיעוד השינויים האחרונים במערכת
+          A log of recent improvements and fixes.
         </p>
 
         <div className="space-y-6">
