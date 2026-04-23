@@ -114,11 +114,6 @@ const Join = () => {
 
       const lecture = result.lecture;
 
-      if (lecture.status === "ended") {
-        setError("This lecture has ended.");
-        return;
-      }
-
       setLectureId(String(lecture.id));
       setLectureName(String(lecture.title ?? ""));
       setLectureCode(code);

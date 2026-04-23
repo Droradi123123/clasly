@@ -198,6 +198,7 @@ const Student = () => {
   /** Slide logo wins; else logo from webinar registration settings (same as join form). */
   const headerLogoUrl = presentationLogoUrl ?? webinarLogoUrl;
   const isWebinarLecture = lecture?.lecture_mode === "webinar";
+  const isLectureLive = lecture?.status === "active";
   const headerSurfaceStyle = useMemo((): React.CSSProperties | undefined => {
     if (!isWebinarLecture) return undefined;
     const deep = darkenHex(webinarPrimary, 0.32);
@@ -681,6 +682,10 @@ const Student = () => {
     points?: number
   ): Promise<boolean> => {
     if (!lecture?.id || !studentId || hasAnswered || inResultsPhase) return false;
+    if (!isLectureLive) {
+      toast.message("This session isn't live right now.");
+      return false;
+    }
     if (responseSubmitLockRef.current) return false;
     responseSubmitLockRef.current = true;
 
@@ -812,6 +817,10 @@ const Student = () => {
 
   // Send emoji reaction via the existing lecture-sync broadcast channel (no separate channel needed)
   const handleSendReaction = (emoji: string) => {
+    if (!isLectureLive) {
+      toast.message("This session isn't live right now.");
+      return;
+    }
     setLastReaction(emoji);
     setTimeout(() => setLastReaction(null), 1000);
 
@@ -834,6 +843,10 @@ const Student = () => {
   // Submit question to database
   const handleSubmitQuestion = async () => {
     if (!questionText.trim() || !lecture?.id || isSubmittingQuestion) return;
+    if (!isLectureLive) {
+      setQuestionError("This session isn't live right now.");
+      return;
+    }
 
     try {
       setIsSubmittingQuestion(true);
