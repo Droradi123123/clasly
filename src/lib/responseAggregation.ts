@@ -188,10 +188,21 @@ export function aggregateSentimentResponses(responses: { response_data?: any }[]
   const values: number[] = [];
   responses.forEach((r) => {
     const value = r.response_data?.value;
-    if (typeof value === "number") values.push(value);
+    if (typeof value === "number" && Number.isFinite(value)) {
+      values.push(Math.max(0, Math.min(100, value)));
+    }
   });
-  if (values.length === 0) return { average: 50, distribution: [] };
+  if (values.length === 0) return { average: 50, distribution: Array(10).fill(0) };
   const average = values.reduce((a, b) => a + b, 0) / values.length;
-  return { average, distribution: values };
+
+  // Slide components consume `distribution` as bucket counts, not raw samples.
+  const bucketCount = 10;
+  const distribution = Array(bucketCount).fill(0);
+  values.forEach((value) => {
+    const bucket = Math.min(bucketCount - 1, Math.floor((value / 100) * bucketCount));
+    distribution[bucket] += 1;
+  });
+
+  return { average, distribution };
 }
 

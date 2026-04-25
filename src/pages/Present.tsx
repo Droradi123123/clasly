@@ -113,8 +113,11 @@ const Present = () => {
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showMiniLeaderboard, setShowMiniLeaderboard] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isSlideSyncConnected, setIsSlideSyncConnected] = useState(false);
   const [students, setStudents] = useState<any[]>([]);
   const [responses, setResponses] = useState<any[]>([]);
+  /** Cache responses per slide so accidental navigation never looks like data loss. */
+  const responsesBySlideRef = useRef<Map<number, any[]>>(new Map());
   const [lectureCode, setLectureCode] = useState("");
   const [copied, setCopied] = useState(false);
   const [isLive, setIsLive] = useState(false);
@@ -167,6 +170,13 @@ const Present = () => {
   const slideContainerRef = useRef<HTMLDivElement | null>(null);
   const currentSlideIndexRef = useRef(currentSlideIndex);
 
+  const setResponsesForSlide = useCallback((slideIndex: number, rows: any[]) => {
+    responsesBySlideRef.current.set(slideIndex, rows);
+    if (slideIndex === currentSlideIndexRef.current) {
+      setResponses(rows);
+    }
+  }, []);
+
   useEffect(() => {
     if (!lectureId) return;
 
@@ -179,7 +189,7 @@ const Present = () => {
         if (p.lectureId === lectureId && typeof p.slideIndex === 'number' && p.slideIndex === currentSlideIndexRef.current) {
           try {
             const data = await getResponses(lectureId, p.slideIndex);
-            setResponses(data);
+            setResponsesForSlide(p.slideIndex, data);
           } catch (e) {
             console.error('[Present] response_changed getResponses:', e);
           }
@@ -207,6 +217,7 @@ const Present = () => {
       .subscribe((status) => {
       console.log('[Present] Slide sync channel status:', status);
       slideSyncReadyRef.current = status === 'SUBSCRIBED';
+      setIsSlideSyncConnected(status === 'SUBSCRIBED');
       if (status === 'SUBSCRIBED' && pendingBroadcastRef.current) {
         const pending = pendingBroadcastRef.current;
         pendingBroadcastRef.current = null;
@@ -233,8 +244,9 @@ const Present = () => {
         slideSyncChannelRef.current = null;
       }
       slideSyncReadyRef.current = false;
+      setIsSlideSyncConnected(false);
     };
-  }, [lectureId]);
+  }, [lectureId, setResponsesForSlide]);
 
   const webinarCta = (lecture?.settings as { webinarCta?: { label?: string; url?: string } } | null | undefined)
     ?.webinarCta;
@@ -571,9 +583,9 @@ const Present = () => {
         (payload) => {
           const newRow = payload.new as Record<string, unknown> | undefined;
           const rowSlideIndex = newRow && typeof newRow.slide_index === "number" ? newRow.slide_index : null;
-          if (rowSlideIndex === currentSlideIndexRef.current && newRow) {
-            setResponses((prev) => [...prev, newRow]);
-          }
+          if (rowSlideIndex === null || !newRow) return;
+          const existing = responsesBySlideRef.current.get(rowSlideIndex) ?? [];
+          setResponsesForSlide(rowSlideIndex, [...existing, newRow]);
         }
       )
       .subscribe((status, err) => {
@@ -586,7 +598,7 @@ const Present = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [lectureId, presentPgReconnectKey, schedulePresentPgReconnect]);
+  }, [lectureId, presentPgReconnectKey, schedulePresentPgReconnect, setResponsesForSlide]);
 
   // Fetch responses on slide change (no channel churn — the subscription above is stable)
   useEffect(() => {
@@ -594,8 +606,10 @@ const Present = () => {
 
     const loadResponses = async () => {
       try {
+        const cached = responsesBySlideRef.current.get(currentSlideIndex);
+        setResponses(cached ?? []);
         const data = await getResponses(lectureId, currentSlideIndex);
-        setResponses(data);
+        setResponsesForSlide(currentSlideIndex, data);
       } catch (error) {
         console.error('Error loading responses:', error);
       }
@@ -615,7 +629,7 @@ const Present = () => {
     const poll = async () => {
       try {
         const data = await getResponses(lectureId!, currentSlideIndex);
-        setResponses(data);
+        setResponsesForSlide(currentSlideIndex, data);
       } catch (e) {
         console.error('[Present] Response poll error:', e);
       }
@@ -623,7 +637,7 @@ const Present = () => {
 
     const id = setInterval(poll, RESPONSE_POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [lectureId, currentSlideIndex, currentSlide, isLive]);
+  }, [lectureId, currentSlideIndex, currentSlide, isLive, setResponsesForSlide]);
 
   // Supabase Presence: live online count (students track on lecture-presence channel)
   useEffect(() => {
@@ -701,6 +715,19 @@ const Present = () => {
       supabase.removeChannel(channel);
     };
   }, [lectureId, presentPgReconnectKey, schedulePresentPgReconnect]);
+
+  // Safety net while the presenter watches Q&A: Realtime can lag under classroom load.
+  useEffect(() => {
+    if (!lectureId || !showQuestionsPanel) return;
+    const id = window.setInterval(() => {
+      try {
+        reloadQuestionsRef.current();
+      } catch (e) {
+        console.warn("[Present] questions poll reload:", e);
+      }
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [lectureId, showQuestionsPanel]);
 
   // Mark question as answered
   const handleMarkAnswered = async (questionId: string) => {
@@ -975,6 +1002,13 @@ const Present = () => {
             <Users className="w-4 h-4 shrink-0 opacity-80" />
             <span className="font-medium">{isLive ? presenceOnlineCount : students.length}</span>
             <span className="hidden md:inline text-xs text-primary-foreground/55">online</span>
+          </div>
+          <div
+            className="hidden sm:flex items-center gap-1.5 text-primary-foreground/75 text-xs shrink-0"
+            title={isSlideSyncConnected ? "Live slide broadcast is connected" : "Using database and polling fallback if live broadcast is delayed"}
+          >
+            <span className={`h-2 w-2 rounded-full ${isSlideSyncConnected ? "bg-green-400" : "bg-amber-400"}`} />
+            <span>{isSlideSyncConnected ? "Live sync" : "Sync fallback"}</span>
           </div>
           {currentSlide && (isInteractiveSlide(currentSlide.type) || isQuizSlide(currentSlide.type)) && (
             <div

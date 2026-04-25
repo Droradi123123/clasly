@@ -163,6 +163,32 @@ const Student = () => {
   }, [slides.length, currentSlideIndex]);
 
   const currentSlide = awaitingSlidePayload ? undefined : slides[effectiveSlideIndex];
+  const wordDraftKey = useMemo(() => {
+    if (!lecture?.id) return null;
+    return `clasly_worddraft_${lecture.id}_${currentSlideIndex}`;
+  }, [lecture?.id, currentSlideIndex]);
+
+  useEffect(() => {
+    if (!wordDraftKey || currentSlide?.type !== "wordcloud") return;
+    try {
+      const saved = sessionStorage.getItem(wordDraftKey);
+      if (saved && !wordInput) setWordInput(saved);
+    } catch {
+      // sessionStorage can be unavailable in private browsing.
+    }
+    // Only hydrate when the slide/draft key changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wordDraftKey, currentSlide?.type]);
+
+  useEffect(() => {
+    if (!wordDraftKey || currentSlide?.type !== "wordcloud") return;
+    try {
+      sessionStorage.setItem(wordDraftKey, wordInput);
+    } catch {
+      // sessionStorage can be unavailable in private browsing.
+    }
+  }, [wordDraftKey, wordInput, currentSlide?.type]);
+
   const activityPhase = useMemo(
     () =>
       getActivityPhaseState(currentSlide ?? null, lecture?.activity_started_at as string | undefined, {
@@ -689,9 +715,6 @@ const Student = () => {
     if (responseSubmitLockRef.current) return false;
     responseSubmitLockRef.current = true;
 
-    // Optimistic lock + success UI so the phone never looks stuck on "Saving…"
-    // (especially word cloud / slow networks). Roll back on failure.
-    setHasAnswered(true);
     setIsSubmitting(true);
     try {
       await submitResponse(
@@ -702,6 +725,7 @@ const Student = () => {
         isCorrect,
         points
       );
+      setHasAnswered(true);
       toast.success("Answer recorded successfully", {
         description: "Your response was saved. You can’t change it now.",
         duration: 4000,
@@ -725,7 +749,6 @@ const Student = () => {
       return true;
     } catch (error) {
       console.error('Error submitting response:', error);
-      setHasAnswered(false);
       toast.error("Couldn't save your answer. Try again.");
       responseSubmitLockRef.current = false;
       return false;
@@ -782,7 +805,16 @@ const Student = () => {
     const trimmed = wordInput.trim();
     if (!trimmed || hasAnswered || inResultsPhase || isSubmitting || responseSubmitLockRef.current) return;
     const ok = await handleSubmitResponse({ word: trimmed }, undefined, pts.pointsForParticipation);
-    if (ok) setWordInput("");
+    if (ok) {
+      setWordInput("");
+      if (wordDraftKey) {
+        try {
+          sessionStorage.removeItem(wordDraftKey);
+        } catch {
+          // sessionStorage can be unavailable in private browsing.
+        }
+      }
+    }
   };
 
   const handleNumberSubmit = () => {
@@ -1197,6 +1229,19 @@ const Student = () => {
               </div>
             )}
 
+            <div className="mb-3 rounded-xl border border-border/60 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+              {isSubmitting ? (
+                <span className="inline-flex items-center gap-2 font-medium text-primary">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Saving your answer…
+                </span>
+              ) : hasTimer && inVotingPhase ? (
+                <span>Answer now. The timer is synced with the presenter.</span>
+              ) : (
+                <span>Answer when ready. Your response is saved only after confirmation.</span>
+              )}
+            </div>
+
             {/* Question */}
             <h2 className="text-lg sm:text-xl font-display font-bold text-foreground mb-3 leading-snug">
               {(currentSlide.content as any).question || (currentSlide.content as any).statement || (currentSlide.content as any).sentenceStart || (currentSlide.content as any).title}
@@ -1206,6 +1251,18 @@ const Student = () => {
             {(currentSlide.type === 'quiz' || currentSlide.type === 'poll' || currentSlide.type === 'poll_quiz') && (() => {
               const options: string[] = (currentSlide.content as any).options || [];
               const isGrid = options.length >= 4;
+              if (options.length === 0) {
+                return (
+                  <div className="flex flex-1 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6 text-center">
+                    <div>
+                      <p className="font-semibold text-foreground">Question is not ready</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        The presenter screen is still syncing the answer options. Tap refresh or wait a moment.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
               return (
                 <div className={isGrid ? "grid grid-cols-2 gap-2.5 flex-1" : "flex flex-col gap-2.5 flex-1"}>
                   {options.map((option: string, index: number) => (
