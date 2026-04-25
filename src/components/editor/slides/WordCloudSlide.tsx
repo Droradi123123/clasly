@@ -22,17 +22,20 @@ interface WordCloudSlideProps {
   showResults?: boolean;
 }
 
-// Color palette – blue/purple and red/pink tones (like reference image)
+// High-contrast palette for live projection. Avoid dark blues/purples that disappear on gradient backgrounds.
 const WORD_COLORS = [
-  '#6366F1', // indigo
-  '#8B5CF6', // violet
-  '#3B82F6', // blue
-  '#7C3AED', // purple
-  '#EC4899', // pink
-  '#EF4444', // red
-  '#F97316', // orange-red
-  '#DB2777', // pink-rose
+  '#FFFFFF', // white
+  '#FDE68A', // warm yellow
+  '#A7F3D0', // mint
+  '#BAE6FD', // sky
+  '#FBCFE8', // pink
+  '#DDD6FE', // lavender
+  '#FED7AA', // peach
+  '#CCFBF1', // teal
 ];
+
+const WORD_TEXT_SHADOW =
+  "0 3px 18px rgba(0,0,0,0.55), 0 1px 2px rgba(0,0,0,0.7)";
 
 // Hash for stable color per word
 function getWordColor(text: string) {
@@ -82,12 +85,12 @@ export function WordCloudSlide({
   const displayWords = isEditing ? placeholderWords : wordsForDisplay;
   const maxCount = Math.max(...displayWords.map(w => w.count), 1);
 
-  // Font size range: larger and more readable (compact: 18-48px, organic: 24-72px)
+  // Font size range for projection: keep every response readable from the back of the room.
   const getFontSize = (ratio: number) => {
     if (isCompactStyle) {
-      return Math.min(Math.max(18, 18 + ratio * 30), 48);
+      return Math.min(Math.max(26, 26 + ratio * 30), 58);
     }
-    return Math.min(Math.max(24, 24 + ratio * 48), 72);
+    return Math.min(Math.max(34, 34 + ratio * 56), 92);
   };
 
   const sortedWords = [...displayWords].sort((a, b) => b.count - a.count);
@@ -124,10 +127,11 @@ export function WordCloudSlide({
                         className="w-full px-2"
                       >
                         <div
-                          className="text-4xl sm:text-5xl md:text-7xl font-semibold tracking-tight break-words leading-tight"
+                          className="text-5xl sm:text-6xl md:text-8xl font-extrabold tracking-tight break-words leading-tight"
                           style={{
-                            color: `hsl(var(--theme-accent))`,
+                            color: "#ffffff",
                             fontFamily: "var(--theme-font-family-display), var(--theme-font-family)",
+                            textShadow: WORD_TEXT_SHADOW,
                           }}
                         >
                           {topWord.text}
@@ -144,18 +148,19 @@ export function WordCloudSlide({
                         {nextFour.map((word, i) => {
                           const ratio =
                             maxCount > 0 ? (word.count - 1) / (maxCount - 1 || 1) : 0;
-                          const fontSize = Math.min(
-                            Math.max(20, 20 + ratio * 28),
-                            44,
-                          );
+                          const fontSize = Math.min(Math.max(30, 30 + ratio * 34), 64);
                           return (
                             <motion.span
                               key={`${word.text}-${i}`}
                               initial={{ opacity: 0, y: 6 }}
                               animate={{ opacity: 1, y: 0 }}
                               transition={{ delay: 0.06 + i * 0.05 }}
-                              className="font-semibold text-[hsl(var(--theme-text-primary))]"
-                              style={{ fontSize: `${fontSize}px` }}
+                              className="font-extrabold"
+                              style={{
+                                fontSize: `${fontSize}px`,
+                                color: getWordColor(word.text),
+                                textShadow: WORD_TEXT_SHADOW,
+                              }}
                             >
                               {word.text}
                               {!isEditing ? (
@@ -177,7 +182,7 @@ export function WordCloudSlide({
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: 0.15 + i * 0.02 }}
                           >
-                            <ShowcaseChip>
+                            <ShowcaseChip className="border-white/25 bg-black/25 px-4 py-2 text-lg md:text-xl font-bold text-white shadow-lg backdrop-blur-sm">
                               {word.text}
                               {!isEditing ? (
                                 <span className="ml-1.5 tabular-nums text-[hsl(var(--theme-text-secondary))]">
@@ -210,7 +215,7 @@ export function WordCloudSlide({
             ) : (
             /* Word cloud container – organic (scattered+rotate) or compact (rows, no rotate) */
             <motion.div
-              className={`relative min-h-[280px] flex flex-wrap items-center justify-center content-center p-6 md:p-10 ${isCompactStyle ? 'gap-3 gap-y-4' : 'gap-4 md:gap-6 gap-y-5'}`}
+              className={`relative min-h-[320px] flex flex-wrap items-center justify-center content-center p-6 md:p-10 ${isCompactStyle ? 'gap-4 gap-y-5' : 'gap-5 md:gap-8 gap-y-7'}`}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
             >
@@ -228,13 +233,14 @@ export function WordCloudSlide({
                     return (
                       <motion.span
                         key={`${word.text}-${index}`}
-                        className="font-bold inline-block"
+                        className="font-extrabold inline-block leading-none"
                         style={{ 
                           fontSize: `${fontSize}px`, 
                           color,
+                          textShadow: WORD_TEXT_SHADOW,
                           transform: rotation ? `rotate(${rotation}deg)` : undefined,
                         }}
-                        initial={{ opacity: 0, scale: 0.5 }}
+                        initial={{ opacity: 0, scale: 0.72 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: index * 0.04, duration: 0.35 }}
                         whileHover={{ scale: 1.08 }}
@@ -242,8 +248,8 @@ export function WordCloudSlide({
                         {word.text}
                         {!isEditing && word.count >= 1 && (
                           <motion.sup
-                            className="opacity-70 ml-0.5"
-                            style={{ fontSize: '0.45em', color }}
+                            className="ml-1 rounded-full bg-black/35 px-1.5 py-0.5 align-super text-white"
+                            style={{ fontSize: '0.38em', textShadow: "none" }}
                             initial={{ scale: 0 }}
                             animate={{ scale: 1 }}
                           >
